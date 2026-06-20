@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "modules/Module.hpp"
 #include "modules/Linear.hpp"
 #include "modules/Identity.hpp"

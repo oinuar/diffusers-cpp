@@ -12,10 +12,10 @@
 
 class GGMLScheduler {
 public:
-    GGMLScheduler(std::vector<ggml_backend_t>&& backends)
-        : backends_(std::move(backends)), arena_(GGML_DEFAULT_GRAPH_SIZE)
+    GGMLScheduler(std::vector<ggml_backend_t>&& backends, size_t graph_size = GGML_DEFAULT_GRAPH_SIZE)
+        : backends_(std::move(backends)), arena_(graph_size)
     {
-        sched_ = ggml_backend_sched_new(backends_.data(), nullptr, backends_.size(), GGML_DEFAULT_GRAPH_SIZE, false, true);
+        sched_ = ggml_backend_sched_new(backends_.data(), nullptr, backends_.size(), graph_size, false, true);
     }
 
     GGMLScheduler(GGMLScheduler&& other)

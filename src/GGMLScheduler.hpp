@@ -1,6 +1,6 @@
 #pragma once
 
-#include "GGMLComputation.hpp"
+#include "GGMLCompute.hpp"
 #include "GGMLArena.hpp"
 #include "GGMLGraph.hpp"
 #include "GGMLContext.hpp"
@@ -29,11 +29,11 @@ public:
             ggml_backend_sched_free(sched_);
     }
 
-    GGMLGraph plan(GGMLComputation& computation) {
+    GGMLGraph plan(GGMLCompute& compute) {
         GGMLContext ctx(arena_);
 
         auto gf = ggml_new_graph(*ctx);
-        auto [deps, result] = computation.build(ctx);
+        auto [deps, result] = compute.build(ctx);
 
         return std::move(GGMLGraph(gf, sched_, std::move(deps), result));
     }
@@ -44,28 +44,4 @@ private:
     std::vector<ggml_backend_t> backends_;
     GGMLArena arena_;
     ggml_backend_sched_t sched_;
-};
-
-class GGMLScope {
-public:
-    GGMLScope(GGMLGraph& graph) : graph_(graph) {
-        ggml_backend_sched_reset(graph.sched_);
-        ggml_backend_sched_alloc_graph(graph.sched_, graph.gf_);
-    }
-
-    ~GGMLScope() {
-        ggml_backend_sched_graph_compute(graph_.sched_, graph_.gf_);
-    }
-
-    std::vector<Tensor>& inputs() {
-        return graph_.inputs_;
-    }
-
-    GGMLScope(GGMLScope&) = delete;
-    GGMLScope(GGMLScope&&) = delete;
-    GGMLScope& operator =(const GGMLScope&) = delete;
-    GGMLScope& operator =(GGMLScope&&) = delete;
-
-private:
-    GGMLGraph& graph_;
 };

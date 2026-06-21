@@ -20,14 +20,6 @@ public:
         other.gf_ = nullptr;
     }
 
-    ~GGMLGraph() {
-        // TODO: should gf be freed?
-    }
-
-    ggml_tensor* node(int index) {
-        return ggml_graph_node(gf_, index);
-    }
-
     GGMLGraph(GGMLGraph&) = delete;
     GGMLGraph& operator =(const GGMLGraph&) = delete;
 
@@ -37,5 +29,5 @@ private:
     std::vector<Tensor> inputs_;
     Tensor tensor_;
 
-    friend class GGMLScope;
+    friend class GGMLComputation;
 };

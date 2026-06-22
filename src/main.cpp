@@ -27,7 +27,7 @@ float matrix_B[rows_B * cols_B] = {
 
 class MatMul : public GGMLCompute {
 public:
-    virtual std::pair<Dependencies, Tensor> build(GGMLContext& ctx) {
+    virtual std::pair<Parameters, Tensor> build(GGMLContext& ctx) {
         // create tensors
         auto ta = Tensor::empty<2>(*ctx, GGML_TYPE_F32, {cols_A, rows_A});
         auto tb = Tensor::empty<2>(*ctx, GGML_TYPE_F32, {cols_B, rows_B});
@@ -35,15 +35,17 @@ public:
         // result = a*b^T
         auto result = Tensor(*ctx, ggml_mul_mat(*ctx, *ta, *tb));
 
-        // TODO: use parameter binding pattern instead
-        return {{ta, tb}, result};
+        return {{{"a", ta}, {"b", tb}}, result};
     }
 
     virtual void compute(GGMLGraph& graph) {
         GGMLComputation computation(graph);
 
-        // Do the computation with matrices.
-        computation({ matrix_A, matrix_B });
+        // Do the computation with matrices
+        computation({
+            {"a", matrix_A},
+            {"b", matrix_B}
+        });
 
         // Extract the result. In this case, the output tensor is the last one in the graph.
         auto [shape, data] = computation.get<float>(-1);

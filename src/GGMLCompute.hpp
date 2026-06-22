@@ -2,14 +2,16 @@
 
 #include "Tensor.hpp"
 
+#include <unordered_map>
+
 class GGMLContext;
 class GGMLGraph;
 
 class GGMLCompute {
 public:
-    typedef std::vector<Tensor> Dependencies;
+    typedef std::unordered_map<std::string, Tensor> Parameters;
 
-    virtual std::pair<Dependencies, Tensor> build(GGMLContext& ctx) = 0;
+    virtual std::pair<Parameters, Tensor> build(GGMLContext& ctx) = 0;
 
     virtual void compute(GGMLGraph& graph) = 0;
 };

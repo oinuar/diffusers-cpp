@@ -4,7 +4,7 @@
 
 class SiLU : public Module {
 public:
-    Tensor forward(ggml_context* ctx, const Tensor& x) {
+    Tensor forward(ggml_context* ctx, Tensor x) {
         return Tensor(ctx, ggml_silu(ctx, *x));
     }
 };

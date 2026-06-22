@@ -20,6 +20,10 @@ public:
         other.gf_ = nullptr;
     }
 
+    ggml_cgraph* operator *() {
+        return gf_;
+    }
+
     GGMLGraph(GGMLGraph&) = delete;
     GGMLGraph& operator =(const GGMLGraph&) = delete;
 

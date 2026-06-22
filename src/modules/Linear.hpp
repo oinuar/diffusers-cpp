@@ -1,33 +1,30 @@
 #pragma once
 
 #include "modules/Module.hpp"
+#include "modules/Parameter.hpp"
 
 class Linear : public Module {
 public:
     Linear(
-        const int64_t& in_features,
-        const int64_t& out_features,
-        const bool& bias = true
-    ) : 
-        in_features_(in_features),
-        out_features_(out_features)
+        int64_t in_features,
+        int64_t out_features,
+        bool bias = true
+    ) : bias_(bias)
     {
-        params["weight"] = Parameter([=](ggml_context* ctx) { return Tensor::empty<2>(ctx, GGML_TYPE_F32, {in_features_, out_features_}); });
+        modules["weight"] = std::shared_ptr<Module>(new Parameter<2>({in_features, out_features}));
 
-        if (bias)
-            params["bias"] = Parameter([=](ggml_context* ctx) { return Tensor::empty<1>(ctx, GGML_TYPE_F32, {out_features_}); });
+        if (bias_)
+            modules["bias"] = std::shared_ptr<Module>(new Parameter<1>({out_features}));
     }
     
-    Tensor forward(ggml_context* ctx, const Tensor& x) {
-        auto weight = params["weight"];
-        auto bias = params["bias"];
+    Tensor forward(ggml_context* ctx, Tensor x) {
+        auto weight = std::static_pointer_cast<Parameter<2>>(modules["weight"])->forward();
+        auto bias = bias_ ? std::static_pointer_cast<Parameter<1>>(modules["bias"])->forward() : Tensor();
 
-        return Tensor(ctx, ggml_ext_linear(ctx, *x, **weight, **bias));
+        return Tensor(ctx, ggml_ext_linear(ctx, *x, *weight, *bias));
     }
 
 private:
-    int64_t in_features_;
-    int64_t out_features_;
     bool bias_;
 
     static bool ggml_ext_is_padded_1d(const ggml_tensor* x) {

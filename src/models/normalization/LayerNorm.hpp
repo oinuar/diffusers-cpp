@@ -1,6 +1,7 @@
 #pragma once
 
 #include "modules/Module.hpp"
+#include "modules/Parameter.hpp"
 
 class LayerNorm : public Module {
 public:
@@ -10,25 +11,28 @@ public:
         bool elementwise_affine = true,
         bool bias = true
     ) : 
-        eps_(eps)
+        eps_(eps),
+        elementwise_affine_(elementwise_affine),
+        bias_(bias)
     {
         if (elementwise_affine) {
-            params["weight"] = Parameter([=](ggml_context* ctx) { return Tensor::ones<1>(ctx, {dim}); });
+            modules["weight"] = std::shared_ptr<Module>(new Parameter<1>({dim}));
 
             if (bias)
-                params["bias"] = Parameter([=](ggml_context* ctx) { return Tensor::zeros<1>(ctx, {dim}); });
+                modules["bias"] = std::shared_ptr<Module>(new Parameter<1>({dim}));
         }
     }
 
     Tensor forward(ggml_context* ctx, Tensor input) {
-        auto weight = params["weight"];
-        auto bias = params["bias"];
+        auto weight = elementwise_affine_ ? std::static_pointer_cast<Parameter<1>>(modules["weight"])->forward() : Tensor();
+        auto bias = elementwise_affine_ && bias_ ? std::static_pointer_cast<Parameter<1>>(modules["bias"])->forward() : Tensor();
 
-        return Tensor(ctx, ggml_ext_layer_norm(ctx, *input, /*dim_,*/ **weight, **bias, eps_));
+        return Tensor(ctx, ggml_ext_layer_norm(ctx, *input, /*dim_,*/ *weight, *bias, eps_));
     }
 
 private:
     float eps_;
+    bool elementwise_affine_, bias_;
 
     static ggml_tensor* ggml_ext_layer_norm(ggml_context* ctx,
                                             ggml_tensor* x,

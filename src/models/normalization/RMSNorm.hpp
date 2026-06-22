@@ -10,28 +10,33 @@ public:
         bool elementwise_affine = true,
         bool bias = false
     ) : 
-        eps_(eps)
+        eps_(eps),
+        elementwise_affine_(elementwise_affine),
+        bias_(bias)
     {
         if (elementwise_affine) {
-            params["weight"] = Parameter([=](ggml_context* ctx) { return Tensor::ones<1>(ctx, {dim}); });
+            modules["weight"] = std::shared_ptr<Module>(new Parameter<1>({dim}));
 
             if (bias)
-                params["bias"] = Parameter([=](ggml_context* ctx) { return Tensor::zeros<1>(ctx, {dim}); });
+                modules["bias"] = std::shared_ptr<Module>(new Parameter<1>({dim}));
         }
     }
 
     Tensor forward(ggml_context* ctx, Tensor hidden_states) {
-        auto weight = params.find("weight");
-        auto bias = params.find("bias");
         auto variance = hidden_states.pow(2).mean(/*-1, TODO: check*/);
         
         hidden_states = hidden_states * rsqrt(variance + eps_);
 
-        if (weight != params.end()) {
-            hidden_states = hidden_states * *weight->second;
+        if (elementwise_affine_) {
+            auto weight = std::static_pointer_cast<Parameter<1>>(modules["weight"])->forward();
 
-            if (bias != params.end())
-                hidden_states = hidden_states + *bias->second;
+            hidden_states = hidden_states * weight;
+
+            if (bias_) {
+                auto bias = std::static_pointer_cast<Parameter<1>>(modules["bias"])->forward();
+
+                hidden_states = hidden_states + bias;
+            }
         }
 
         return hidden_states;
@@ -39,4 +44,5 @@ public:
 
 private:
     float eps_;
+    bool elementwise_affine_, bias_;
 };

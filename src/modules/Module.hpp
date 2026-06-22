@@ -5,14 +5,25 @@
 #include <memory>
 #include <functional>
 #include "Tensor.hpp"
-#include "Parameter.hpp"
+#include "modules/Visitor.hpp"
+#include <iostream>
 
 class Module {
 public:
-    typedef std::unordered_map<std::string, Parameter> Parameters;
-    typedef std::unordered_map<std::string, std::shared_ptr<Module>> Modules;
+    typedef std::unordered_map<std::string, std::shared_ptr<Module>> Children;
+
+    virtual void accept(Visitor& visitor, std::vector<std::string> path = std::vector<std::string>()) {
+        for (auto& [name, child] : modules) {
+            auto child_path = path;
+
+            child_path.push_back(name);
+
+            child->accept(visitor, std::move(child_path));
+        }
+
+        visitor.visit(*this, std::move(path));
+    }
 
 protected:
-    Parameters params;
-    Modules modules;
+    Children modules;
 };

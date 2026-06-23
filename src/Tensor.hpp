@@ -134,6 +134,12 @@ public:
 
     Tensor unsqueeze(int dim) const;
 
+    template <size_t N>
+    Tensor flatten(std::array<int64_t, N> shape) const { throw "not implemented yet"; }
+
+    template <size_t N>
+    Tensor unflatten(int64_t dim, std::array<int64_t, N> shape) { throw "not implemented yet"; }
+
     /// Narrow a dimension: keep elements [start, start+length) along `dim`.
     Tensor narrow(int dim, int64_t start, int64_t length) const;
 
@@ -142,6 +148,10 @@ public:
 
     /// Split a tensor into chunks of size `split_size` along dimension `dim`.
     std::vector<Tensor> split(int64_t split_size, int dim = 0) const;
+
+    Tensor to(ggml_type type) const {
+        return Tensor(ctx_, ggml_cast(ctx_, t_, type));
+    }
 
     Tensor operator -() const {
         return Tensor(ctx_, ggml_neg(ctx_, t_));

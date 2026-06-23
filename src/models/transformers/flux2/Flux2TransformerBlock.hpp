@@ -2,9 +2,10 @@
 
 #include "modules/Module.hpp"
 #include "models/normalization/LayerNorm.hpp"
-#include "models/transformers/flux2/Flux2Attention.hpp"
+#include "models/transformers/flux2/Flux2AttnProcessor.hpp"
 #include "models/transformers/flux2/Flux2FeedForward.hpp"
 #include "models/transformers/flux2/Flux2Modulation.hpp"
+#include "models/attention/SoftmaxAttnOp.hpp"
 
 class Flux2TransformerBlock : public Module {
 public:
@@ -21,7 +22,7 @@ public:
         modules["norm1"] = std::make_shared<LayerNorm>(dim, eps, false);
         modules["norm1_context"] = std::make_shared<LayerNorm>(dim, eps, false);
 
-        modules["attn"] = std::make_shared<Flux2Attention>(
+        modules["attn"] = std::make_shared<Flux2AttnProcessor<SoftmaxAttnOp>>(
             dim,
             num_attention_heads,
             attention_head_dim,
@@ -97,8 +98,8 @@ public:
         hidden_states = hidden_states + gate_mlp * ff_output;
 
         // Process attention outputs for the text stream (`encoder_hidden_states`).
-        context_attn_output = c_gate_msa * context_attn_output;
-        encoder_hidden_states = encoder_hidden_states + context_attn_output;
+        context_attn_output = c_gate_msa * context_attn_output.value();
+        encoder_hidden_states = encoder_hidden_states + context_attn_output.value();
 
         auto norm2_context = std::static_pointer_cast<LayerNorm>(modules["norm2_context"]);
 

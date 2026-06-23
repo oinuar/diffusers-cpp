@@ -3,6 +3,7 @@
 #include "modules/Visitor.hpp"
 #include "GGMLBackend.hpp"
 #include "ggml.h"
+#include "ggml-backend.h"
 #include "gguf.h"
 #include <string>
 #include <fstream>

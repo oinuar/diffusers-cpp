@@ -19,7 +19,7 @@ private:
         bool elementwise_affine,
         bool bias,
         bool out_bias
-    ) {
+    ) : inner_dim_(inner_dim), mlp_hidden_dim_(mlp_hidden_dim) {
         // Fused QKV projections + MLP input projection
         modules["to_qkv_mlp_proj"] = std::make_shared<Linear>(query_dim, inner_dim * 3 + mlp_hidden_dim * mlp_mult_factor, bias);
         modules["mlp_act_fn"] = std::make_shared<Flux2SwiGLU>();
@@ -41,7 +41,7 @@ public:
         bool bias = false,
         bool out_bias = true,
         float eps = 1e-5,
-        std::optional<int64_t> out_dim = {},
+        std::optional<int64_t> out_dim = std::nullopt,
         bool elementwise_affine = true,
         float mlp_ratio = 4.0,
         int64_t mlp_mult_factor = 2
@@ -60,13 +60,13 @@ public:
     {
     }
 
-    Tensor forward(
+    virtual Tensor forward(
         ggml_context* ctx,
         Tensor hidden_states,
-        std::optional<Tensor> attention_mask = {},
-        std::optional<std::tuple<Tensor, Tensor>> image_rotary_emb = {}
-    ) {
-        // TODO: call attention processor
-        return hidden_states;
-    }
+        std::optional<Tensor> attention_mask = std::nullopt,
+        std::optional<std::tuple<Tensor, Tensor>> image_rotary_emb = std::nullopt
+    ) = 0;
+
+protected:
+    int64_t inner_dim_, mlp_hidden_dim_;
 };

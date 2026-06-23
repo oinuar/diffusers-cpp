@@ -3,10 +3,8 @@
 #include <unordered_map>
 #include <string>
 #include <memory>
-#include <functional>
 #include "Tensor.hpp"
 #include "modules/Visitor.hpp"
-#include <iostream>
 
 class Module {
 public:

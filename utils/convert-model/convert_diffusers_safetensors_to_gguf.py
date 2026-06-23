@@ -64,7 +64,7 @@ def quantize_tensor(name, tensor, qtype):
     tensor = tensor.numpy()
 
     # Use non-quantizied tensor as-is
-    if GGMLQuantizationType[qtype] == GGMLQuantizationType.BF16 or GGMLQuantizationType.F32:
+    if GGMLQuantizationType[qtype] in (GGMLQuantizationType.BF16, GGMLQuantizationType.F32):
         return tensor
 
     # Downcast to float16

@@ -53,11 +53,11 @@ public:
         int64_t dim_head = 64,
         float dropout = 0.0,
         bool bias = false,
-        std::optional<int64_t> added_kv_proj_dim = {},
+        std::optional<int64_t> added_kv_proj_dim = std::nullopt,
         bool added_proj_bias = true,
         bool out_bias = true,
         float eps = 1e-5,
-        std::optional<int64_t> out_dim = {},
+        std::optional<int64_t> out_dim = std::nullopt,
         bool elementwise_affine = true
     ) : Flux2Attention(
         query_dim,
@@ -75,14 +75,11 @@ public:
     {
     }
 
-    std::tuple<Tensor, Tensor> forward(
+    virtual std::tuple<Tensor, std::optional<Tensor>> forward(
         ggml_context* ctx,
         Tensor hidden_states,
         std::optional<Tensor> encoder_hidden_states,
-        std::optional<Tensor> attention_mask = {},
-        std::optional<std::tuple<Tensor, Tensor>> image_rotary_emb = {}
-    ) {
-        // TODO: implement by calling attention processor... maybe template parameter????
-        throw "not implemented yet";
-    }
+        std::optional<Tensor> attention_mask = std::nullopt,
+        std::optional<std::tuple<Tensor, Tensor>> image_rotary_emb = std::nullopt
+    ) = 0;
 };

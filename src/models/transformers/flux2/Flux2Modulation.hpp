@@ -14,8 +14,10 @@ public:
     Tensor forward(ggml_context* ctx, Tensor temb) {
         auto act_fn = std::static_pointer_cast<SiLU>(modules["act_fn"]);
         auto linear = std::static_pointer_cast<Linear>(modules["linear"]);
+
         auto mod = act_fn->forward(ctx, temb);
         mod = linear->forward(ctx, mod);
+
         return mod;
     }
 

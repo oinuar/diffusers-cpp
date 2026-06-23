@@ -16,7 +16,7 @@ public:
     Flux2Transformer2DModel(
         int64_t patch_size = 1,
         int64_t in_channels = 128,
-        std::optional<int64_t> out_channels = {},
+        std::optional<int64_t> out_channels = std::nullopt,
         int64_t num_layers = 8,
         int64_t num_single_layers = 48,
         int64_t attention_head_dim = 128,
@@ -91,7 +91,7 @@ public:
         Tensor timestep = {},
         Tensor img_ids = {},
         Tensor txt_ids = {},
-        std::optional<Tensor> guidance = {},
+        std::optional<Tensor> guidance = std::nullopt,
         // TODO: support KV cache
         //Tensor joint_attention_kwargs: dict[str, Any] | None = None,
         //Tensor return_dict: bool = True,
@@ -100,13 +100,13 @@ public:
         int64_t num_ref_tokens = 0,
         float ref_fixed_timestep = 0.0
     ) {
-        auto num_txt_tokens = encoder_hidden_states.shape().at(1);
+        auto num_txt_tokens = encoder_hidden_states.shape()[1];
 
         // 1. Calculate timestep embedding and modulation parameters
         timestep = timestep * 1000;
 
         if (!guidance)
-            guidance = guidance.value() * 1000;
+            guidance = guidance.value().to(hidden_states.dtype()) * 1000;
 
         auto time_guidance_embed = std::static_pointer_cast<Flux2TimestepGuidanceEmbeddings>(modules["time_guidance_embed"]);
 

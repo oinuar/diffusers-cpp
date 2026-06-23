@@ -33,9 +33,9 @@ public:
         GGMLContext ctx(arena_);
 
         auto gf = ggml_new_graph(*ctx);
-        auto [params, result] = compute.build(ctx);
+        auto result = compute.build(ctx);
 
-        return std::move(GGMLGraph(gf, sched_, std::move(params), result));
+        return std::move(GGMLGraph(gf, sched_, result));
     }
 
     GGMLScheduler(GGMLScheduler&) = delete;

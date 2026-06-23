@@ -561,7 +561,7 @@ inline std::vector<Tensor> Tensor::split(int64_t split_size, int dim) const {
     return splits;
 }
 
-Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
+inline Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
     if (tensors.empty())
         throw std::invalid_argument("cat requires at least one tensor");
 

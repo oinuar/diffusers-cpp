@@ -18,8 +18,8 @@ public:
     ) {
         int64_t mlp_hidden_dim = dim * mlp_ratio;
 
-        modules["norm1"] = std::make_shared<LayerNorm>(dim, false, eps);
-        modules["norm1_context"] = std::make_shared<LayerNorm>(dim, false, eps);
+        modules["norm1"] = std::make_shared<LayerNorm>(dim, eps, false);
+        modules["norm1_context"] = std::make_shared<LayerNorm>(dim, eps, false);
 
         modules["attn"] = std::make_shared<Flux2Attention>(
             dim,
@@ -34,10 +34,10 @@ public:
             dim
         );
 
-        modules["norm2"] = std::make_shared<LayerNorm>(dim, false, eps);
+        modules["norm2"] = std::make_shared<LayerNorm>(dim, eps, false);
         modules["ff"] = std::make_shared<Flux2FeedForward>(dim, dim, mlp_ratio, std::nullopt, bias);
 
-        modules["norm2_context"] = std::make_shared<LayerNorm>(dim, false, eps);
+        modules["norm2_context"] = std::make_shared<LayerNorm>(dim, eps, false);
         modules["ff_context"] = std::make_shared<Flux2FeedForward>(dim, dim, mlp_ratio, std::nullopt, bias);
     }
 

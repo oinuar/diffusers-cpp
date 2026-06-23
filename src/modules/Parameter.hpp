@@ -23,6 +23,10 @@ public:
         tensor_ = tensor;
     }
 
+    const std::array<int64_t, N>& shape() const {
+        return shape_;
+    }
+
     virtual void accept(Visitor& visitor, std::vector<std::string> path) {
         visitor.visit(*this, std::move(path));
     }

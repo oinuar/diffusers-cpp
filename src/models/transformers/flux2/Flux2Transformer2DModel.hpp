@@ -9,6 +9,8 @@
 #include "models/transformers/flux2/Flux2SingleTransformerBlock.hpp"
 #include "models/normalization/AdaLayerNormContinuous.hpp"
 
+class GGMLBackend;
+
 class Flux2Transformer2DModel : public Module {
 public:
     Flux2Transformer2DModel(
@@ -79,6 +81,8 @@ public:
         modules["norm_out"] = std::make_shared<AdaLayerNormContinuous>(inner_dim, inner_dim, false, eps, false);
         modules["proj_out"] = std::make_shared<Linear>(inner_dim, patch_size * patch_size * out_channels.value_or(in_channels), false);
     }
+
+    static Flux2Transformer2DModel from_pretrained(GGMLBackend& loader_backend, const std::string& path);
 
     Tensor forward(
         ggml_context* ctx,

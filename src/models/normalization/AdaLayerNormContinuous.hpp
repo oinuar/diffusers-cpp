@@ -39,7 +39,7 @@ public:
             x = std::static_pointer_cast<RMSNorm>(modules["norm"])->forward(ctx, x);
 
         // In Python: [:, None, :]
-        return x * (1 + scale).unsqueeze(1).permute<4>({0, 2, 1, 3}) + shift.unsqueeze(1).permute<4>({0, 2, 1, 3});
+        return x * (1 + scale).unsqueeze(1).permute({0, 2, 1, 3}) + shift.unsqueeze(1).permute({0, 2, 1, 3});
     }
 private:
     std::string norm_type_;

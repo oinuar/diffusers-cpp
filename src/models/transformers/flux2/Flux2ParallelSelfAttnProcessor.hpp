@@ -57,9 +57,9 @@ public:
         auto key = chunks.at(1);
         auto value = chunks.at(2);
 
-        query = query.unflatten<2>(-1, {heads_, -1});
-        key = key.unflatten<2>(-1, {heads_, -1});
-        value = value.unflatten<2>(-1, {heads_, -1});
+        query = query.unflatten(-1, {heads_, -1});
+        key = key.unflatten(-1, {heads_, -1});
+        value = value.unflatten(-1, {heads_, -1});
 
         auto norm_q = std::static_pointer_cast<RMSNorm>(modules["norm_q"]);
         auto norm_k = std::static_pointer_cast<RMSNorm>(modules["norm_k"]);
@@ -86,7 +86,7 @@ public:
             //backend=self._attention_backend,
             //parallel_config=self._parallel_config,
         );*/
-        hidden_states = hidden_states.flatten<2>({2, 3});
+        hidden_states = hidden_states.flatten({2, 3});
         hidden_states = hidden_states.to(query.dtype());
 
         auto mlp_act_fn = std::static_pointer_cast<Flux2SwiGLU>(modules["mlp_act_fn"]);

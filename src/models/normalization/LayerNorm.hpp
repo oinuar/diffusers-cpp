@@ -16,16 +16,16 @@ public:
         bias_(bias)
     {
         if (elementwise_affine) {
-            modules["weight"] = std::shared_ptr<Module>(new Parameter<1>({dim}));
+            modules["weight"] = std::make_shared<Parameter>(Tensor::Shape({dim}));
 
             if (bias)
-                modules["bias"] = std::shared_ptr<Module>(new Parameter<1>({dim}));
+                modules["bias"] = std::make_shared<Parameter>(Tensor::Shape({dim}));
         }
     }
 
     Tensor forward(ggml_context* ctx, Tensor input) {
-        auto weight = elementwise_affine_ ? std::static_pointer_cast<Parameter<1>>(modules["weight"])->forward() : Tensor();
-        auto bias = elementwise_affine_ && bias_ ? std::static_pointer_cast<Parameter<1>>(modules["bias"])->forward() : Tensor();
+        auto weight = elementwise_affine_ ? std::static_pointer_cast<Parameter>(modules["weight"])->forward() : Tensor();
+        auto bias = elementwise_affine_ && bias_ ? std::static_pointer_cast<Parameter>(modules["bias"])->forward() : Tensor();
 
         return Tensor(ctx, ggml_ext_layer_norm(ctx, *input, /*dim_,*/ *weight, *bias, eps_));
     }

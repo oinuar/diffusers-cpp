@@ -17,12 +17,12 @@ static Tensor apply_rotary_emb(
     if (sequence_dim == 2) {
         // x is [B, H, S, D] — broadcast cos/sin to [1, 1, S, D]
         auto s = cos.shape();
-        Tensor cos_b = cos.reshape<4>({1, 1, s[0], s[1]});
-        Tensor sin_b = sin.reshape<4>({1, 1, s[0], s[1]});
+        Tensor cos_b = cos.reshape({1, 1, s[0], s[1]});
+        Tensor sin_b = sin.reshape({1, 1, s[0], s[1]});
 
         // x_real/imag: reshape [B,H,S,D] → [B,H,S,D//2*2], chunk last dim → each [B,H,S,D//2]
         auto x_shape = x.shape();
-        Tensor x_pairs = x.reshape<4>({x_shape[0], x_shape[1], x_shape[2],
+        Tensor x_pairs = x.reshape({x_shape[0], x_shape[1], x_shape[2],
                                     (x_shape[3] / 2) * 2});
         auto parts = x_pairs.chunk(2, 3); // dim=3 in ggml order = last logical dim
 
@@ -33,18 +33,18 @@ static Tensor apply_rotary_emb(
     } else if (sequence_dim == 1) {
         // x is [B, S, H, D] — broadcast cos/sin to [1, S, 1, D]
         auto s = cos.shape();
-        Tensor cos_b = cos.reshape<4>({1, s[0], 1, s[1]});
-        Tensor sin_b = sin.reshape<4>({1, s[0], 1, s[1]});
+        Tensor cos_b = cos.reshape({1, s[0], 1, s[1]});
+        Tensor sin_b = sin.reshape({1, s[0], 1, s[1]});
 
         auto x_shape = x.shape();
-        Tensor x_pairs = x.reshape<4>({x_shape[0], x_shape[2], x_shape[3] / 2 * 2,
+        Tensor x_pairs = x.reshape({x_shape[0], x_shape[2], x_shape[3] / 2 * 2,
                                     1}); // reorder to [B,D//2*2,H,1] for ggml column-major → [B,H,S,D] logical
         auto parts = x_pairs.chunk(2, 1);
 
         Tensor x_rotated = Tensor::cat({-parts[1], parts[0]}, 1);
 
         // reshape back to [B,S,H,D] logical
-        return (x * cos_b + x_rotated * sin_b).reshape<4>({x_shape[0], x_shape[2],
+        return (x * cos_b + x_rotated * sin_b).reshape({x_shape[0], x_shape[2],
                                                         x_shape[3] / 2,
                                                         x_shape[1]});
     }
@@ -91,7 +91,7 @@ static std::pair<Tensor, Tensor> get_1d_rotary_pos_embed(
 
     // Create a constant tensor from CPU data.
     // TODO: this wont' work: we need to use a custom Module and initialize it with visitor pattern
-    Tensor freqs = Tensor::empty<1>(ctx, GGML_TYPE_F32, {half_dim});
+    Tensor freqs = Tensor::empty(ctx, GGML_TYPE_F32, {half_dim});
     ggml_backend_tensor_set(*freqs, freqs_data.data(), 0, ggml_nbytes(*freqs));
 
     // ── Step 2: Outer product pos ⊗ freqs → [S, half_dim] ─────────
@@ -99,8 +99,8 @@ static std::pair<Tensor, Tensor> get_1d_rotary_pos_embed(
     // With pos reshaped to [1, S] and freqs to [half_dim, 1]:
     //   A^T is [S, 1], B is [half_dim, 1], inner dims (1==1) match.
     //   Result C is [S, half_dim] ✓
-    Tensor pos_col = pos.reshape<2>({1, S});                    // [1, S]
-    Tensor freqs_row = freqs.reshape<2>({half_dim, 1});         // [half_dim, 1]
+    Tensor pos_col = pos.reshape({1, S});                    // [1, S]
+    Tensor freqs_row = freqs.reshape({half_dim, 1});         // [half_dim, 1]
     Tensor freqs_cis = Tensor(ctx, ggml_mul_mat(ctx, *pos_col, *freqs_row));  // [S, half_dim]
 
     // ── Step 3: cos / sin → [S, half_dim] ────────────────────────
@@ -111,9 +111,9 @@ static std::pair<Tensor, Tensor> get_1d_rotary_pos_embed(
     // Each element repeated twice consecutively along the last dimension.
     // Strategy: [S, half_dim] → [S*half_dim, 1] → concat w/ self → [S*half_dim, 2]
     //            → reshape to [S, dim]. Row-major layout ensures each element is duplicated.
-    Tensor flat = cos_raw.reshape<2>({S * half_dim, 1});          // [S*h, 1]
+    Tensor flat = cos_raw.reshape({S * half_dim, 1});          // [S*h, 1]
     Tensor cos_rep = Tensor::cat({flat, flat}, -1);         // [S*h, 2]
     Tensor sin_rep = Tensor::cat({flat, flat}, -1);         // [S*h, 2]
 
-    return {cos_rep.reshape<2>({S, dim}), sin_rep.reshape<2>({S, dim})};  // [S, D], [S, D]
+    return {cos_rep.reshape({S, dim}), sin_rep.reshape({S, dim})};  // [S, D], [S, D]
 }

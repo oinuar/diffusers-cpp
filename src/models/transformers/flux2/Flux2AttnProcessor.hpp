@@ -63,9 +63,9 @@ public:
         }
         // end of _get_qkv_projections(...)
 
-        query = query.unflatten<2>(-1, {heads_, -1});
-        key = key.unflatten<2>(-1, {heads_, -1});
-        value = value.unflatten<2>(-1, {heads_, -1});
+        query = query.unflatten(-1, {heads_, -1});
+        key = key.unflatten(-1, {heads_, -1});
+        value = value.unflatten(-1, {heads_, -1});
 
         auto norm_q = std::static_pointer_cast<RMSNorm>(modules["norm_q"]);
         auto norm_k = std::static_pointer_cast<RMSNorm>(modules["norm_k"]);
@@ -74,9 +74,9 @@ public:
         key = norm_k->forward(ctx, key);
 
         if (added_kv_proj_dim_) {
-            encoder_query = encoder_query.value().unflatten<2>(-1, {heads_, -1});
-            encoder_key = encoder_key.value().unflatten<2>(-1, {heads_, -1});
-            encoder_value = encoder_value.value().unflatten<2>(-1, {heads_, -1});
+            encoder_query = encoder_query.value().unflatten(-1, {heads_, -1});
+            encoder_key = encoder_key.value().unflatten(-1, {heads_, -1});
+            encoder_value = encoder_value.value().unflatten(-1, {heads_, -1});
 
             auto norm_added_q = std::static_pointer_cast<RMSNorm>(modules["norm_added_q"]);
             auto norm_added_k = std::static_pointer_cast<RMSNorm>(modules["norm_added_k"]);
@@ -107,7 +107,7 @@ public:
             //backend=self._attention_backend,
             //parallel_config=self._parallel_config,
         );*/
-        hidden_states = hidden_states.flatten<2>({2, 3});
+        hidden_states = hidden_states.flatten({2, 3});
         hidden_states = hidden_states.to(query.dtype());
 
         if (encoder_hidden_states) {

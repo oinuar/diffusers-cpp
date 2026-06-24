@@ -15,10 +15,10 @@ public:
         bias_(bias)
     {
         if (elementwise_affine) {
-            modules["weight"] = std::shared_ptr<Module>(new Parameter<1>({dim}));
+            modules["weight"] = std::make_shared<Parameter>(Tensor::Shape({dim}));
 
             if (bias)
-                modules["bias"] = std::shared_ptr<Module>(new Parameter<1>({dim}));
+                modules["bias"] = std::make_shared<Parameter>(Tensor::Shape({dim}));
         }
     }
 
@@ -28,12 +28,12 @@ public:
         hidden_states = hidden_states * rsqrt(variance + eps_);
 
         if (elementwise_affine_) {
-            auto weight = std::static_pointer_cast<Parameter<1>>(modules["weight"])->forward();
+            auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward();
 
             hidden_states = hidden_states * weight;
 
             if (bias_) {
-                auto bias = std::static_pointer_cast<Parameter<1>>(modules["bias"])->forward();
+                auto bias = std::static_pointer_cast<Parameter>(modules["bias"])->forward();
 
                 hidden_states = hidden_states + bias;
             }

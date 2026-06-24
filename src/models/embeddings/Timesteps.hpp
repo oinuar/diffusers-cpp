@@ -62,7 +62,7 @@ private:
         emb = exp(emb);
 
         // t_emb = timesteps[:, None] * emb[None, :] → [N, half_dim]
-        auto t_emb_2d = timesteps.reshape<2>({N, 1});   // [N, 1]
+        auto t_emb_2d = timesteps.reshape({N, 1});   // [N, 1]
         auto emb_2d = emb.unsqueeze(0);             // [1, half_dim]
         t_emb_2d = t_emb_2d * emb_2d;               // broadcasts to [N, half_dim]
 
@@ -84,7 +84,7 @@ private:
         // Zero pad if embedding_dim is odd → [N, embedding_dim + 1]
         // TODO: check this: Python: torch.nn.functional.pad(emb, (0, 1, 0, 0))
         if (embedding_dim % 2 == 1) {
-            auto padded = Tensor::zeros<4>(ctx, {0, 1, 0, 0});
+            auto padded = Tensor::zeros(ctx, {0, 1, 0, 0});
             t_concat = Tensor::cat({t_concat, padded}, -1);
         }
 

@@ -7,6 +7,7 @@
 #include <vector>
 #include <cmath>
 #include <limits>
+#include <sstream>
 
 #include "ggml.h"
 
@@ -21,6 +22,45 @@
  */
 class Tensor {
 public:
+    struct Shape {
+    public:
+        Shape() : ne_({0, 0, 0, 0}), size_(0) {}
+        Shape(const std::initializer_list<int64_t>& list) : ne_({0, 0, 0, 0}), size_(list.size()) {
+            size_t i = 0;
+
+            for (auto it = std::begin(list); it != std::end(list); ++it) 
+                ne_[i++] = *it;
+        }
+
+        const int64_t& operator [](const size_t& index) const { return ne_[index]; }
+
+        int64_t& operator [](const size_t& index) { return ne_[index]; }
+
+        size_t size() const { return size_; }
+
+        const int64_t* data() const { return ne_.data(); }
+
+        std::string to_string() const {
+            std::ostringstream oss;
+            oss << '(';
+
+            for (auto i = 0; i < size(); ++i) {
+                if (i > 0)
+                    oss << ", ";
+                oss << (*this)[i];
+            }
+
+            oss << ')';
+            return oss.str();
+        }
+
+    private:
+        std::array<int64_t, 4> ne_;
+        int size_;
+
+        friend class Tensor;
+    };
+
     Tensor() : ctx_(nullptr), t_(nullptr)
     {
     }
@@ -52,9 +92,13 @@ public:
         return Tensor(ctx_, ggml_cont(ctx_, t_));
     }
 
-    std::array<int64_t, 4> shape() const {
-        // TODO: make better shape type to avoid passing all the dims here
-        return {t_->ne[0], t_->ne[1], t_->ne[2], t_->ne[3]};
+    Shape shape() const {
+        if (!ctx_ || !t_)
+            return Shape();
+
+        Shape shape({t_->ne[0], t_->ne[1], t_->ne[2], t_->ne[3]});
+        shape.size_ = ndim();
+        return std::move(shape);
     }
 
     ggml_tensor* operator *() const {
@@ -62,14 +106,12 @@ public:
     }
 
 
-    template <size_t N>
     static Tensor empty(
         ggml_context* ctx,
         ggml_type type,
-        std::array<int64_t, N> shape)
+        const Shape& shape)
     {
-        static_assert(N >= 1 && N <= 4, "ggml supports tensor ranks from 1 to 4");
-        return Tensor(ctx, ggml_new_tensor(ctx, type, N, shape.data()));
+        return Tensor(ctx, ggml_new_tensor(ctx, type, shape.size(), shape.data()));
     }
 
     static Tensor scalar(
@@ -77,34 +119,28 @@ public:
         float value,
         ggml_type type = GGML_TYPE_F32)
     {
-        auto tensor = empty<1>(ctx, type, {1});
+        auto tensor = empty(ctx, type, {1});
         tensor.t_ = ggml_fill_inplace(tensor.ctx_, tensor.t_, value);
 
         return tensor;
     }
 
-    template <size_t N>
     static Tensor zeros(
         ggml_context* ctx,
-        std::array<int64_t, N> shape,
+        const Shape& shape,
         ggml_type type = GGML_TYPE_F32)
     {
-        static_assert(N >= 1 && N <= 4, "ggml supports tensor ranks from 1 to 4");
-
-        auto tensor = empty<N>(ctx, type, shape);
+        auto tensor = empty(ctx, type, shape);
         tensor.t_ = ggml_fill_inplace(ctx, tensor.t_, 0.0f);
         return tensor;
     }
 
-    template <size_t N>
     static Tensor ones(
         ggml_context* ctx,
-        std::array<int64_t, N> shape,
+        const Shape& shape,
         ggml_type type = GGML_TYPE_F32)
     {
-        static_assert(N >= 1 && N <= 4, "ggml supports tensor ranks from 1 to 4");
-
-        auto tensor = empty<N>(ctx, type, shape);
+        auto tensor = empty(ctx, type, shape);
         tensor.t_ = ggml_fill_inplace(ctx, tensor.t_, 1.0f);
         return tensor;
     }
@@ -122,23 +158,19 @@ public:
     static Tensor cat(const std::vector<Tensor>& tensors, int dim);
 
 
-    template <size_t N>
-    Tensor reshape(std::array<int64_t, N> shape) const;
+    Tensor reshape(const Shape& shape) const;
 
     /// Permute all four dimensions according to `order` [d0, d1, d2, d3].
     /// Negative indices are supported. Dimensions beyond ndim() are clamped.
-    template <size_t N>
-    Tensor permute(std::array<int, N> order) const;
+    Tensor permute(const Shape& order) const;
 
     Tensor squeeze() const;
 
     Tensor unsqueeze(int dim) const;
 
-    template <size_t N>
-    Tensor flatten(std::array<int64_t, N> shape) const { throw "not implemented yet"; }
+    Tensor flatten(const Shape& shape) const { throw "not implemented yet"; }
 
-    template <size_t N>
-    Tensor unflatten(int64_t dim, std::array<int64_t, N> shape) { throw "not implemented yet"; }
+    Tensor unflatten(int64_t dim, const Shape& shape) { throw "not implemented yet"; }
 
     /// Narrow a dimension: keep elements [start, start+length) along `dim`.
     Tensor narrow(int dim, int64_t start, int64_t length) const;
@@ -262,9 +294,7 @@ inline Tensor rsqrt(const Tensor& tensor) {
     return 1.0f / sqrt(tensor);
 }
 
-template <size_t N>
-Tensor Tensor::reshape(std::array<int64_t, N> new_shape) const {
-    static_assert(N >= 1 && N <= 4, "ggml supports tensor ranks from 1 to 4");
+inline Tensor Tensor::reshape(const Tensor::Shape& new_shape) const {
     throw_if_not_valid();
 
     // A reshape preserves linear storage order. A permuted/view tensor may not
@@ -276,7 +306,7 @@ Tensor Tensor::reshape(std::array<int64_t, N> new_shape) const {
     int infer_dim = -1;
     int64_t known_product = 1;
 
-    for (size_t i = 0; i < N; ++i) {
+    for (size_t i = 0; i < new_shape.size(); ++i) {
         const int64_t d = new_shape[i];
 
         if (d == -1) {
@@ -311,12 +341,12 @@ Tensor Tensor::reshape(std::array<int64_t, N> new_shape) const {
         ne[infer_dim] = old_numel / known_product;
     }
 
-    if (checked_numel(ne, static_cast<int>(N)) != old_numel) {
+    if (checked_numel(ne, new_shape.size()) != old_numel) {
         throw std::invalid_argument(
             "reshape cannot change the number of elements");
     }
 
-    switch (N) {
+    switch (new_shape.size()) {
         case 1:
             return Tensor(ctx_, ggml_reshape_1d(ctx_, t_, ne[0]));
         case 2:
@@ -332,16 +362,14 @@ Tensor Tensor::reshape(std::array<int64_t, N> new_shape) const {
 }
 
 
-template <size_t N>
-Tensor Tensor::permute(std::array<int, N> order) const {
-    static_assert(N >= 1 && N <= 4, "ggml supports tensor ranks from 1 to 4");
+inline Tensor Tensor::permute(const Tensor::Shape& order) const {
     throw_if_not_valid();
 
     const int rank = ndim();
 
     // Permit a full 4-axis ggml permutation, or a permutation of only the
     // logical dimensions. The latter leaves trailing singleton axes unchanged.
-    if (static_cast<int>(N) != rank && N != 4) {
+    if (order.size() != rank && order.size() != 4) {
         throw std::invalid_argument(
             "permute order must have ndim() entries or exactly 4 entries");
     }
@@ -349,7 +377,7 @@ Tensor Tensor::permute(std::array<int, N> order) const {
     std::array<int, 4> axes = { 0, 1, 2, 3 };
     std::array<bool, 4> seen = { false, false, false, false };
 
-    for (size_t i = 0; i < N; ++i) {
+    for (size_t i = 0; i < order.size(); ++i) {
         int axis = order[i];
 
         if (axis < 0) {
@@ -370,7 +398,7 @@ Tensor Tensor::permute(std::array<int, N> order) const {
 
     // If only logical axes were supplied, all logical axes must occur once.
     // Trailing physical ggml singleton axes remain identity-mapped.
-    if (N != 4) {
+    if (order.size() != 4) {
         for (int axis = 0; axis < rank; ++axis) {
             if (!seen[axis]) {
                 throw std::invalid_argument(
@@ -439,11 +467,6 @@ inline Tensor Tensor::unsqueeze(int dim) const {
 
     const int old_rank = ndim();
 
-    if (old_rank >= 4) {
-        throw std::invalid_argument(
-            "cannot unsqueeze: ggml supports at most 4 dimensions");
-    }
-
     dim = normalize_dim(dim, old_rank, true);
 
     const auto old_ne = shape();
@@ -491,7 +514,7 @@ inline Tensor Tensor::narrow(int dim, int64_t start, int64_t length) const {
         throw std::out_of_range("narrow range exceeds tensor dimension");
     }
 
-    std::array<int64_t, 4> view_ne = ne;
+    auto view_ne = ne;
     view_ne[dim] = length;
 
     // ggml strides (nb) are byte strides. Moving start elements along dim

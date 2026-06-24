@@ -2,18 +2,17 @@
 
 #include "modules/Module.hpp"
 #include "modules/Visitor.hpp"
-#include <iostream>
+#include "Tensor.hpp"
 
-template <size_t N>
 class Parameter : public Module {
 public:
-    Parameter(const std::array<int64_t, N>& shape)
+    Parameter(const Tensor::Shape& shape)
         : tensor_(), shape_(shape)
     {
     }
 
     Tensor forward() {
-        if (tensor_.ndim() != N)
+        if (tensor_.ndim() == 0)
             throw std::runtime_error("Undefined tensor parameter; did you forget to set it?");
 
         return tensor_;
@@ -23,7 +22,7 @@ public:
         tensor_ = tensor;
     }
 
-    const std::array<int64_t, N>& shape() const {
+    const Tensor::Shape& shape() const {
         return shape_;
     }
 
@@ -32,6 +31,6 @@ public:
     }
 
 private:
-    std::array<int64_t, N> shape_;
+    Tensor::Shape shape_;
     Tensor tensor_;
 };

@@ -63,8 +63,8 @@ public:
 
         if (split_hidden_states) {
             if (text_seq_len) {
-                encoder_hidden_states = hidden_states.narrow(1, 0, text_seq_len.value()); // Python: hidden_states[:, :text_seq_len]
-                hidden_states = hidden_states.narrow(1, text_seq_len.value(), hidden_states.shape()[1] - text_seq_len.value()); // Python: hidden_states[:, text_seq_len:]
+                encoder_hidden_states = hidden_states[{Tensor::Slice::all(), Tensor::Slice::range(std::nullopt, text_seq_len)}];
+                hidden_states = hidden_states[{Tensor::Slice::all(), Tensor::Slice::range(text_seq_len, std::nullopt)}];
                 return {encoder_hidden_states.value(), hidden_states};
             }
 

@@ -38,8 +38,9 @@ public:
         else if (norm_type_ == "rms_norm")
             x = std::static_pointer_cast<RMSNorm>(modules["norm"])->forward(ctx, x);
 
-        // In Python: [:, None, :]
-        return x * (1 + scale).unsqueeze(1).permute({0, 2, 1, 3}) + shift.unsqueeze(1).permute({0, 2, 1, 3});
+        x = x * (1 + scale);
+
+        return x[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}] + shift[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}];
     }
 private:
     std::string norm_type_;

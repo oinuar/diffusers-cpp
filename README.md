@@ -60,12 +60,35 @@ Weights are loaded from GGUF files via `GGUFLoaderVisitor`. The loader:
 2. Allocates all tensors into a ggml context bound to the target backend.
 3. Visits every `Parameter` in the module tree, validates dimension count and shape against the GGUF tensor, reads raw data from disk, and assigns it via `ggml_backend_tensor_set`.
 
-### Model Porting Strategy
+### Porting Strategy
 
 Each diffusers model is ported as a C++ class hierarchy that mirrors the Python structure:
 - Model classes (e.g., `Flux2Transformer2DModel`) expose static factory methods like `from_pretrained(backend, path)`.
 - Sub-modules (attention blocks, MLPs, normalization layers) are separate classes in organized directories (`models/transformers/flux2/`, `models/embeddings/`, `models/normalization/`, etc.).
 - The model's `accept()` method is called by the GGUF loader to traverse and populate all parameters.
+
+Here is a table of selected examples how Python syntax maps to C++:
+
+| Python | C++ |
+|--------|-----|
+| `torch.cat([encoder_query, query], dim=1)` | `Tensor::cat({encoder_query, query}, 1);` |
+| `.shape[1]` | `.shape()[1]` |
+| `.dtype` | `.dtype()` |
+| `self.linear_out = nn.Linear(inner_dim, dim_out, bias=bias)` | `modules["linear_out"] = std::make_shared<Linear>(inner_dim, dim_out, bias);` |
+| `x = self.linear_out(x)` | `auto linear_out = std::static_pointer_cast<Linear>(modules["linear_out"]); x = linear_out->forward(ctx, x);` |
+| `self.to_out[0](x)` | `auto to_out0 = std::static_pointer_cast<Linear>(modules["to_out.0"]); to_out0->forward(ctx, x);` |
+| `qkv, mlp_hidden_states = torch.split(hidden_states, [3 * attn.inner_dim, attn.mlp_hidden_dim * attn.mlp_mult_factor], dim=-1)` | `auto parts = hidden_states.split_with_sizes({3 * attn.inner_dim, attn.mlp_hidden_dim * attn.mlp_mult_factor}, -1); auto qkv = parts.at(0); auto mlp_hidden_states = parts.at(1);` |
+| `query.unflatten(-1, (attn.heads, -1))` | `query.unflatten(-1, {attn.heads, -1});` |
+| `hidden_states.flatten(2, 3)` | `hidden_states.flatten(2, 3);` |
+| `hidden_states.to(query.dtype)` | `hidden_states.to(query.dtype());` |
+| `x[:, None, :]` | `x[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}];` |
+| `x[:, 2, :]` | `x[{Tensor::Slice::all(), Tensor::Slice::index(2), Tensor::Slice::all()}];` |
+| `x[..., 0:10:2]` | `x[{Tensor::Slice::ellipsis(), Tensor::Slice::range(0, 10, 2)}];` |
+| `x[None, ...]` | `x[{Tensor::Slice::none(), Tensor::Slice::ellipsis()}];` |
+| `hidden_states[:, :text_seq_len]` | `hidden_states[{Tensor::Slice::all(), Tensor::Slice::range(std::nullopt, text_seq_len)}];` |
+| `hidden_states[:, text_seq_len:]` | `hidden_states[{Tensor::Slice::all(), Tensor::Slice::range(text_seq_len, std::nullopt)}];` |
+| Arithmetic operations | Operator overloads (use as-is) |
+
 
 ## Build Instructions
 

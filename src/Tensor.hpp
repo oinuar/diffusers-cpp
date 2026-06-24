@@ -6,16 +6,17 @@
 #include <stdexcept>
 #include <vector>
 #include <cmath>
+#include <optional>
 
 #include "ggml.h"
 
 /**
- * C++ wrapper around `ggml_tensor*` with a torch.Tensor-like API.
+ * `Tensor` is a C++ wrapper around `ggml_tensor*`. It provides a PyTorch-like
+ * API (`reshape`, `permute`, operations like `+`, `-`, `*`, `exp`, etc.) that
+ * constructs ggml graph nodes without executing computation. Actual computation
+ * happens when the caller builds and executes a ggml graph via the backend scheduler.
  *
- * Operations construct new ggml graph nodes in the same ggml_context.
- * No computation occurs until the caller builds and executes a ggml graph.
- *
- * The Tensor and all derived Tensor objects are valid only while ctx_ remains alive.
+ * The Tensor and all derived Tensor objects are valid only while context remains alive.
  * Tensor does not own the ggml_context or ggml_tensor storage.
  */
 class Tensor {
@@ -45,6 +46,53 @@ public:
         int size_;
 
         friend class Tensor;
+    };
+
+    struct Slice {
+        enum class Kind {
+            All,        // :
+            Index,      // i
+            Range,      // start:stop:step
+            NewAxis,    // None
+            Ellipsis,   // ...
+        };
+
+        Kind kind = Kind::All;
+        std::optional<int64_t> start;
+        std::optional<int64_t> stop;
+        int64_t step = 1;
+
+        static const Slice all() {
+            return {};
+        }
+
+        static Slice index(int64_t i) {
+            Slice s;
+            s.kind = Kind::Index;
+            s.start = i;
+            return s;
+        }
+
+        static Slice range(std::optional<int64_t> start, std::optional<int64_t> stop, int64_t step = 1) {
+            Slice s;
+            s.kind = Kind::Range;
+            s.start = start;
+            s.stop = stop;
+            s.step = step;
+            return s;
+        }
+
+        static Slice none() {
+            Slice s;
+            s.kind = Kind::NewAxis;
+            return s;
+        }
+
+        static Slice ellipsis() {
+            Slice s;
+            s.kind = Kind::Ellipsis;
+            return s;
+        }
     };
 
     Tensor() : ctx_(nullptr), t_(nullptr)
@@ -150,11 +198,11 @@ public:
     /// Negative indices are supported. Dimensions beyond ndim() are clamped.
     Tensor permute(const Shape& order) const;
 
-    Tensor squeeze() const;
+    Tensor squeeze(int dim) const;
 
     Tensor unsqueeze(int dim) const;
 
-    Tensor flatten(const Shape& shape) const;
+    Tensor flatten(int start_dim, int end_dim) const;
 
     Tensor unflatten(int64_t dim, const Shape& shape);
 
@@ -166,6 +214,8 @@ public:
 
     /// Split a tensor into chunks of size `split_size` along dimension `dim`.
     std::vector<Tensor> split(int64_t split_size, int dim = 0) const;
+
+    std::vector<Tensor> split_with_sizes(const std::vector<int64_t>& split_sizes, int dim) const;
 
     Tensor to(ggml_type type) const {
         return Tensor(ctx_, ggml_cast(ctx_, t_, type));
@@ -215,6 +265,12 @@ public:
     Tensor mean(/*TODO: dim?*/) const {
         return Tensor(ctx_, ggml_mean(ctx_, t_));
     }
+
+    Tensor operator[](const size_t& index) const {
+        return narrow(0, index, 1).squeeze(0);
+    }
+
+    Tensor operator [](const std::vector<Slice>& indices) const;
     
 private:
     ggml_context* ctx_;

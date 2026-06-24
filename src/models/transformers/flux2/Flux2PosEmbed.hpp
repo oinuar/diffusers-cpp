@@ -25,7 +25,7 @@ public:
             auto [cos, sin] = get_1d_rotary_pos_embed(
                 ctx,
                 static_cast<int64_t>(axes_dim_[i]),
-                pos.narrow(-1, static_cast<int64_t>(i), 1).squeeze(),  // [S]
+                pos[{Tensor::Slice::ellipsis(), Tensor::Slice::index(i)}], // [S]
                 static_cast<double>(theta_)
             );
 

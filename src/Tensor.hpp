@@ -43,14 +43,17 @@ public:
      */
     struct Shape {
     public:
-        /** @brief Default-constructs a zero-shape with size = 0. */
-        Shape() : ne_({0, 0, 0, 0}), size_(0) {}
+        using iterator = std::array<int64_t, 4>::iterator;
+        using const_iterator = std::array<int64_t, 4>::const_iterator;
+
+        /** @brief Default-constructs a zero-shape with specified rank. */
+        Shape(size_t rank = 0) : ne_({0, 0, 0, 0}), rank_(rank) {}
 
         /** @brief Constructs a shape from an initializer list of dimension sizes.
          *
          * The number of elements in the list determines size. All remaining dimension slots are zeroed.
          */
-        Shape(const std::initializer_list<int64_t>& list) : ne_({0, 0, 0, 0}), size_(list.size()) {
+        Shape(const std::initializer_list<int64_t>& list) : ne_({0, 0, 0, 0}), rank_(list.size()) {
             size_t i = 0;
 
             for (auto it = std::begin(list); it != std::end(list); ++it)
@@ -64,7 +67,7 @@ public:
         int64_t& operator [](const size_t& index) { return ne_[index]; }
 
         /** @brief Returns the logical number of dimensions (0–4). */
-        size_t size() const { return size_; }
+        size_t rank() const { return rank_; }
 
         /** @brief Returns a pointer to the raw dimension array. */
         const int64_t* data() const { return ne_.data(); }
@@ -74,7 +77,7 @@ public:
 
     private:
         std::array<int64_t, 4> ne_;
-        int size_;
+        int rank_;
 
         friend class Tensor;
     };
@@ -186,7 +189,7 @@ public:
             return Shape();
 
         Shape shape({t_->ne[0], t_->ne[1], t_->ne[2], t_->ne[3]});
-        shape.size_ = ndim();
+        shape.rank_ = ndim();
         return std::move(shape);
     }
 
@@ -202,7 +205,7 @@ public:
         ggml_type type,
         const Shape& shape)
     {
-        return Tensor(ctx, ggml_new_tensor(ctx, type, shape.size(), shape.data()));
+        return Tensor(ctx, ggml_new_tensor(ctx, type, shape.rank(), shape.data()));
     }
 
     /** @brief Creates a scalar tensor filled with the given value. */
@@ -296,6 +299,8 @@ public:
 
     /** @brief Casts a tensor to type `type`. */
     Tensor to(ggml_type type) const {
+        if (type == dtype())
+            return *this;
         return Tensor(ctx_, ggml_cast(ctx_, t_, type));
     }
 

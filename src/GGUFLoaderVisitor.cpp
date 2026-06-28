@@ -56,8 +56,8 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
     const std::streamoff offs = gguf_get_data_offset(gguf_ctx_) + gguf_get_tensor_offset(gguf_ctx_, tensor_id);
 
     // Validate dimensions
-    if (ggml_n_dims(tensor) != parameter.shape().size())
-        throw std::runtime_error("Error while loading Tensor '" + model_path + "': Parameter dimension mismatch: expected " + std::to_string(parameter.shape().size()) + ", got " + std::to_string(ggml_n_dims(tensor)));
+    if (ggml_n_dims(tensor) != parameter.shape().rank())
+        throw std::runtime_error("Error while loading Tensor '" + model_path + "': Parameter rank mismatch: expected " + std::to_string(parameter.shape().rank()) + ", got " + std::to_string(ggml_n_dims(tensor)));
 
     // Validate shape
     for (auto i = 0; i < ggml_n_dims(tensor); ++i) {

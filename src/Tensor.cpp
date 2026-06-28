@@ -6,7 +6,7 @@ std::string Tensor::Shape::to_string() const {
     std::ostringstream oss;
     oss << '(';
 
-    for (auto i = 0; i < size(); ++i) {
+    for (auto i = 0; i < rank(); ++i) {
         if (i > 0)
             oss << ", ";
         oss << (*this)[i];
@@ -70,7 +70,7 @@ Tensor Tensor::reshape(const Shape& shape) const {
     int infer_dim = -1;
     int64_t known_product = 1;
 
-    for (size_t i = 0; i < shape.size(); ++i) {
+    for (size_t i = 0; i < shape.rank(); ++i) {
         const int64_t value = shape[i];
 
         if (value == -1) {
@@ -112,7 +112,7 @@ Tensor Tensor::reshape(const Shape& shape) const {
         throw std::invalid_argument(
             "reshape(): requested shape is incompatible with tensor size");
 
-    switch (shape.size()) {
+    switch (shape.rank()) {
         case 1:
             return Tensor(ctx_, ggml_reshape_1d(ctx_, t_, out[0]));
         case 2:
@@ -131,7 +131,7 @@ Tensor Tensor::permute(const Shape& order) const {
 
     const int rank = ndim();
 
-    if (order.size() != static_cast<size_t>(rank)) {
+    if (order.rank() != static_cast<size_t>(rank)) {
         throw std::invalid_argument(
             "permute(): order must specify exactly one dimension for every tensor dimension");
     }
@@ -217,7 +217,7 @@ Tensor Tensor::unsqueeze(int dim) const {
 
     Shape result_shape;
     result_shape.ne_ = out;
-    result_shape.size_ = rank + 1;
+    result_shape.rank_ = rank + 1;
 
     return reshape(result_shape);
 }
@@ -259,7 +259,7 @@ Tensor Tensor::flatten(int start_dim, int end_dim) const {
 
     Shape result_shape;
     result_shape.ne_ = out;
-    result_shape.size_ = out_rank;
+    result_shape.rank_ = out_rank;
 
     return reshape(result_shape);
 }
@@ -271,7 +271,7 @@ Tensor Tensor::unflatten(int64_t dim, const Shape& shape) {
     const int rank = ndim();
     const int target_dim = normalize_dim(static_cast<int>(dim), rank);
 
-    const int new_rank = rank - 1 + static_cast<int>(shape.size());
+    const int new_rank = rank - 1 + static_cast<int>(shape.rank());
     if (new_rank > 4)
         throw std::invalid_argument("unflatten(): only at most 4 dimensions are supported");
 
@@ -285,7 +285,7 @@ Tensor Tensor::unflatten(int64_t dim, const Shape& shape) {
     int infer_dim = -1;
     int64_t known_product = 1;
 
-    for (size_t i = 0; i < shape.size(); ++i) {
+    for (size_t i = 0; i < shape.rank(); ++i) {
         const int64_t value = shape[i];
 
         if (value == -1) {
@@ -328,7 +328,7 @@ Tensor Tensor::unflatten(int64_t dim, const Shape& shape) {
 
     Shape result_shape;
     result_shape.ne_ = out;
-    result_shape.size_ = out_rank;
+    result_shape.rank_ = out_rank;
 
     return reshape(result_shape);
 }

@@ -10,35 +10,66 @@
 
 #include "ggml.h"
 
-/**
- * `Tensor` is a C++ wrapper around `ggml_tensor*`. It provides a PyTorch-like
- * API (`reshape`, `permute`, operations like `+`, `-`, `*`, `exp`, etc.) that
- * constructs ggml graph nodes without executing computation. Actual computation
- * happens when the caller builds and executes a ggml graph via the backend scheduler.
+/** @file Tensor.hpp
  *
- * The Tensor and all derived Tensor objects are valid only while context remains alive.
- * Tensor does not own the ggml_context or ggml_tensor storage.
+ * Core tensor abstraction for the diffusers pipeline implementation in C++/GGML.
+ * Provides a PyTorch-like API that constructs ggml computation graph nodes without
+ * executing computation. Actual execution happens via the backend scheduler (GGMLScheduler).
+ */
+
+/** @brief Non-owning handle to a ggml_tensor within a ggml_context.
+ *
+ * - **Non-owning**: Tensor does not own its ggml_context or storage. This avoids per-tensor
+ *   allocations and matches ggml's single-context model. In diffusers pipelines, forward passes
+ *   construct long chains of tensor operations — materializing each as owned objects would add
+ *   significant overhead. Tensors are valid only while the parent context remains alive.
+ * - **Graph-building semantics**: All operations construct ggml graph nodes in-place; no computation
+ *   occurs at construction time. The caller builds and executes the complete compute graph via
+ *   GGMLScheduler, matching PyTorch's lazy autograd but delegating execution to ggml.
+ * - **View vs copy semantics**: `narrow` and `permute` produce view tensors that share the underlying
+ *   buffer. `contiguous` always produces a copy tensor. Shape-changing operations require contiguous
+ *   storage and rely on linear element counts rather than stride information.
+ * - **Max rank of 4**: ggml tensors have a maximum rank of 4; Tensor::Shape enforces this with exactly
+ *   4 dimension slots plus a logical size field indicating the actual number of dimensions used.
  */
 class Tensor {
 public:
+    /** @brief Shape descriptor for tensors with up to 4 dimensions.
+     *
+     * Stores exactly 4 dimension slots (matching ggml's maximum tensor rank) plus a logical size field
+     * indicating how many dimensions are actually in use. The size field allows representing tensors of
+     * any rank from 0 to 4 within the fixed 4-element array. Negative indexing is supported for operator[]
+     * access (e.g., -1 refers to the last dimension).
+     */
     struct Shape {
     public:
+        /** @brief Default-constructs a zero-shape with size = 0. */
         Shape() : ne_({0, 0, 0, 0}), size_(0) {}
+
+        /** @brief Constructs a shape from an initializer list of dimension sizes.
+         *
+         * The number of elements in the list determines size. All remaining dimension slots are zeroed.
+         */
         Shape(const std::initializer_list<int64_t>& list) : ne_({0, 0, 0, 0}), size_(list.size()) {
             size_t i = 0;
 
-            for (auto it = std::begin(list); it != std::end(list); ++it) 
+            for (auto it = std::begin(list); it != std::end(list); ++it)
                 ne_[i++] = *it;
         }
 
+        /** @brief Accesses the dimension at the given index. */
         const int64_t& operator [](const size_t& index) const { return ne_[index]; }
 
+        /** @brief Mutable access to the dimension at the given index. */
         int64_t& operator [](const size_t& index) { return ne_[index]; }
 
+        /** @brief Returns the logical number of dimensions (0–4). */
         size_t size() const { return size_; }
 
+        /** @brief Returns a pointer to the raw dimension array. */
         const int64_t* data() const { return ne_.data(); }
 
+        /** @brief Converts the shape to a human-readable string representation. */
         std::string to_string() const;
 
     private:
@@ -48,13 +79,19 @@ public:
         friend class Tensor;
     };
 
+    /** @brief Describes a dimension slice for indexing operations.
+     *
+     * Supports PyTorch-like slicing syntax: full slice (:), single index (i), range with step (start:stop:step),
+     * new axis insertion (None), and ellipsis (...). Used by operator[] with a vector of Slices for advanced indexing.
+     */
     struct Slice {
+        /** @brief The type of slice operation to perform. */
         enum class Kind {
-            All,        // :
-            Index,      // i
-            Range,      // start:stop:step
-            NewAxis,    // None
-            Ellipsis,   // ...
+            All,        // : — select all elements along dimension
+            Index,      // i — select single element at index i (dimension is removed)
+            Range,      // start:stop:step — select elements in range with step
+            NewAxis,    // None — insert a new dimension of size 1
+            Ellipsis,   // ... — expand to fill missing dimensions
         };
 
         Kind kind = Kind::All;
@@ -62,10 +99,12 @@ public:
         std::optional<int64_t> stop;
         int64_t step = 1;
 
+        /** @brief Creates a full-slice (:). */
         static const Slice all() {
             return {};
         }
 
+        /** @brief Creates an index slice (i) selecting element at position i. */
         static Slice index(int64_t i) {
             Slice s;
             s.kind = Kind::Index;
@@ -73,6 +112,7 @@ public:
             return s;
         }
 
+        /** @brief Creates a range slice (start:stop:step). */
         static Slice range(std::optional<int64_t> start, std::optional<int64_t> stop, int64_t step = 1) {
             Slice s;
             s.kind = Kind::Range;
@@ -82,12 +122,14 @@ public:
             return s;
         }
 
+        /** @brief Creates a new-axis slice (None). */
         static Slice none() {
             Slice s;
             s.kind = Kind::NewAxis;
             return s;
         }
 
+        /** @brief Creates an ellipsis slice (...). */
         static Slice ellipsis() {
             Slice s;
             s.kind = Kind::Ellipsis;
@@ -95,13 +137,18 @@ public:
         }
     };
 
-    Tensor() : ctx_(nullptr), t_(nullptr)
-    {
-    }
+    /** @brief Default-constructs an invalid (empty) Tensor. */
+    Tensor() : ctx_(nullptr), t_(nullptr) {}
 
+    /** @brief Constructs a Tensor wrapping the given ggml pointers.
+     *
+     * This is the only way to create a valid Tensor from raw ggml objects. The Tensor does not assume ownership
+     * of either pointer — it is valid only while both ctx and t remain alive.
+     */
     explicit Tensor(ggml_context* ctx, ggml_tensor* t)
         : ctx_(ctx), t_(t) {}
 
+    /** @brief Returns the number of logical dimensions (0–4). */
     int ndim() const {
         if (!ctx_ || !t_)
             return 0;
@@ -109,6 +156,7 @@ public:
         return ggml_n_dims(t_);
     }
 
+    /** @brief Returns the total number of elements in the tensor. */
     int64_t numel() const {
         if (!ctx_ || !t_)
             return 0;
@@ -116,16 +164,23 @@ public:
         return ggml_nelements(t_);
     }
 
+    /** @brief Returns the data type of the underlying ggml_tensor. */
     ggml_type dtype() const {
         throw_if_not_valid();
         return t_->type;
     }
 
+    /** @brief Returns a contiguous copy of this tensor.
+     *
+     * Always produces a copy tensor regardless of whether the input is already contiguous. This is used when a 
+     * shape-changing operation requires contiguous memory layout (e.g., reshape on non-contiguous tensors).
+     */
     Tensor contiguous() const {
         throw_if_not_valid();
         return Tensor(ctx_, ggml_cont(ctx_, t_));
     }
 
+    /** @brief Returns the logical shape of this tensor. */
     Shape shape() const {
         if (!ctx_ || !t_)
             return Shape();
@@ -135,11 +190,13 @@ public:
         return std::move(shape);
     }
 
+    /** @brief Returns the raw ggml_tensor pointer. */
     ggml_tensor* operator *() const {
         return t_;
     }
 
 
+    /** @brief Creates an uninitialized tensor with the given shape and type. */
     static Tensor empty(
         ggml_context* ctx,
         ggml_type type,
@@ -148,6 +205,7 @@ public:
         return Tensor(ctx, ggml_new_tensor(ctx, type, shape.size(), shape.data()));
     }
 
+    /** @brief Creates a scalar tensor filled with the given value. */
     static Tensor scalar(
         ggml_context* ctx,
         float value,
@@ -159,6 +217,7 @@ public:
         return tensor;
     }
 
+    /** @brief Creates a zero-filled tensor with the given shape and type. */
     static Tensor zeros(
         ggml_context* ctx,
         const Shape& shape,
@@ -169,6 +228,7 @@ public:
         return tensor;
     }
 
+    /** @brief Creates a one-filled tensor with the given shape and type. */
     static Tensor ones(
         ggml_context* ctx,
         const Shape& shape,
@@ -188,35 +248,53 @@ public:
         return Tensor(ctx, ggml_arange(ctx, start, stop, step));
     }
 
-    /// Concates tensors along dimension `dim`.
+    /** @brief Concatenates a list of tensors along the given dimension `dim`. */
     static Tensor cat(const std::vector<Tensor>& tensors, int dim);
 
 
+    /** @brief Reshapes the tensor to a new shape.
+     *
+     * If the current tensor is non-contiguous, it is first made contiguous (copy). Shape-changing operations 
+     * rely on linear element counts — the total number of elements must match. A dimension value of -1 
+     * triggers automatic inference from the remaining dimensions (total elements / product of known dims).
+     */
     Tensor reshape(const Shape& shape) const;
 
-    /// Permute all four dimensions according to `order` [d0, d1, d2, d3].
-    /// Negative indices are supported. Dimensions beyond ndim() are clamped.
+    /** @brief Permutes all four dimensions according to `order` [d0, d1, d2, d3].
+     *
+     * This produces a view tensor (shares underlying buffer). Negative indices are supported for each 
+     * dimension in the order (e.g., -1 refers to the last dimension). Dimensions beyond ndim() are clamped.
+     */
     Tensor permute(const Shape& order) const;
 
+    /** @brief Removes a single dimension at the given index `dim` (must have size 1). */
     Tensor squeeze(int dim) const;
 
+    /** @brief Inserts a new dimension of size 1 at the given index `dim`. */
     Tensor unsqueeze(int dim) const;
 
+    /** @brief Flattens dimensions from `start_dim` to `end_dim` into a single dimension. */
     Tensor flatten(int start_dim, int end_dim) const;
 
+    /** @brief Reverses a previous flatten: splits dimension `dim` into the given shape. */
     Tensor unflatten(int64_t dim, const Shape& shape);
 
-    /// Narrow a dimension: keep elements [start, start+length) along `dim`.
+    /** @brief Narrows a dimension: keeps elements [start, start+length) along `dim`.
+     *
+     * This produces a view tensor (shares underlying buffer). Equivalent to PyTorch's narrow() indexing.
+     */
     Tensor narrow(int dim, int64_t start, int64_t length) const;
 
-    /// Chunk a tensor into `n` roughly equal pieces along dimension `dim`.
+    /** @brief Chunks a tensor into `n` roughly equal pieces along dimension `dim`. */
     std::vector<Tensor> chunk(int n, int dim = 0) const;
 
-    /// Split a tensor into chunks of size `split_size` along dimension `dim`.
+    /** @brief Splits a tensor into chunks of size `split_size` along dimension `dim`. */
     std::vector<Tensor> split(int64_t split_size, int dim = 0) const;
 
+    /** @brief Splits a tensor into chunks of specified sizes along dimension `dim`. */
     std::vector<Tensor> split_with_sizes(const std::vector<int64_t>& split_sizes, int dim) const;
 
+    /** @brief Casts a tensor to type `type`. */
     Tensor to(ggml_type type) const {
         return Tensor(ctx_, ggml_cast(ctx_, t_, type));
     }

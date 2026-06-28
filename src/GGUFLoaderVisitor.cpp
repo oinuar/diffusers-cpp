@@ -10,7 +10,7 @@
 
 #include <iostream>
 
-static std::string to_model_path(const std::vector<std::string>& path) {
+static std::string join_path(const std::vector<std::string>& path) {
     return std::accumulate(std::begin(path), std::end(path), std::string(""), [](const std::string& acc, const std::string& x) {
         if (acc.empty())
             return x;
@@ -44,11 +44,11 @@ GGUFLoaderVisitor::~GGUFLoaderVisitor() {
 }
 
 void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> path) {
-    auto model_path = to_model_path(path);
+    auto model_path = join_path(path);
     auto it = lookup_.find(model_path);
 
     if (it == std::end(lookup_))
-        throw std::runtime_error("Error while loading Tensor '" + model_path + "': not found");
+        throw std::runtime_error("Error while loading Tensor '" + model_path + "': Tensor not found");
 
     auto& tensor_id = it->second;
     auto tensor = ggml_get_tensor(ctx_, it->first.c_str());
@@ -57,12 +57,12 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
 
     // Validate dimensions
     if (ggml_n_dims(tensor) != parameter.shape().size())
-        throw std::runtime_error("Error while loading Tensor '" + model_path + "': dimensions missmatch: " + std::to_string(ggml_n_dims(tensor)) + " != " + std::to_string(parameter.shape().size()));
+        throw std::runtime_error("Error while loading Tensor '" + model_path + "': Parameter dimension mismatch: expected " + std::to_string(parameter.shape().size()) + ", got " + std::to_string(ggml_n_dims(tensor)));
 
     // Validate shape
     for (auto i = 0; i < ggml_n_dims(tensor); ++i) {
         if (tensor->ne[i] != parameter.shape()[i])
-            throw std::runtime_error("Error while loading Tensor '" + model_path + "': shape missmatch: dimension " + std::to_string(i + 1) + " is expected to be " + std::to_string(parameter.shape()[i]) + ", but it is " + std::to_string(tensor->ne[i]));
+            throw std::runtime_error("Error while loading Tensor '" + model_path + "': Parameter shape mismatch: expected " + std::to_string(parameter.shape()[i]) + ", got " + std::to_string(tensor->ne[i]));
     }
 
     std::vector<std::byte> buf(ggml_nbytes(tensor));

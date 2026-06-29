@@ -113,10 +113,10 @@ public:
         if (encoder_hidden_states) {
             auto to_add_out = std::static_pointer_cast<Linear>(modules["to_add_out"]);
 
-            // TODO: missing split_with_sizes()
-            auto parts = /*hidden_states.split_with_sizes(
-                {encoder_hidden_states.value().shape()[1], hidden_states.shape()[1] - encoder_hidden_states.value().shape()[1]}, 1
-            );*/ std::vector<Tensor>({encoder_hidden_states.value(), hidden_states});
+            auto parts = hidden_states.split_with_sizes({
+                encoder_hidden_states.value().shape()[1],
+                hidden_states.shape()[1] - encoder_hidden_states.value().shape()[1]
+            }, 1);
             
             encoder_hidden_states = parts.at(0);
             hidden_states = parts.at(1);

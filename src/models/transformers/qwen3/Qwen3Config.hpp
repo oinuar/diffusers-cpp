@@ -12,7 +12,7 @@ struct Qwen3Config {
     int max_position_embeddings = 32768;
     float initializer_range = 0.02;
     float rms_norm_eps = 1e-6;
-    bool use_cache = true;
+    bool use_cache = false; //true;
     bool tie_word_embeddings = false;
     // RopeParameters rope_parameters | dict | None = None;
     bool attention_bias = false;

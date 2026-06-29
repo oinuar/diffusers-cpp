@@ -46,8 +46,7 @@ public:
 
         hidden_states = to_qkv_mlp_proj->forward(ctx, hidden_states);
 
-        // TODO: no split
-        auto parts = std::vector<Tensor>({hidden_states, hidden_states}); // hidden_states.split({3 * inner_dim_, mlp_hidden_dim_ * mlp_mult_factor_}, -1);
+        auto parts = hidden_states.split_with_sizes({3 * inner_dim_, mlp_hidden_dim_ * mlp_mult_factor_}, -1);
         auto qkv = parts.at(0);
         auto mlp_hidden_states = parts.at(1);
 

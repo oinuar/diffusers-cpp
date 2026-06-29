@@ -1,7 +1,5 @@
 #pragma once
 
-#pragma once
-
 #include "modules/Module.hpp"
 #include "modules/Linear.hpp"
 #include "modules/Dropout.hpp"

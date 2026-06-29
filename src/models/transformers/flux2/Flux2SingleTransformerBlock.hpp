@@ -37,7 +37,7 @@ public:
         ggml_context* ctx,
         Tensor hidden_states,
         std::optional<Tensor> encoder_hidden_states,
-        Tensor temb_mob,
+        Tensor temb_mod,
         std::optional<std::tuple<Tensor, Tensor>> image_rotary_emb = std::nullopt,
         bool split_hidden_states = false,
         std::optional<int64_t> text_seq_len = std::nullopt
@@ -50,7 +50,7 @@ public:
             hidden_states = Tensor::cat({encoder_hidden_states.value(), hidden_states}, 1);
         }
 
-        auto [mod_shift, mod_scale, mod_gate] = Flux2Modulation::split(temb_mob, 1)[0];
+        auto [mod_shift, mod_scale, mod_gate] = Flux2Modulation::split(temb_mod, 1)[0];
 
         auto norm_hidden_states = norm->forward(ctx, hidden_states);
         norm_hidden_states = (1.0f + mod_scale) * norm_hidden_states + mod_shift;

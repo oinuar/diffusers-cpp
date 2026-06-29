@@ -2,7 +2,6 @@
 
 #include "modules/Module.hpp"
 #include "modules/Linear.hpp"
-#include "models/transformers/flux2/Flux2ParallelSelfAttention.hpp"
 #include "models/transformers/flux2/Flux2SwiGLU.hpp"
 #include "models/normalization/RMSNorm.hpp"
 

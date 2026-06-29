@@ -48,7 +48,7 @@ public:
         Tensor encoder_hidden_states,
         Tensor temb_mod_img,
         Tensor temb_mod_txt,
-        std::optional<std::tuple<Tensor, Tensor>> image_rotary_emb = {}
+        std::optional<std::tuple<Tensor, Tensor>> image_rotary_emb = std::nullopt
         //Tensor joint_attention_kwargs: dict[str, Any] | None = None,
     ) {
         // Modulation parameters shape: [1, 1, self.dim]

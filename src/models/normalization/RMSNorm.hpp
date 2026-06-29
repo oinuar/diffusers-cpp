@@ -23,7 +23,7 @@ public:
     }
 
     Tensor forward(ggml_context* ctx, Tensor hidden_states) {
-        auto variance = hidden_states.pow(2).mean(/*-1, TODO: check*/);
+        auto variance = hidden_states.pow(2).mean(-1, true); // mean along last dim, keepdim=True for broadcasting
         
         hidden_states = hidden_states * rsqrt(variance + eps_);
 

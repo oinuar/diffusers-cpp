@@ -1,18 +1,21 @@
 #pragma once
 
 #include "modules/Module.hpp"
-#include "models/transformers/qwen3/Qwen3Config.hpp"
+
+class Qwen3Config;
 
 class Qwen3DecoderLayer : public Module {
 public:
-    Qwen3DecoderLayer(const QwenConfig& config, int layer_idx);
+    Qwen3DecoderLayer(const Qwen3Config& config, int layer_idx);
 
     Tensor forward(
         ggml_context* ctx,
         Tensor hidden_states,
-        std::optional<Tensor> attention_mask = std::nullopt,
-        std::optional<Tensor> position_ids = std::nullopt,
-        //past_key_values: Cache | None = None,
-        bool use_cache = false,
-        std::optional<std::tuple<Tensor, Tensor>> position_embeddings = std::nullopt);
+        std::optional<Tensor> attention_mask,
+        std::pair<Tensor, Tensor> position_embeddings,
+        std::optional<Qwen3Cache>& past_key_values,
+        bool use_cache);
+
+private:
+    int layer_idx_;
 };

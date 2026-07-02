@@ -331,12 +331,20 @@ public:
         return Tensor(ctx_, ggml_div(ctx_, t_, rhs.t_));
     }
 
+    Tensor operator+(float rhs) const {
+        return *this + scalar(ctx_, rhs);
+    }
+
+    Tensor operator-(float rhs) const {
+        return *this - scalar(ctx_, rhs);
+    }
+
     Tensor operator*(float rhs) const {
         return Tensor(ctx_, ggml_scale(ctx_, t_, rhs));
     }
 
-    Tensor operator+(float rhs) const {
-        return *this + scalar(ctx_, rhs);
+    Tensor operator/(float rhs) const {
+        return *this / scalar(ctx_, rhs);
     }
 
     Tensor pow(float exponent) const {

@@ -89,25 +89,25 @@ Tensor::Shape ArgumentParser::get<Tensor::Shape>(std::string_view option) const
 }
 
 template <>
-Tensor ArgumentParser::get<Tensor>(std::string_view option) const
+std::pair<Tensor::Shape, std::vector<float>> ArgumentParser::get<std::pair<Tensor::Shape, std::vector<float>>>(std::string_view option) const
 {
     const std::string value = get<std::string>(option);
 
     TensorLiteralParser parser(value);
-    auto parsed = parser.parse();
+    return parser.parse();
+}
 
-    std::cout << parsed.shape.to_string() << std::endl;
+template <>
+std::vector<Tensor> ArgumentParser::get<std::vector<Tensor>>(std::string_view option) const
+{
+    // TODO: implement
+    return {};
+}
 
-    //Tensor t = Tensor::empty(ctx, GGML_TYPE_F32, parsed.shape);
-
-    // TODO: fill data elsewhere
-    /*std::memcpy(
-        ggml_get_data(*t),
-        parsed.values.data(),
-        parsed.values.size() * sizeof(float)
-    );*/
-
-    return Tensor();
+template <typename T>
+T ArgumentParser::get(std::string_view option) const
+{
+    return parse_number<T>(get<std::string>(option));
 }
 
 template<typename T>
@@ -124,10 +124,4 @@ T ArgumentParser::parse_number(const std::string& value)
         throw std::runtime_error("Invalid number: " + value);
 
     return result;
-}
-
-template <typename T>
-T ArgumentParser::get(std::string_view option) const
-{
-    return parse_number<T>(get<std::string>(option));
 }

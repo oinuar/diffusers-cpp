@@ -10,17 +10,12 @@
 #include <iomanip>
 #include "Tensor.hpp"
 
-struct ParsedTensor {
-    Tensor::Shape shape;
-    std::vector<float> values;
-};
-
 class TensorLiteralParser {
 public:
     explicit TensorLiteralParser(std::string_view s)
         : s_(s), i_(0) {}
 
-    ParsedTensor parse() {
+    std::pair<Tensor::Shape, std::vector<float>> parse() {
         skip_ws();
         auto result = parse_array(0);
         skip_ws();
@@ -28,10 +23,7 @@ public:
         if (i_ != s_.size())
             throw std::runtime_error("Unexpected trailing characters in tensor literal");
 
-        ParsedTensor out;
-        out.shape = result.shape;
-        out.values = std::move(result.values);
-        return out;
+        return {result.shape, std::move(result.values)};
     }
 
 private:

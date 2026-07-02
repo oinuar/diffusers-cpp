@@ -41,7 +41,7 @@ public:
      * any rank from 0 to 4 within the fixed 4-element array. Negative indexing is supported for operator[]
      * access (e.g., -1 refers to the last dimension).
      */
-    struct Shape {
+    class Shape {
     public:
         using iterator = std::array<int64_t, 4>::iterator;
         using const_iterator = std::array<int64_t, 4>::const_iterator;
@@ -74,6 +74,11 @@ public:
 
         /** @brief Converts the shape to a human-readable string representation. */
         std::string to_string() const;
+
+        iterator begin() { return ne_.begin(); }
+        iterator end() { return ne_.end(); }
+        const_iterator begin() const { return ne_.begin(); }
+        const_iterator end() const { return ne_.end(); }
 
     private:
         std::array<int64_t, 4> ne_;

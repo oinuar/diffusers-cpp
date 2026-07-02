@@ -463,9 +463,9 @@ std::vector<Tensor> Tensor::split_with_sizes(const std::vector<int64_t>& split_s
     return result;
 }
 
-Tensor Tensor::expand(const Tensor::Shape& new_shape) {
+Tensor Tensor::expand(const Tensor::Shape& new_shape) const {
     auto dst = ggml_view_tensor(ctx_, t_);
-    auto& ne = shape();
+    auto ne = shape();
 
     for (auto i = 0; i < ne.rank(); ++i) {
         dst->ne[i] = new_shape[i];
@@ -473,7 +473,7 @@ Tensor Tensor::expand(const Tensor::Shape& new_shape) {
         if (ne[i] == 1 && new_shape[i] > 1)
             dst->nb[i] = 0;
         else
-            dst->nb[i] = nb[i];
+            dst->nb[i] = t_->nb[i];
     }
 
     return Tensor(ctx_, dst);

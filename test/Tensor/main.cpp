@@ -8,6 +8,7 @@
 #include "../ArgumentParser.hpp"
 #include "../TensorParser.hpp"
 #include "../ShapeParser.hpp"
+#include "../SliceParser.hpp"
 
 class TensorCLI : public GGMLCompute {
 public:
@@ -265,12 +266,18 @@ public:
         }
 
 
-        if (args_.command() == "slice_index") {
-            throw std::runtime_error("not implemented yet");
+        if (args_.command() == "index") {
+            auto self = get_tensor(ctx, "--this");
+            auto index = get_value<size_t>("--index");
+
+            return self[index];
         }
 
         if (args_.command() == "slice") {
-            throw std::runtime_error("not implemented yet");
+            auto self = get_tensor(ctx, "--this");
+            auto slice = get_slice("--slice");
+
+            return self[slice];
         }
 
 
@@ -342,15 +349,23 @@ private:
     }
 
     Tensor::Shape get_shape(std::string_view option) {
-        auto value = args_.get<std::string>(option);
+        auto value = get_value<std::string>(option);
         
         ShapeParser parser(value);
 
         return parser.parse();
     }
 
+    std::vector<Tensor::Slice> get_slice(std::string_view option) {
+        auto value = get_value<std::string>(option);
+        
+        SliceParser parser(value);
+
+        return parser.parse();
+    }
+
     Tensor get_tensor(GGMLContext& ctx, std::string_view option) {
-        auto value = args_.get<std::string>(option);
+        auto value = get_value<std::string>(option);
 
         TensorParser parser(value);
 

@@ -199,8 +199,8 @@ public:
     /** @brief Creates an uninitialized tensor with the given shape and type. */
     static Tensor empty(
         ggml_context* ctx,
-        ggml_type type,
-        const Shape& shape)
+        const Shape& shape,
+        ggml_type type = GGML_TYPE_F32)
     {
         return Tensor(ctx, ggml_new_tensor(ctx, type, shape.rank(), shape.data()));
     }
@@ -211,7 +211,7 @@ public:
         float value,
         ggml_type type = GGML_TYPE_F32)
     {
-        auto tensor = empty(ctx, type, {1});
+        auto tensor = empty(ctx, {1}, type);
         tensor.t_ = ggml_fill_inplace(tensor.ctx_, tensor.t_, value);
 
         return tensor;
@@ -223,7 +223,7 @@ public:
         const Shape& shape,
         ggml_type type = GGML_TYPE_F32)
     {
-        auto tensor = empty(ctx, type, shape);
+        auto tensor = empty(ctx, shape, type);
         tensor.t_ = ggml_fill_inplace(ctx, tensor.t_, 0.0f);
         return tensor;
     }
@@ -234,7 +234,7 @@ public:
         const Shape& shape,
         ggml_type type = GGML_TYPE_F32)
     {
-        auto tensor = empty(ctx, type, shape);
+        auto tensor = empty(ctx, shape, type);
         tensor.t_ = ggml_fill_inplace(ctx, tensor.t_, 1.0f);
         return tensor;
     }

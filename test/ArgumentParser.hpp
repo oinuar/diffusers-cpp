@@ -59,6 +59,19 @@ std::string ArgumentParser::get<std::string>(std::string_view option) const
     return it->second;
 }
 
+template <>
+bool ArgumentParser::get<bool>(std::string_view option) const
+{
+    auto value = get<std::string>(option);
+
+    if (value == "true")
+        return true;
+    else if (value == "false")
+        return false;
+    
+    throw std::runtime_error("Invalid boolean: " + value);
+}
+
 template <typename T>
 T ArgumentParser::get(std::string_view option) const
 {

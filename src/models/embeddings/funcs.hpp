@@ -91,7 +91,7 @@ static std::pair<Tensor, Tensor> get_1d_rotary_pos_embed(
 
     // Create a constant tensor from CPU data.
     // TODO: this wont' work: we need to use a custom Module and initialize it with visitor pattern
-    Tensor freqs = Tensor::empty(ctx, GGML_TYPE_F32, {half_dim});
+    Tensor freqs = Tensor::empty(ctx, {half_dim}, GGML_TYPE_F32);
     ggml_backend_tensor_set(*freqs, freqs_data.data(), 0, ggml_nbytes(*freqs));
 
     // ── Step 2: Outer product pos ⊗ freqs → [S, half_dim] ─────────

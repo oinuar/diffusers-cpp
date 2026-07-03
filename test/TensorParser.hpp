@@ -1,6 +1,5 @@
 #pragma once
 
-#include <charconv>
 #include <cstdint>
 #include <cstdlib>
 #include <stdexcept>
@@ -10,9 +9,9 @@
 #include <iomanip>
 #include "Tensor.hpp"
 
-class TensorLiteralParser {
+class TensorParser {
 public:
-    explicit TensorLiteralParser(std::string_view s)
+    explicit TensorParser(std::string_view s)
         : s_(s), i_(0) {}
 
     std::pair<Tensor::Shape, std::vector<float>> parse() {
@@ -142,9 +141,8 @@ private:
         std::vector<int64_t> shape_vec;
         shape_vec.push_back(nodes.size());
 
-        for (auto d : nodes[0].shape) {
-            if (d != 0)
-                shape_vec.push_back(d);
+        for (auto i = 0; i < nodes[0].shape.rank(); ++i) {
+            shape_vec.push_back(nodes[0].shape[i]);
         }
 
         Tensor::Shape shape(shape_vec.size());

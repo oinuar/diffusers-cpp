@@ -6,41 +6,8 @@
 #include "GGMLBackend.hpp"
 #include "GGMLScheduler.hpp"
 #include "../ArgumentParser.hpp"
-
-static void print_tensor(const Tensor& t) {
-    auto shape   = t.shape();
-    double* data = nullptr;
-
-    int64_t idx = 0;
-
-    std::function<void(int)> recurse = [&](int dim) {
-        if (dim == shape.rank() - 1) {
-            for (int64_t i = 0; i < shape[dim]; ++i) {
-                if (idx++ > 0)
-                    std::cout << ",";
-                double v = data[idx - 1];
-
-                if (v == 0.0 && v < 0)
-                    std::cout << "-0.0";
-                else if (std::isinf(v))
-                    std::cout << (v > 0 ? "Infinity" : "-Infinity");
-                else if (std::isnan(v))
-                    std::cout << "NaN";
-                else
-                    printf("%.6g", v);
-            }
-        } else {
-            std::cout << "[";
-            for (int64_t i = 0; i < shape[dim]; ++i) {
-                recurse(dim + 1);
-            }
-            std::cout << "]";
-        }
-    };
-
-    recurse(0);
-    std::cout << std::endl;
-}
+#include "../TensorParser.hpp"
+#include "../ShapeParser.hpp"
 
 // --- unary ops ---
 /*int neg_fn(ArgumentParser& a) {
@@ -355,13 +322,13 @@ public:
 
         // factory
         if (args_.command() == "zeros") {
-            auto shape = args_.get<Tensor::Shape>("--shape");
+            auto shape = get_shape("--shape");
 
             return Tensor::zeros(*ctx, shape);
         }
 
         if (args_.command() == "ones") {
-            auto shape = args_.get<Tensor::Shape>("--shape");
+            auto shape = get_shape("--shape");
 
             return Tensor::ones(*ctx, shape);
         }
@@ -451,23 +418,79 @@ public:
 
         auto [shape, data] = computation.read<float>(-1);
 
-        // TODO: shape data printing to stdout
-
-        for (auto& value : data)
-            std::cout << std::to_string(value) << std::endl;
+        print_tensor(data, shape);
     }
 
 private:
     ArgumentParser args_;
     std::vector<std::pair<Tensor, std::vector<float>>> inputs_;
 
+    template <typename T>
+    T get_value(std::string_view option) {
+        return args_.get<T>(option);
+    }
+
+    Tensor::Shape get_shape(std::string_view option) {
+        auto value = args_.get<std::string>(option);
+        
+        ShapeParser parser(value);
+
+        return parser.parse();
+    }
+
     Tensor get_tensor(GGMLContext& ctx, std::string_view option) {
-        auto [shape, data] = args_.get<std::pair<Tensor::Shape, std::vector<float>>>(option);
+        auto value = args_.get<std::string>(option);
+
+        TensorParser parser(value);
+
+        auto [shape, data] = parser.parse();
         auto tensor = Tensor::empty(*ctx, GGML_TYPE_F32, shape);
 
         inputs_.push_back({tensor, data});
 
         return tensor;
+    }
+
+    template <typename T>
+    void print_tensor(const std::vector<T>& data, const Tensor::Shape& shape) {
+        size_t expected = 1;
+        for (auto i = 0; i < shape.rank(); ++i)
+            expected *= shape[i];
+
+        if (expected != data.size())
+            throw std::runtime_error("tensor data size does not match shape");
+
+        size_t index = 0;
+        print_tensor_recursively(data, shape, 0, index);
+        std::cout << std::endl;
+    }
+
+    template <typename T>
+    void print_tensor_recursively(const std::vector<T>& data, const Tensor::Shape& shape, size_t dim, size_t& index) {
+        std::cout << "[";
+
+        if (dim == shape.rank() - 1)
+        {
+            // Last dimension: print elements
+            for (auto i = 0; i < shape[dim]; ++i)
+            {
+                std::cout << data[index++];
+                if (i + 1 != shape[dim])
+                    std::cout << ", ";
+            }
+        }
+        else
+        {
+            // Print nested arrays
+            for (auto i = 0; i < shape[dim]; ++i)
+            {
+                print_tensor_recursively(data, shape, dim + 1, index);
+                if (i + 1 != shape[dim])
+                    std::cout << ", ";
+            }
+        }
+
+        std::cout << "]";
     }
 };
 

@@ -43,9 +43,6 @@ public:
      */
     class Shape {
     public:
-        using iterator = std::array<int64_t, 4>::iterator;
-        using const_iterator = std::array<int64_t, 4>::const_iterator;
-
         /** @brief Default-constructs a zero-shape with specified rank. */
         Shape(size_t rank = 0) : ne_({0, 0, 0, 0}), rank_(rank) {}
 
@@ -74,11 +71,6 @@ public:
 
         /** @brief Converts the shape to a human-readable string representation. */
         std::string to_string() const;
-
-        iterator begin() { return ne_.begin(); }
-        iterator end() { return ne_.end(); }
-        const_iterator begin() const { return ne_.begin(); }
-        const_iterator end() const { return ne_.end(); }
 
     private:
         std::array<int64_t, 4> ne_;

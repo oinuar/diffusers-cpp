@@ -3,8 +3,8 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <charconv>
 #include <iostream>
-#include "./TensorLiteralParser.hpp"
 #include "Tensor.hpp"
 
 class ArgumentParser {
@@ -57,51 +57,6 @@ std::string ArgumentParser::get<std::string>(std::string_view option) const
         throw std::runtime_error("Missing required option: " + std::string(option));
 
     return it->second;
-}
-
-template <>
-Tensor::Shape ArgumentParser::get<Tensor::Shape>(std::string_view option) const
-{
-    const std::string value = get<std::string>(option);
-
-    Tensor::Shape result;
-
-    size_t begin = 0;
-    size_t rank = 0;
-
-    while (begin < value.size()) {
-        size_t end = value.find(',', begin);
-
-        if (end == std::string::npos)
-            end = value.size();
-
-        auto token = value.substr(begin, end - begin);
-
-        if (token.empty())
-            throw std::runtime_error("Empty element in list: " + value);
-
-        result[rank++] = parse_number<int64_t>(token);
-
-        begin = end + 1;
-    }
-
-    return result;
-}
-
-template <>
-std::pair<Tensor::Shape, std::vector<float>> ArgumentParser::get<std::pair<Tensor::Shape, std::vector<float>>>(std::string_view option) const
-{
-    const std::string value = get<std::string>(option);
-
-    TensorLiteralParser parser(value);
-    return parser.parse();
-}
-
-template <>
-std::vector<Tensor> ArgumentParser::get<std::vector<Tensor>>(std::string_view option) const
-{
-    // TODO: implement
-    return {};
 }
 
 template <typename T>

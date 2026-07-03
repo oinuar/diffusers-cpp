@@ -23,12 +23,6 @@ public:
         }
 
 
-        if (args_.command() == "empty") {
-            auto shape = get_shape("--shape");
-
-            return Tensor::empty(*ctx, shape);
-        }
-
         if (args_.command() == "scalar") {
             auto value = get_value<float>("--value");
 

@@ -253,10 +253,8 @@ public:
 
         if (args_.command() == "mean") {
             auto self = get_tensor(ctx, "--this");
-            auto dim = get_value<int>("--dim");
-            auto keepdims = get_value<bool>("--keepdims");
 
-            return self.mean(dim, keepdims);
+            return self.mean();
         }
 
 
@@ -330,7 +328,7 @@ public:
 
         auto [shape, data] = computation.read<float>();
 
-        std::cerr << shape.to_string() << std::endl;
+        std::cerr << "output shape: " << shape.to_string() << std::endl;
 
         print_tensor(data, shape);
     }
@@ -368,6 +366,7 @@ private:
         auto [shape, data] = parser.parse();
         auto tensor = Tensor::empty(*ctx, shape, GGML_TYPE_F32);
 
+        std::cerr << "argument " << option << ": " << value << std::endl;
         std::cerr << "inferred shape for " << option << ": " << shape.to_string() << std::endl;
 
         inputs_.push_back({tensor, data});
@@ -391,6 +390,11 @@ private:
 
     template <typename T>
     void print_tensor_recursively(const std::vector<T>& data, const Tensor::Shape& shape, size_t dim, size_t& index) {
+        if (shape.rank() == 0 && dim == 0) {
+            std::cout << data[index++];
+            return;
+        }
+
         std::cout << "[";
 
         if (dim == shape.rank() - 1)

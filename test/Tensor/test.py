@@ -50,14 +50,14 @@ def verify(
 
 class TestFactoryMethods(unittest.TestCase):
     def test_scalar(self):
-        pt = torch.tensor([42.0])  # scalar tensor (0-dim)
+        pt = torch.tensor(42.0)  # scalar tensor (0-dim)
         expected = pt
 
         result = cli("scalar", "--value", "42.0")
         verify(self, result, expected)
 
     def test_scalar_negative(self):
-        pt = torch.tensor([-3.14])
+        pt = torch.tensor(-3.14)
         expected = pt
 
         result = cli("scalar", "--value", "-3.14")
@@ -1078,57 +1078,30 @@ class TestReductionOperations(unittest.TestCase):
         verify(self, result, expected)
 
     def test_mean_1d(self):
-        """mean dim=-1 on (1,) -> scalar"""
+        """mean dim=-1 on (1,) -> ()"""
         data = [2.0]
-        pt = torch.tensor(data)
-        expected = torch.mean(pt, dim=-1)
-
-        result = cli("mean", "--this", str(pt.tolist()), "--dim", "-1")
-        verify(self, result, expected)
-
-    def test_mean_2d_dim0(self):
-        """mean dim=0 on (2,1) -> (1,)"""
-        data = [[1.0], [3.0]]  # shape (2, 1), no reshape needed
         pt = torch.tensor(data).float()
-        expected = torch.mean(pt, dim=0)
+        expected = torch.mean(pt)
 
-        result = cli("mean", "--this", str(pt.tolist()), "--dim", "0")
+        result = cli("mean", "--this", str(pt.tolist()))
         verify(self, result, expected)
 
-    def test_mean_2d_dim1(self):
-        """mean dim=1 on (2,1) -> (2,)"""
-        data = [[1.0], [3.0]]  # shape (2, 1), no reshape needed
+    def test_mean_2d(self):
+        """mean dim=0 on (2,1) -> ()"""
+        data = [[1.0], [3.0]] 
         pt = torch.tensor(data).float()
-        expected = torch.mean(pt, dim=1)
+        expected = torch.mean(pt)
 
-        result = cli("mean", "--this", str(pt.tolist()), "--dim", "1", "--keepdims", "true")
+        result = cli("mean", "--this", str(pt.tolist()))
         verify(self, result, expected)
 
-    def test_mean_3d_dim0(self):
-        """mean dim=0 on rank-3 tensor (2,2,2) -> (2,2)"""
-        data = list(range(1, 9))  # [1..8], shape (2, 2, 2)
-        pt = torch.tensor(data).float().reshape(2, 2, 2)
-        expected = torch.mean(pt, dim=0)
+    def test_mean_3d(self):
+        """mean dim=1 on rank-3 tensor (2,3,2) -> ()"""
+        data = list(range(1, 13)) 
+        pt = torch.tensor(data).reshape(2, 3, 2).float()
+        expected = torch.mean(pt)
 
-        result = cli("mean", "--this", str(pt.tolist()), "--dim", "0", "--keepdims", "true")
-        verify(self, result, expected)
-
-    def test_mean_3d_dim1(self):
-        """mean dim=1 on rank-3 tensor (2,3,2) -> (2,2)"""
-        data = list(range(1, 13))  # [1..12], shape (2, 3, 2)
-        pt = torch.tensor(data).float().reshape(2, 3, 2)
-        expected = torch.mean(pt, dim=1)
-
-        result = cli("mean", "--this", str(pt.tolist()), "--dim", "1", "--keepdims", "true")
-        verify(self, result, expected)
-
-    def test_mean_keepdims_false(self):
-        """mean dim=1 on (2,3) -> (2,)"""
-        data = list(range(1, 7))  # [1..6], shape (2, 3)
-        pt = torch.tensor(data).float().reshape(2, 3)
-        expected = torch.mean(pt, dim=1)
-
-        result = cli("mean", "--this", str(pt.tolist()), "--dim", "1", "--keepdims", "true")
+        result = cli("mean", "--this", str(pt.tolist()))
         verify(self, result, expected)
 
 

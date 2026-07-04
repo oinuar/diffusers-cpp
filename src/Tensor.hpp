@@ -213,6 +213,10 @@ public:
         const Shape& shape,
         ggml_type type = GGML_TYPE_F32)
     {
+        // GGML does not support 0d tensors, let's fake it with 1d tensor
+        if (shape.rank() == 0)
+            return Tensor(ctx, ggml_new_tensor_1d(ctx, type, 1), shape);
+
         return Tensor(ctx, ggml_new_tensor(ctx, type, shape.rank(), shape.data()), shape);
     }
 
@@ -222,7 +226,7 @@ public:
         float value,
         ggml_type type = GGML_TYPE_F32)
     {
-        auto tensor = empty(ctx, {1}, type);
+        auto tensor = empty(ctx, {}, type);
         tensor.t_ = ggml_fill_inplace(tensor.ctx_, tensor.t_, value);
 
         return tensor;
@@ -309,8 +313,6 @@ public:
 
     /** @brief Casts a tensor to type `type`. */
     Tensor to(ggml_type type) const {
-        if (type == dtype())
-            return *this;
         return Tensor(ctx_, ggml_cast(ctx_, t_, type), shape_);
     }
 
@@ -360,85 +362,11 @@ public:
     }
 
     Tensor sum() const {
-        return Tensor(ctx_, ggml_sum(ctx_, t_));
+        return Tensor(ctx_, ggml_sum(ctx_, t_), {});
     }
 
-    /** @brief Computes the mean along a specific dimension.
-     *
-     * - When `dim` is omitted (default -1), sums all elements and divides by total count (reduces to scalar).
-     * - When `dim` is specified, computes mean along that dimension only. With `keepdims=true`, the reduced
-     *   dimension is preserved as size 1 for correct broadcasting. With `keepdims=false`, the dimension is removed.
-     *
-     * Implementation uses ggml_sum_rows for axis 1 (most common case in transformer models). For the last
-     * dimension of rank-3 tensors, reshapes to [N, D], sums rows, then reshapes back. General cases fall back
-     * to a reshape-sum-divide-broadcast approach.
-     */
-    Tensor mean(int dim = -1, bool keepdims = true) const {
-        const int rank = ndim();
-        dim = normalize_dim(dim, rank);
-
-        // No dimension specified (dim == -1 before normalization): reduce all elements to scalar.
-        if (dim < 0)
-            return Tensor(ctx_, ggml_mean(ctx_, t_));
-
-        // Axis 1: use ggml_sum_rows directly — most common case in transformers.
-        if (dim == 1 && rank >= 2) {
-            auto sum = Tensor(ctx_, ggml_sum_rows(ctx_, t_));
-            auto divisor = Tensor::scalar(ctx_, static_cast<float>(t_->ne[1]), dtype());
-            auto result = sum / divisor;
-
-            if (!keepdims)
-                return result.squeeze(1);
-
-            return result;
-        }
-
-        // Last dimension of rank-3 tensor [N, D] → reshape to [N, D], sum rows → [N, 1].
-        if (dim == 2 && rank == 3) {
-            int64_t N = t_->ne[0] * t_->ne[1];
-            int64_t D = t_->ne[2];
-
-            auto reshaped = Tensor(ctx_, ggml_reshape_2d(ctx_, t_, N, D));
-            auto sum = Tensor(ctx_, ggml_sum_rows(ctx_, reshaped.t_));
-            auto divisor = Tensor::scalar(ctx_, static_cast<float>(D), dtype());
-            auto result = sum / divisor; // [N, 1]
-
-            if (!keepdims)
-                return result.squeeze(1);
-
-            // Reshape back to [*, *, 1].
-            std::array<int64_t, 4> ne = {t_->ne[0], t_->ne[1], 1, 1};
-            return Tensor(ctx_, ggml_reshape_3d(ctx_, result.t_, ne[0], ne[1], ne[2]));
-        }
-
-        // General case: reshape so target dim becomes axis 1, sum_rows, then reshape back.
-        {
-            std::array<int64_t, 4> ne = {t_->ne[0], t_->ne[dim], 1, 1};
-            int64_t N = 1;
-            for (int i = 0; i < dim; ++i) N *= t_->ne[i];
-
-            auto reshaped = Tensor(ctx_, ggml_reshape_2d(ctx_, t_, N, ne[1]));
-            auto sum = Tensor(ctx_, ggml_sum_rows(ctx_, reshaped.t_));
-            auto divisor = Tensor::scalar(ctx_, static_cast<float>(ne[1]), dtype());
-            auto result = sum / divisor; // [N, 1]
-
-            if (!keepdims) {
-                return result.squeeze(1);
-            }
-
-            // Reconstruct shape with target dim = 1.
-            std::array<int64_t, 4> out_ne = {1, 1, 1, 1};
-            int out_rank = rank;
-            for (int i = 0; i < dim; ++i)       out_ne[i] = t_->ne[i];
-            out_ne[dim] = 1;
-            for (int i = dim + 1; i < rank; ++i) out_ne[i] = t_->ne[i];
-
-            switch (out_rank) {
-                case 2: return Tensor(ctx_, ggml_reshape_2d(ctx_, result.t_, out_ne[0], out_ne[1]));
-                case 3: return Tensor(ctx_, ggml_reshape_3d(ctx_, result.t_, out_ne[0], out_ne[1], out_ne[2]));
-                default: return Tensor(ctx_, ggml_reshape_4d(ctx_, result.t_, out_ne[0], out_ne[1], out_ne[2], out_ne[3]));
-            }
-        }
+    Tensor mean() const {
+        return sum() / numel();
     }
 
     Tensor operator[](const size_t& index) const {
@@ -473,6 +401,7 @@ inline Tensor operator+(float value, const Tensor& tensor) {
 }
 
 inline Tensor operator-(float value, const Tensor& tensor) {
+    // Use neg and addition to make broadcasting work correctly
     return -tensor + Tensor::scalar(tensor.ctx_, value);
 }
 
@@ -481,6 +410,8 @@ inline Tensor operator*(float value, const Tensor& tensor) {
 }
 
 inline Tensor operator/(float value, const Tensor& tensor) {
+    // Create special "scalar" tensor with the same shape as the original
+    // to make broadcasting work
     auto scalar = Tensor::empty(tensor.ctx_, tensor.shape_);
     scalar.t_ = ggml_fill_inplace(scalar.ctx_, scalar.t_, value);
 

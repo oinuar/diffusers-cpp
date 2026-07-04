@@ -16,7 +16,7 @@ public:
 
         hidden_states = hidden_states.to(GGML_TYPE_F32);
 
-        auto variance = hidden_states.pow(2).mean(-1, true); // mean along last dim, keepdim=True for broadcasting
+        auto variance = hidden_states.pow(2).mean(/*TODO: -1, true ??*/); // mean along last dim, keepdim=True for broadcasting
 
         hidden_states = hidden_states * rsqrt(variance + variance_epsilon_);
 

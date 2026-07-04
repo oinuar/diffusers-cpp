@@ -23,19 +23,13 @@ public:
     }
 
     template <class T>
-    std::pair<Tensor::Shape, std::vector<T>> read(int index) {
-        auto tensor = ggml_graph_node(graph_.gf_, index);
-        std::vector<T> data(ggml_nelements(tensor));
+    std::pair<Tensor::Shape, std::vector<T>> read() {
+        std::vector<T> data(ggml_nelements(*graph_.tensor_));
 
         // Bring the data from the backend memory
-        ggml_backend_tensor_get(tensor, data.data(), 0, ggml_nbytes(tensor));
+        ggml_backend_tensor_get(*graph_.tensor_, data.data(), 0, ggml_nbytes(*graph_.tensor_));
 
-        Tensor::Shape shape(ggml_n_dims(tensor));
-
-        for (auto i = 0; i < shape.rank(); ++i)
-            shape[i] = tensor->ne[i];
-
-        return {shape, std::move(data)};
+        return {graph_.tensor_.shape(), std::move(data)};
     }
 
     GGMLComputation(GGMLComputation&) = delete;

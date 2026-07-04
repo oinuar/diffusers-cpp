@@ -35,6 +35,8 @@ public:
         auto gf = ggml_new_graph(*ctx);
         auto result = compute.build(ctx);
 
+        ggml_set_output(*result);
+
         return std::move(GGMLGraph(gf, sched_, result));
     }
 

@@ -137,23 +137,39 @@ public:
         }
     };
 
-    /** @brief Default-constructs an invalid (empty) Tensor. */
+    /** @brief Default-constructs an invalid Tensor. */
     Tensor() : ctx_(nullptr), t_(nullptr) {}
 
-    /** @brief Constructs a Tensor wrapping the given ggml pointers.
+    /** @brief Constructs a Tensor wrapping the given ggml pointers, inferring shape.
+     *
+     * This is the only way to create a valid Tensor from raw ggml objects. The Tensor does not assume ownership
+     * of either pointer — it is valid only while both ctx and t remain alive.
+     * 
+     * @remarks When Tensor shape is inferred, GGML collapses single dimensions so result can be not
+     * what is expected. It is highly recommended to always pass the logical shape when constructing a Tensor.
+     */
+    explicit Tensor(ggml_context* ctx, ggml_tensor* t)
+        : ctx_(ctx), t_(t), shape_()
+    {
+        if (!ctx_ || !t_)
+            return;
+
+        Shape shape({t_->ne[0], t_->ne[1], t_->ne[2], t_->ne[3]});
+        shape.rank_ = ggml_n_dims(t_); // NOTE: this collapses single dimensions
+        shape_ = std::move(shape);
+    }
+
+    /** @brief Constructs a Tensor wrapping the given ggml pointers and a logical shape.
      *
      * This is the only way to create a valid Tensor from raw ggml objects. The Tensor does not assume ownership
      * of either pointer — it is valid only while both ctx and t remain alive.
      */
-    explicit Tensor(ggml_context* ctx, ggml_tensor* t)
-        : ctx_(ctx), t_(t) {}
+    explicit Tensor(ggml_context* ctx, ggml_tensor* t, const Shape& shape)
+        : ctx_(ctx), t_(t), shape_(shape) {}
 
-    /** @brief Returns the number of logical dimensions (0–4). */
+    /** @brief Returns the number of logical dimensions. */
     int ndim() const {
-        if (!ctx_ || !t_)
-            return 0;
-
-        return ggml_n_dims(t_);
+        return shape_.rank();
     }
 
     /** @brief Returns the total number of elements in the tensor. */
@@ -181,13 +197,8 @@ public:
     }
 
     /** @brief Returns the logical shape of this tensor. */
-    Shape shape() const {
-        if (!ctx_ || !t_)
-            return Shape();
-
-        Shape shape({t_->ne[0], t_->ne[1], t_->ne[2], t_->ne[3]});
-        shape.rank_ = ndim();
-        return std::move(shape);
+    const Shape& shape() const {
+        return shape_;
     }
 
     /** @brief Returns the raw ggml_tensor pointer. */
@@ -202,7 +213,7 @@ public:
         const Shape& shape,
         ggml_type type = GGML_TYPE_F32)
     {
-        return Tensor(ctx, ggml_new_tensor(ctx, type, shape.rank(), shape.data()));
+        return Tensor(ctx, ggml_new_tensor(ctx, type, shape.rank(), shape.data()), shape);
     }
 
     /** @brief Creates a scalar tensor filled with the given value. */
@@ -300,27 +311,27 @@ public:
     Tensor to(ggml_type type) const {
         if (type == dtype())
             return *this;
-        return Tensor(ctx_, ggml_cast(ctx_, t_, type));
+        return Tensor(ctx_, ggml_cast(ctx_, t_, type), shape_);
     }
 
     Tensor operator -() const {
-        return Tensor(ctx_, ggml_neg(ctx_, t_));
+        return Tensor(ctx_, ggml_neg(ctx_, t_), shape_);
     }
 
     Tensor operator+(const Tensor & rhs) const {
-        return Tensor(ctx_, ggml_add(ctx_, t_, rhs.t_));
+        return Tensor(ctx_, ggml_add(ctx_, t_, rhs.t_), shape_);
     }
 
     Tensor operator-(const Tensor & rhs) const {
-        return Tensor(ctx_, ggml_sub(ctx_, t_, rhs.t_));
+        return Tensor(ctx_, ggml_sub(ctx_, t_, rhs.t_), shape_);
     }
 
     Tensor operator*(const Tensor & rhs) const {
-        return Tensor(ctx_, ggml_mul(ctx_, t_, rhs.t_));
+        return Tensor(ctx_, ggml_mul(ctx_, t_, rhs.t_), shape_);
     }
 
     Tensor operator/(const Tensor & rhs) const {
-        return Tensor(ctx_, ggml_div(ctx_, t_, rhs.t_));
+        return Tensor(ctx_, ggml_div(ctx_, t_, rhs.t_), shape_);
     }
 
     Tensor operator+(float rhs) const {
@@ -332,7 +343,7 @@ public:
     }
 
     Tensor operator*(float rhs) const {
-        return Tensor(ctx_, ggml_scale(ctx_, t_, rhs));
+        return Tensor(ctx_, ggml_scale(ctx_, t_, rhs), shape_);
     }
 
     Tensor operator/(float rhs) const {
@@ -345,7 +356,7 @@ public:
     }
 
     Tensor clip(float a, float b) const {
-        return Tensor(ctx_, ggml_clamp(ctx_, t_, a, b));
+        return Tensor(ctx_, ggml_clamp(ctx_, t_, a, b), shape_);
     }
 
     Tensor sum() const {
@@ -439,6 +450,7 @@ public:
 private:
     ggml_context* ctx_;
     ggml_tensor* t_;
+    Shape shape_;
 
     friend Tensor operator-(float value, const Tensor& tensor);
     friend Tensor operator/(float value, const Tensor& tensor);
@@ -461,7 +473,7 @@ inline Tensor operator+(float value, const Tensor& tensor) {
 }
 
 inline Tensor operator-(float value, const Tensor& tensor) {
-    return Tensor::scalar(tensor.ctx_, value) - tensor;
+    return -tensor + Tensor::scalar(tensor.ctx_, value);
 }
 
 inline Tensor operator*(float value, const Tensor& tensor) {
@@ -469,31 +481,34 @@ inline Tensor operator*(float value, const Tensor& tensor) {
 }
 
 inline Tensor operator/(float value, const Tensor& tensor) {
-    return Tensor::scalar(tensor.ctx_, value) / tensor;
+    auto scalar = Tensor::empty(tensor.ctx_, tensor.shape_);
+    scalar.t_ = ggml_fill_inplace(scalar.ctx_, scalar.t_, value);
+
+    return scalar / tensor;
 }
 
 inline Tensor abs(const Tensor& tensor) {
-    return Tensor(tensor.ctx_, ggml_abs(tensor.ctx_, tensor.t_));
+    return Tensor(tensor.ctx_, ggml_abs(tensor.ctx_, tensor.t_), tensor.shape_);
 }
 
 inline Tensor sqrt(const Tensor& tensor) {
-    return Tensor(tensor.ctx_, ggml_sqrt(tensor.ctx_, tensor.t_));
+    return Tensor(tensor.ctx_, ggml_sqrt(tensor.ctx_, tensor.t_), tensor.shape_);
 }
 
 inline Tensor exp(const Tensor& tensor) {
-    return Tensor(tensor.ctx_, ggml_exp(tensor.ctx_, tensor.t_));
+    return Tensor(tensor.ctx_, ggml_exp(tensor.ctx_, tensor.t_), tensor.shape_);
 }
 
 inline Tensor log(const Tensor& tensor) {
-    return Tensor(tensor.ctx_, ggml_log(tensor.ctx_, tensor.t_));
+    return Tensor(tensor.ctx_, ggml_log(tensor.ctx_, tensor.t_), tensor.shape_);
 }
 
 inline Tensor sin(const Tensor& tensor) {
-    return Tensor(tensor.ctx_, ggml_sin(tensor.ctx_, tensor.t_));
+    return Tensor(tensor.ctx_, ggml_sin(tensor.ctx_, tensor.t_), tensor.shape_);
 }
 
 inline Tensor cos(const Tensor& tensor) {
-    return Tensor(tensor.ctx_, ggml_cos(tensor.ctx_, tensor.t_));
+    return Tensor(tensor.ctx_, ggml_cos(tensor.ctx_, tensor.t_), tensor.shape_);
 }
 
 inline Tensor rsqrt(const Tensor& tensor) {

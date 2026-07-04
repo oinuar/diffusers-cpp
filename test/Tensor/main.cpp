@@ -328,7 +328,9 @@ public:
 
         computation.execute();
 
-        auto [shape, data] = computation.read<float>(-1);
+        auto [shape, data] = computation.read<float>();
+
+        std::cerr << shape.to_string() << std::endl;
 
         print_tensor(data, shape);
     }
@@ -365,6 +367,8 @@ private:
 
         auto [shape, data] = parser.parse();
         auto tensor = Tensor::empty(*ctx, shape, GGML_TYPE_F32);
+
+        std::cerr << "inferred shape for " << option << ": " << shape.to_string() << std::endl;
 
         inputs_.push_back({tensor, data});
 

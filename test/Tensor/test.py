@@ -2,10 +2,10 @@
 """Comprehensive unittest suite for Tensor C++ class via tensor-cli subprocess.
 
 Every test case:
-  1. Creates a PyTorch tensor on CPU and runs the same operation.
+  1. Creates a PyTorch tensor on CPU and runs the operation.
   2. Calls tensor-cli via subprocess to run the equivalent operation.
   3. Compares the C++ result against PyTorch's reference output element-wise
-     with an absolute tolerance (1e-4 for float32).
+     with an absolute tolerance.
 
 Each test exercises exactly one branch/operator of the Tensor CLI program,
 covering 1D, 2D, 3D and 4D tensor ranks.
@@ -31,6 +31,7 @@ def cli(*args: str) -> torch.Tensor:
         )
 
     return torch.tensor(ast.literal_eval(result.stdout), dtype=torch.float32)
+
 
 def verify(
     self,

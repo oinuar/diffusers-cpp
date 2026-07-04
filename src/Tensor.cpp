@@ -63,67 +63,19 @@ Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
 
 Tensor Tensor::reshape(const Shape& shape) const {
     throw_if_not_valid();
-    throw_if_not_contiguous();
-
-    std::array<int64_t, 4> out = {1, 1, 1, 1};
-
-    int infer_dim = -1;
-    int64_t known_product = 1;
-
-    for (size_t i = 0; i < shape.rank(); ++i) {
-        const int64_t value = shape[i];
-
-        if (value == -1) {
-            if (infer_dim != -1) {
-                throw std::invalid_argument("reshape(): only one dimension may be inferred");
-            }
-
-            infer_dim = static_cast<int>(i);
-        } else {
-            if (value < 0) {
-                throw std::invalid_argument("reshape(): dimensions must be >= 0 or -1");
-            }
-
-            if (value != 0 &&
-                known_product > std::numeric_limits<int64_t>::max() / value) {
-                throw std::overflow_error("reshape(): shape is too large");
-            }
-
-            known_product *= value;
-            out[i] = value;
-        }
-    }
-
-    const int64_t total = numel();
-
-    if (infer_dim != -1) {
-        if (known_product == 0) {
-            throw std::invalid_argument(
-                "reshape(): cannot infer a dimension when known dimensions multiply to zero");
-        }
-
-        if (total % known_product != 0) {
-            throw std::invalid_argument(
-                "reshape(): requested shape is incompatible with tensor size");
-        }
-
-        out[infer_dim] = total / known_product;
-    } else if (known_product != total)
-        throw std::invalid_argument(
-            "reshape(): requested shape is incompatible with tensor size");
 
     switch (shape.rank()) {
         case 1:
-            return Tensor(ctx_, ggml_reshape_1d(ctx_, t_, out[0]));
+            return Tensor(ctx_, ggml_reshape_1d(ctx_, ggml_cont(ctx_, t_), shape[0]), shape);
         case 2:
-            return Tensor(ctx_, ggml_reshape_2d(ctx_, t_, out[0], out[1]));
+            return Tensor(ctx_, ggml_reshape_2d(ctx_, ggml_cont(ctx_, t_), shape[0], shape[1]), shape);
         case 3:
-            return Tensor(ctx_, ggml_reshape_3d(ctx_, t_, out[0], out[1], out[2]));
+            return Tensor(ctx_, ggml_reshape_3d(ctx_, ggml_cont(ctx_, t_), shape[0], shape[1], shape[2]), shape);
         default:
             break;
     }
 
-    return Tensor(ctx_, ggml_reshape_4d(ctx_, t_, out[0], out[1], out[2], out[3]));
+    return Tensor(ctx_, ggml_reshape_4d(ctx_, ggml_cont(ctx_, t_), shape[0], shape[1], shape[2], shape[3]), shape);
 }
 
 Tensor Tensor::permute(const Shape& order) const {

@@ -40,6 +40,10 @@ public:
      * indicating how many dimensions are actually in use. The size field allows representing tensors of
      * any rank from 0 to 4 within the fixed 4-element array. Negative indexing is supported for operator[]
      * access (e.g., -1 refers to the last dimension).
+     * 
+     * GGML defines tensor dimensions as (ne0, ne1, ne2, ne3) where ne0 is the fastest-varying (innermost) dimension,
+     * while PyTorch displays shapes in outermost → innermost order (left → right). From that, the “reverse ordering”
+     * is a derived consequence, not a formally stated rule.
      */
     class Shape {
     public:
@@ -53,15 +57,15 @@ public:
         Shape(const std::initializer_list<int64_t>& list) : ne_({0, 0, 0, 0}), rank_(list.size()) {
             size_t i = 0;
 
-            for (auto it = std::begin(list); it != std::end(list); ++it)
+            for (auto it = std::rbegin(list); it != std::rend(list); ++it)
                 ne_[i++] = *it;
         }
 
         /** @brief Accesses the dimension at the given index. */
-        const int64_t& operator [](const size_t& index) const { return ne_[index]; }
+        const int64_t& operator [](const size_t& index) const { return ne_[rank_ - 1 - index]; }
 
         /** @brief Mutable access to the dimension at the given index. */
-        int64_t& operator [](const size_t& index) { return ne_[index]; }
+        int64_t& operator [](const size_t& index) { return ne_[rank_ - 1 - index]; }
 
         /** @brief Returns the logical number of dimensions (0–4). */
         size_t rank() const { return rank_; }
@@ -154,7 +158,7 @@ public:
         if (!ctx_ || !t_)
             return;
 
-        Shape shape({t_->ne[0], t_->ne[1], t_->ne[2], t_->ne[3]});
+        Shape shape({t_->ne[3], t_->ne[2], t_->ne[1], t_->ne[0]});
         shape.rank_ = ggml_n_dims(t_); // NOTE: this collapses single dimensions
         shape_ = std::move(shape);
     }
@@ -193,7 +197,7 @@ public:
      */
     Tensor contiguous() const {
         throw_if_not_valid();
-        return Tensor(ctx_, ggml_cont(ctx_, t_));
+        return Tensor(ctx_, ggml_cont(ctx_, t_), shape_);
     }
 
     /** @brief Returns the logical shape of this tensor. */
@@ -206,6 +210,10 @@ public:
         return t_;
     }
 
+    /** @brief Returns a copy of this tensor. */
+    Tensor clone() const {
+        return Tensor(ctx_, ggml_dup(ctx_, t_), shape_);
+    }
 
     /** @brief Creates an uninitialized tensor with the given shape and type. */
     static Tensor empty(
@@ -374,7 +382,6 @@ public:
     }
 
     Tensor operator [](const std::vector<Slice>& indices) const;
-    
 private:
     ggml_context* ctx_;
     ggml_tensor* t_;

@@ -42,7 +42,9 @@ def verify(
 ):
     self.assertEqual(actual.shape, expected.shape)
     self.assertEqual(actual.dtype, expected.dtype)
-    self.assertTrue(torch.allclose(actual, expected, rtol=rtol, atol=atol))
+    self.assertTrue(torch.allclose(actual, expected, rtol=rtol, atol=atol), f"""
+Actual: {str(actual.tolist())}
+Expected: {str(expected.tolist())}""")
 
 
 # ---------------------------------------------------------------------------

@@ -63,23 +63,25 @@ Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
 
 Tensor Tensor::reshape(const Shape& shape) const {
     throw_if_not_valid();
+    throw_if_not_contiguous();
 
     switch (shape.rank()) {
         case 1:
-            return Tensor(ctx_, ggml_reshape_1d(ctx_, ggml_cont(ctx_, t_), shape[0]), shape);
+            return Tensor(ctx_, ggml_reshape_1d(ctx_, *clone(), shape[0]), shape);
         case 2:
-            return Tensor(ctx_, ggml_reshape_2d(ctx_, ggml_cont(ctx_, t_), shape[0], shape[1]), shape);
+            return Tensor(ctx_, ggml_reshape_2d(ctx_, *clone(), shape[0], shape[1]), shape);
         case 3:
-            return Tensor(ctx_, ggml_reshape_3d(ctx_, ggml_cont(ctx_, t_), shape[0], shape[1], shape[2]), shape);
+            return Tensor(ctx_, ggml_reshape_3d(ctx_, *clone(), shape[0], shape[1], shape[2]), shape);
         default:
             break;
     }
 
-    return Tensor(ctx_, ggml_reshape_4d(ctx_, ggml_cont(ctx_, t_), shape[0], shape[1], shape[2], shape[3]), shape);
+    return Tensor(ctx_, ggml_reshape_4d(ctx_, *clone(), shape[0], shape[1], shape[2], shape[3]), shape);
 }
 
 Tensor Tensor::permute(const Shape& order) const {
     throw_if_not_valid();
+    throw_if_not_contiguous();
 
     const int rank = ndim();
 
@@ -88,6 +90,8 @@ Tensor Tensor::permute(const Shape& order) const {
             "permute(): order must specify exactly one dimension for every tensor dimension");
     }
 
+    // GGML tensors are internally 4D. We initialize trailing dimensions 
+    // to map to themselves so they remain unaffected for rank < 4.
     std::array<int, 4> axes = {0, 1, 2, 3};
     std::array<bool, 4> seen = {false, false, false, false};
 
@@ -107,7 +111,12 @@ Tensor Tensor::permute(const Shape& order) const {
         seen[axis] = true;
     }
 
-    return Tensor(ctx_, ggml_permute(ctx_, t_, axes[0], axes[1], axes[2], axes[3]));
+    // 1. ggml_permute creates a view with permuted strides (no data movement).
+    auto permuted_view = ggml_permute(ctx_, *clone(), axes[0], axes[1], axes[2], axes[3]);
+    
+    // 2. ggml_cont physically copies the data into a new contiguous buffer 
+    // respecting the permuted strides, matching PyTorch's evaluated output.
+    return Tensor(ctx_, ggml_cont(ctx_, permuted_view));
 }
 
 Tensor Tensor::squeeze(int dim) const {
@@ -139,11 +148,11 @@ Tensor Tensor::squeeze(int dim) const {
 
     switch (rank - 1) {
         case 1:
-            return Tensor(ctx_, ggml_view_1d(ctx_, t_, ne[0], 0));
+            return Tensor(ctx_, ggml_view_1d(ctx_, *contiguous(), ne[0], 0));
         case 2:
-            return Tensor(ctx_, ggml_view_2d(ctx_, t_, ne[0], ne[1], nb[1], 0));
+            return Tensor(ctx_, ggml_view_2d(ctx_, *contiguous(), ne[0], ne[1], nb[1], 0));
         case 3:
-            return Tensor(ctx_, ggml_view_3d(ctx_, t_, ne[0], ne[1], ne[2], nb[1], nb[2], 0));
+            return Tensor(ctx_, ggml_view_3d(ctx_, *contiguous(), ne[0], ne[1], ne[2], nb[1], nb[2], 0));
         default:
             break;
     }
@@ -311,16 +320,16 @@ Tensor Tensor::narrow(int dim, int64_t start, int64_t length) const {
 
     switch (rank) {
         case 1:
-            return Tensor(ctx_, ggml_view_1d(ctx_, t_, ne[0], offset));
+            return Tensor(ctx_, ggml_view_1d(ctx_, *contiguous(), ne[0], offset));
         case 2:
-            return Tensor( ctx_, ggml_view_2d(ctx_, t_, ne[0], ne[1], t_->nb[1], offset));
+            return Tensor( ctx_, ggml_view_2d(ctx_, *contiguous(), ne[0], ne[1], t_->nb[1], offset));
         case 3:
-            return Tensor(ctx_, ggml_view_3d(ctx_, t_, ne[0], ne[1], ne[2], t_->nb[1], t_->nb[2], offset));
+            return Tensor(ctx_, ggml_view_3d(ctx_, *contiguous(), ne[0], ne[1], ne[2], t_->nb[1], t_->nb[2], offset));
         default:
             break;
     }
 
-    return Tensor(ctx_, ggml_view_4d(ctx_, t_, ne[0], ne[1], ne[2], ne[3], t_->nb[1], t_->nb[2], t_->nb[3], offset));
+    return Tensor(ctx_, ggml_view_4d(ctx_, *contiguous(), ne[0], ne[1], ne[2], ne[3], t_->nb[1], t_->nb[2], t_->nb[3], offset));
 }
 
 std::vector<Tensor> Tensor::chunk(int n, int dim) const {

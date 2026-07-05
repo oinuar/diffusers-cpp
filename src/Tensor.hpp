@@ -200,6 +200,12 @@ public:
         return Tensor(ctx_, ggml_cont(ctx_, t_), shape_);
     }
 
+    /** @brief Returns true if tensor is contiguous; otherwise returns false. */
+    bool is_contiguous() const {
+        throw_if_not_valid();
+        return ggml_is_contiguous(t_);
+    }
+
     /** @brief Returns the logical shape of this tensor. */
     const Shape& shape() const {
         return shape_;
@@ -288,7 +294,7 @@ public:
      * This produces a view tensor (shares underlying buffer). Negative indices are supported for each 
      * dimension in the order (e.g., -1 refers to the last dimension). Dimensions beyond ndim() are clamped.
      */
-    Tensor permute(const Shape& order) const;
+    Tensor permute(const Shape& dims) const;
 
     /** @brief Removes a single dimension at the given index `dim` (must have size 1). */
     Tensor squeeze(int dim) const;

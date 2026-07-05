@@ -339,7 +339,10 @@ private:
 
     template <typename T>
     T get_value(std::string_view option) {
-        return args_.get<T>(option);
+        auto value = args_.get<T>(option);
+
+        std::cerr << "argument " << option << ": " << value << std::endl;
+        return value;
     }
 
     Tensor::Shape get_shape(std::string_view option) {
@@ -366,7 +369,6 @@ private:
         auto [shape, data] = parser.parse();
         auto tensor = Tensor::empty(*ctx, shape, GGML_TYPE_F32);
 
-        std::cerr << "argument " << option << ": " << value << std::endl;
         std::cerr << "inferred shape for " << option << ": " << shape.to_string() << std::endl;
 
         inputs_.push_back({tensor, data});

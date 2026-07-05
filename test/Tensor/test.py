@@ -150,14 +150,6 @@ class TestFactoryMethods(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestShapeOperations(unittest.TestCase):
-    def test_reshape_2d_to_1d(self):
-        """reshape (2,3) -> (6)"""
-        data = list(range(1, 7))  # [1..6], 6 elements
-        pt = torch.tensor(data).float().reshape(2, 3)
-        expected = pt.reshape(6)
-
-        result = cli("reshape", "--this", str(pt.tolist()), "--shape", "(6)")
-        verify(self, result, expected)
 
     def test_reshape_1d_to_2d(self):
         """reshape (6) -> (2,3)"""
@@ -168,13 +160,23 @@ class TestShapeOperations(unittest.TestCase):
         result = cli("reshape", "--this", str(pt.tolist()), "--shape", "(2, 3)")
         verify(self, result, expected)
 
-    def test_reshape_with_infer(self):
-        """reshape (4,) -> (2, 2)"""
-        data = list(range(1, 5))  # [1..4], 4 elements
-        pt = torch.tensor(data).float().reshape(4)
-        expected = pt.reshape(2, 2)
+    def test_reshape_2d_to_1d(self):
+        """reshape (2,3) -> (6)"""
+        data = list(range(1, 7))  # [1..6], 6 elements
+        pt = torch.tensor(data).float().reshape(2, 3)
+        expected = pt.reshape(6)
 
-        result = cli("reshape", "--this", str(pt.tolist()), "--shape", "(2, 2)")
+        result = cli("reshape", "--this", str(pt.tolist()), "--shape", "(6)")
+        verify(self, result, expected)
+
+    def test_reshape_2d_to_4d(self):
+        """reshape (6,4) -> (1,2,3,4)"""
+        data = list(range(24))
+        pt = torch.tensor(data).float().reshape(6,4)
+
+        expected = pt.reshape(1,2,3,4)
+
+        result = cli("reshape", "--this", str(pt.tolist()), "--shape", "(1,2,3,4)")
         verify(self, result, expected)
 
     def test_reshape_3d_to_1d(self):
@@ -186,6 +188,16 @@ class TestShapeOperations(unittest.TestCase):
         result = cli("reshape", "--this", str(pt.tolist()), "--shape", "(24)")
         verify(self, result, expected)
 
+    def test_reshape_3d_to_4d(self):
+        """reshape (2,3,4) -> (2,2,3,2)"""
+        data = list(range(24))
+        pt = torch.tensor(data).float().reshape(2,3,4)
+
+        expected = pt.reshape(2,2,3,2)
+
+        result = cli("reshape", "--this", str(pt.tolist()), "--shape", "(2,2,3,2)")
+        verify(self, result, expected)
+
     def test_reshape_4d_to_2d(self):
         """reshape (1,2,3,4) -> (6,4) — rank-4 tensor reshaped to rank-2"""
         data = list(range(1, 25))  # [1..24]
@@ -193,6 +205,26 @@ class TestShapeOperations(unittest.TestCase):
         expected = pt.reshape(6, 4)
 
         result = cli("reshape", "--this", str(pt.tolist()), "--shape", "(6, 4)")
+        verify(self, result, expected)
+
+    def test_reshape_4d_to_3d(self):
+        """reshape (1,2,3,4) -> (2,3,4)"""
+        data = list(range(24))
+        pt = torch.tensor(data).float().reshape(1,2,3,4)
+
+        expected = pt.reshape(2,3,4)
+
+        result = cli("reshape", "--this", str(pt.tolist()), "--shape", "(2,3,4)")
+        verify(self, result, expected)
+
+    def test_reshape_infer_dimension(self):
+        """reshape (6,) -> (2,-1)"""
+        data = list(range(6))
+        pt = torch.tensor(data).float()
+
+        expected = pt.reshape(2, -1)
+
+        result = cli("reshape", "--this", str(pt.tolist()), "--shape", "(2, -1)")
         verify(self, result, expected)
 
     def test_permute_2d(self):
@@ -206,11 +238,40 @@ class TestShapeOperations(unittest.TestCase):
 
     def test_permute_3d(self):
         """permute(2,1,0) on rank-3 tensor (2,3,4) — reverse dimensions"""
-        data = list(range(24))  # [0..23]
+        data = list(range(24))
         pt = torch.tensor(data).float().reshape(2, 3, 4)
-        expected = pt.permute(2, 1, 0)
+        expected = pt.permute(1, 2, 0)
 
-        result = cli("permute", "--this", str(pt.tolist()), "--order", "(2, 1, 0)")
+        result = cli("permute", "--this", str(pt.tolist()), "--order", "(1, 2, 0)")
+        verify(self, result, expected)
+
+    def test_permute_4d(self):
+        """permute(0,2,3,1) on (2,3,4,5)"""
+        data = list(range(120))
+        pt = torch.tensor(data).float().reshape(2, 3, 4, 5)
+        expected = pt.permute(0, 2, 3, 1)
+
+        result = cli("permute", "--this", str(pt.tolist()), "--order", "(0, 2, 3, 1)")
+        verify(self, result, expected)
+
+    def test_permute_4d_inverse(self):
+        """permute(0,3,1,2) on (2,3,4,5) — the exact inverse of (0,2,3,1)"""
+        data = list(range(120))
+        pt = torch.tensor(data).float().reshape(2, 3, 4, 5)
+        expected = pt.permute(0, 3, 1, 2)
+
+        result = cli("permute", "--this", str(pt.tolist()), "--order", "(0, 3, 1, 2)")
+        verify(self, result, expected)
+
+    def test_permute_negative_indices(self):
+        """Test that negative indices resolve correctly for a 4D tensor"""
+        data = list(range(120))
+        pt = torch.tensor(data).float().reshape(2, 3, 4, 5)
+        # -1 is dim 3, -2 is dim 2, -3 is dim 1, -4 is dim 0
+        # So (-4, -2, -1, -3) is equivalent to (0, 2, 3, 1)
+        expected = pt.permute(-4, -2, -1, -3)
+
+        result = cli("permute", "--this", str(pt.tolist()), "--order", "(-4, -2, -1, -3)")
         verify(self, result, expected)
 
     def test_squeeze(self):
@@ -231,6 +292,16 @@ class TestShapeOperations(unittest.TestCase):
         result = cli("squeeze", "--this", str(pt.tolist()), "--dim", "1")
         verify(self, result, expected)
 
+    def test_squeeze_last_dim(self):
+        """squeeze last dimension"""
+        data = list(range(12))
+        pt = torch.tensor(data).float().reshape(3,4,1)
+
+        expected = pt.squeeze(2)
+
+        result = cli("squeeze", "--this", str(pt.tolist()), "--dim", "2")
+        verify(self, result, expected)
+
     def test_squeeze_3d(self):
         """squeeze dim=0 on rank-3 tensor (1,M,P,Q)"""
         data = list(range(48))  # [0..47], shape (1,6,8)=48
@@ -238,6 +309,16 @@ class TestShapeOperations(unittest.TestCase):
         expected = pt.squeeze(0)
 
         result = cli("squeeze", "--this", str(pt.tolist()), "--dim", "0")
+        verify(self, result, expected)
+
+    def test_squeeze_4d(self):
+        """squeeze middle singleton dimension"""
+        data = list(range(24))
+        pt = torch.tensor(data).float().reshape(2,1,3,4)
+
+        expected = pt.squeeze(1)
+
+        result = cli("squeeze", "--this", str(pt.tolist()), "--dim", "1")
         verify(self, result, expected)
 
     def test_unsqueeze(self):
@@ -258,22 +339,64 @@ class TestShapeOperations(unittest.TestCase):
         result = cli("unsqueeze", "--this", str(pt.tolist()), "--dim", "1")
         verify(self, result, expected)
 
-    def test_flatten(self):
-        """flatten(start_dim=1, end_dim=2) on (2,3) -> (2,3)"""
-        data = list(range(6))  # 6 elements
-        pt = torch.tensor(data).float().reshape(2, 3)
-        expected = pt.flatten(start_dim=1, end_dim=2)
+    def test_unsqueeze_4d(self):
+        """unsqueeze into rank-4"""
+        data = list(range(24))
+        pt = torch.tensor(data).float().reshape(2,3,4)
+
+        expected = pt.unsqueeze(2)
+
+        result = cli("unsqueeze", "--this", str(pt.tolist()), "--dim", "2")
+        verify(self, result, expected)
+
+    def test_unsqueeze_last_dim(self):
+        """unsqueeze at end"""
+        data = list(range(6))
+        pt = torch.tensor(data).float().reshape(2,3)
+
+        expected = pt.unsqueeze(2)
+
+        result = cli("unsqueeze", "--this", str(pt.tolist()), "--dim", "2")
+        verify(self, result, expected)
+
+    def test_flatten_all(self):
+        """flatten entire tensor"""
+        data = list(range(6))
+        pt = torch.tensor(data).float().reshape(2,3)
+
+        expected = pt.flatten()
+
+        result = cli("flatten", "--this", str(pt.tolist()))
+        verify(self, result, expected)
+
+    def test_flatten_4d(self):
+        """flatten dimensions 1..2"""
+        data = list(range(24))
+        pt = torch.tensor(data).float().reshape(1,2,3,4)
+
+        expected = pt.flatten(1,2)
+
+        result = cli("flatten","--this", str(pt.tolist()), "--start_dim", "1", "--end_dim", "2")
+        verify(self, result, expected)
+
+    def test_flatten_middle_dims(self):
+        """flatten dimensions 1..2"""
+        data = list(range(120))
+        pt = torch.tensor(data).float().reshape(2,3,4,5)
+
+        expected = pt.flatten(1,2)
 
         result = cli("flatten", "--this", str(pt.tolist()), "--start_dim", "1", "--end_dim", "2")
         verify(self, result, expected)
 
-    def test_flatten_4d(self):
-        """flatten(start_dim=1, end_dim=2) on rank-4 tensor (1,2,3,4)"""
-        data = list(range(24))  # [0..23], shape (1,2,3,4)=24
-        pt = torch.tensor(data).float().reshape(1, 2, 3, 4)
-        expected = pt.flatten(start_dim=1, end_dim=2)
+    def test_flatten_all_4d(self):
+        """flatten rank-4 tensor"""
+        data = list(range(24))
+        pt = torch.tensor(data).float().reshape(1,2,3,4)
 
-        result = cli("flatten", "--this", str(pt.tolist()), "--start_dim", "1", "--end_dim", "2")
+        expected = pt.flatten()
+
+        result = cli("flatten", "--this", str(pt.tolist()))
         verify(self, result, expected)
 
     def test_unflatten(self):
@@ -294,6 +417,25 @@ class TestShapeOperations(unittest.TestCase):
         result = cli("unflatten", "--this", str(pt.tolist()), "--dim", "0", "--shape", "(3, 4)")
         verify(self, result, expected)
 
+    def test_unflatten_middle_dim(self):
+        """unflatten second dimension"""
+        data = list(range(24))
+        pt = torch.tensor(data).float().reshape(2,12)
+
+        expected = pt.unflatten(1, (3,4))
+
+        result = cli("unflatten", "--this", str(pt.tolist()), "--dim", "1", "--shape", "(3,4)")
+        verify(self, result, expected)
+
+    def test_unflatten_3d_input(self):
+        """unflatten last dimension"""
+        data = list(range(24))
+        pt = torch.tensor(data).float().reshape(2,3,4)
+
+        expected = pt.unflatten(2, (2,2))
+
+        result = cli("unflatten", "--this", str(pt.tolist()), "--dim", "2", "--shape", "(2,2)")
+        verify(self, result, expected)
 
 # ---------------------------------------------------------------------------
 # Slicing operations  (narrow/contiguous via [], expand, index [], slice)

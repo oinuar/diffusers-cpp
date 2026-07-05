@@ -60,23 +60,71 @@ Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
 
     return result;
 }
-
 Tensor Tensor::reshape(const Shape& shape) const {
     throw_if_not_valid();
     throw_if_not_contiguous();
 
-    switch (shape.rank()) {
+    Shape out(shape);
+
+    int infer_dim = -1;
+    int64_t known_product = 1;
+
+    for (size_t i = 0; i < out.rank(); ++i) {
+        const int64_t dim = out[i];
+
+        if (dim == -1) {
+            if (infer_dim != -1)
+                throw std::invalid_argument(
+                    "reshape(): only one dimension may be inferred");
+
+            infer_dim = static_cast<int>(i);
+        } else {
+            if (dim < 0)
+                throw std::invalid_argument(
+                    "reshape(): dimensions must be >= 0 or -1");
+
+            if (dim != 0 &&
+                known_product > std::numeric_limits<int64_t>::max() / dim)
+                throw std::overflow_error("reshape(): shape is too large");
+
+            known_product *= dim;
+        }
+    }
+
+    const int64_t numel = this->numel();
+
+    if (infer_dim != -1) {
+        if (known_product == 0 || numel % known_product != 0)
+            throw std::invalid_argument(
+                "reshape(): shape is incompatible with tensor size");
+
+        out[infer_dim] = numel / known_product;
+    } else if (known_product != numel) {
+        throw std::invalid_argument(
+            "reshape(): shape is incompatible with tensor size");
+    }
+
+    switch (out.rank()) {
+        case 0:
+            return Tensor(ctx_, ggml_reshape_1d(ctx_, *clone(), 1), out);
+
         case 1:
-            return Tensor(ctx_, ggml_reshape_1d(ctx_, *clone(), shape[0]), shape);
+            return Tensor(ctx_, ggml_reshape_1d(ctx_, *clone(), out[0]), out);
+
         case 2:
-            return Tensor(ctx_, ggml_reshape_2d(ctx_, *clone(), shape[0], shape[1]), shape);
+            return Tensor(ctx_, ggml_reshape_2d(ctx_, *clone(), out[0], out[1]), out);
+
         case 3:
-            return Tensor(ctx_, ggml_reshape_3d(ctx_, *clone(), shape[0], shape[1], shape[2]), shape);
+            return Tensor(ctx_, ggml_reshape_3d(ctx_, *clone(), out[0], out[1], out[2]), out);
+
+        case 4:
+            return Tensor(ctx_, ggml_reshape_4d(ctx_, *clone(), out[0], out[1], out[2], out[3]), out);
+
         default:
             break;
     }
 
-    return Tensor(ctx_, ggml_reshape_4d(ctx_, *clone(), shape[0], shape[1], shape[2], shape[3]), shape);
+    throw std::invalid_argument("Unsupported shape: " + shape.to_string());
 }
 
 Tensor Tensor::permute(const Shape& order) const {
@@ -90,33 +138,42 @@ Tensor Tensor::permute(const Shape& order) const {
             "permute(): order must specify exactly one dimension for every tensor dimension");
     }
 
-    // GGML tensors are internally 4D. We initialize trailing dimensions 
-    // to map to themselves so they remain unaffected for rank < 4.
-    std::array<int, 4> axes = {0, 1, 2, 3};
+    // Build output shape in logical (PyTorch) order
+    Shape out(rank);
     std::array<bool, 4> seen = {false, false, false, false};
+    std::vector<int> logical_axes(rank);
 
     for (int i = 0; i < rank; ++i) {
-        int axis = static_cast<int>(order[i]);
+        auto axis = order[i];
 
-        if (axis < 0) {
+        if (axis < 0)
             axis += rank;
-        }
 
-        if (axis < 0 || axis >= rank || seen[axis]) {
+        if (axis < 0 || axis >= rank || seen[axis])
             throw std::invalid_argument(
                 "permute(): order must be a permutation of tensor dimensions");
-        }
 
-        axes[i] = axis;
         seen[axis] = true;
+        logical_axes[i] = axis;
+        out[i] = shape_[axis];
     }
-
-    // 1. ggml_permute creates a view with permuted strides (no data movement).
-    auto permuted_view = ggml_permute(ctx_, *clone(), axes[0], axes[1], axes[2], axes[3]);
     
-    // 2. ggml_cont physically copies the data into a new contiguous buffer 
-    // respecting the permuted strides, matching PyTorch's evaluated output.
-    return Tensor(ctx_, ggml_cont(ctx_, permuted_view));
+    // Build inverse permutation for GGML
+    // ggml_permute(p0,p1,p2,p3) means: old axis i goes to new position p_i
+    // We have: new_logical_pos j gets data from old_logical_axis = logical_axes[j]
+    // So: old_logical_axis -> new_logical_pos mapping is: logical_axes[j] -> j
+    // Convert to GGML indices:
+    std::array<int, 4> ggml_permute_args = {0, 1, 2, 3};
+    for (int new_logical_pos = 0; new_logical_pos < rank; ++new_logical_pos) {
+        int old_logical_axis = logical_axes[new_logical_pos];
+        int old_ggml_axis = rank - 1 - old_logical_axis;
+        int new_ggml_pos = rank - 1 - new_logical_pos;
+        ggml_permute_args[old_ggml_axis] = new_ggml_pos;
+    }
+    
+    return Tensor(ctx_, ggml_permute(ctx_, *clone(), 
+                  ggml_permute_args[0], ggml_permute_args[1], 
+                  ggml_permute_args[2], ggml_permute_args[3]), out).contiguous();
 }
 
 Tensor Tensor::squeeze(int dim) const {
@@ -125,39 +182,20 @@ Tensor Tensor::squeeze(int dim) const {
     const int rank = ndim();
     dim = normalize_dim(dim, rank);
 
-    if (t_->ne[dim] != 1)
-        throw std::invalid_argument(
-            "squeeze(): selected dimension must have size 1");
+    if (shape_[dim] != 1)
+        throw std::invalid_argument("squeeze(): selected dimension must have size 1");
 
-    // ggml does not support true rank-0 tensors.
-    if (rank == 1)
-        return *this;
+    // PyTorch: squeezing the only dimension of a (1,) tensor produces a scalar.
+    Shape out(rank > 1 ? rank - 1 : 0);
 
-    std::array<int64_t, 4> ne = {1, 1, 1, 1};
-    std::array<size_t, 4> nb = {0, 0, 0, 0};
-
-    int dst = 0;
-    for (int src = 0; src < rank; ++src) {
+    for (int src = 0, dst = 0; src < rank; ++src) {
         if (src == dim)
             continue;
 
-        ne[dst] = t_->ne[src];
-        nb[dst] = t_->nb[src];
-        ++dst;
+        out[dst++] = shape_[src];
     }
 
-    switch (rank - 1) {
-        case 1:
-            return Tensor(ctx_, ggml_view_1d(ctx_, *contiguous(), ne[0], 0));
-        case 2:
-            return Tensor(ctx_, ggml_view_2d(ctx_, *contiguous(), ne[0], ne[1], nb[1], 0));
-        case 3:
-            return Tensor(ctx_, ggml_view_3d(ctx_, *contiguous(), ne[0], ne[1], ne[2], nb[1], nb[2], 0));
-        default:
-            break;
-    }
-
-    throw std::logic_error("squeeze(): unsupported tensor rank");
+    return reshape(out);
 }
 
 Tensor Tensor::unsqueeze(int dim) const {
@@ -166,21 +204,17 @@ Tensor Tensor::unsqueeze(int dim) const {
     const int rank = ndim();
     dim = normalize_dim(dim, rank, true);
 
-    std::array<int64_t, 4> out = {1, 1, 1, 1};
+    Shape out(rank + 1);
 
     for (int src = 0, dst = 0; dst < rank + 1; ++dst) {
         if (dst == dim) {
             out[dst] = 1;
         } else {
-            out[dst] = t_->ne[src++];
+            out[dst] = shape_[src++];
         }
     }
 
-    Shape result_shape;
-    result_shape.ne_ = out;
-    result_shape.rank_ = rank + 1;
-
-    return reshape(result_shape);
+    return reshape(out);
 }
 
 Tensor Tensor::flatten(int start_dim, int end_dim) const {
@@ -195,83 +229,76 @@ Tensor Tensor::flatten(int start_dim, int end_dim) const {
     if (start_dim > end_dim)
         throw std::invalid_argument("flatten(): start_dim must be <= end_dim");
 
-    std::array<int64_t, 4> out = {1, 1, 1, 1};
-    int out_rank = 0;
+    Shape out(rank - (end_dim - start_dim));
 
-    for (int d = 0; d < start_dim; ++d) {
-        out[out_rank++] = t_->ne[d];
-    }
+    int dst = 0;
+
+    for (int d = 0; d < start_dim; ++d)
+        out[dst++] = shape_[d];
 
     int64_t flattened = 1;
     for (int d = start_dim; d <= end_dim; ++d) {
-        if (t_->ne[d] != 0 &&
-            flattened > std::numeric_limits<int64_t>::max() / t_->ne[d]) {
+        if (shape_[d] != 0 &&
+            flattened > std::numeric_limits<int64_t>::max() / shape_[d])
             throw std::overflow_error("flatten(): flattened dimension is too large");
-        }
 
-        flattened *= t_->ne[d];
+        flattened *= shape_[d];
     }
 
-    out[out_rank++] = flattened;
+    out[dst++] = flattened;
 
-    for (int d = end_dim + 1; d < rank; ++d) {
-        out[out_rank++] = t_->ne[d];
-    }
+    for (int d = end_dim + 1; d < rank; ++d)
+        out[dst++] = shape_[d];
 
-    Shape result_shape;
-    result_shape.ne_ = out;
-    result_shape.rank_ = out_rank;
-
-    return reshape(result_shape);
+    return reshape(out);
 }
-
-Tensor Tensor::unflatten(int64_t dim, const Shape& shape) {
+Tensor Tensor::unflatten(int64_t dim, const Shape& new_shape) {
     throw_if_not_valid();
     throw_if_not_contiguous();
 
     const int rank = ndim();
     const int target_dim = normalize_dim(static_cast<int>(dim), rank);
 
-    const int new_rank = rank - 1 + static_cast<int>(shape.rank());
-    if (new_rank > 4)
+    const int out_rank = rank - 1 + static_cast<int>(new_shape.rank());
+
+    if (out_rank > 4)
         throw std::invalid_argument("unflatten(): only at most 4 dimensions are supported");
 
-    std::array<int64_t, 4> out = {1, 1, 1, 1};
-    int out_rank = 0;
+    Shape out(out_rank);
 
-    for (int d = 0; d < target_dim; ++d) {
-        out[out_rank++] = t_->ne[d];
-    }
+    int dst = 0;
+
+    for (int d = 0; d < target_dim; ++d)
+        out[dst++] = shape_[d];
 
     int infer_dim = -1;
     int64_t known_product = 1;
 
-    for (size_t i = 0; i < shape.rank(); ++i) {
-        const int64_t value = shape[i];
+    for (size_t i = 0; i < new_shape.rank(); ++i) {
+        const int64_t value = new_shape[i];
 
         if (value == -1) {
             if (infer_dim != -1)
                 throw std::invalid_argument(
                     "unflatten(): only one replacement dimension may be inferred");
 
-            infer_dim = out_rank;
-            out[out_rank++] = 1;
+            infer_dim = dst;
+            out[dst++] = 1;
         } else {
             if (value < 0)
                 throw std::invalid_argument(
                     "unflatten(): dimensions must be >= 0 or -1");
 
             if (value != 0 &&
-                known_product > std::numeric_limits<int64_t>::max() / value) {
+                known_product > std::numeric_limits<int64_t>::max() / value)
                 throw std::overflow_error("unflatten(): shape is too large");
-            }
 
             known_product *= value;
-            out[out_rank++] = value;
+            out[dst++] = value;
         }
     }
 
-    const int64_t old_size = t_->ne[target_dim];
+    const int64_t old_size = shape_[target_dim];
 
     if (infer_dim != -1) {
         if (known_product == 0 || old_size % known_product != 0)
@@ -279,19 +306,15 @@ Tensor Tensor::unflatten(int64_t dim, const Shape& shape) {
                 "unflatten(): replacement shape is incompatible with selected dimension");
 
         out[infer_dim] = old_size / known_product;
-    } else if (known_product != old_size)
+    } else if (known_product != old_size) {
         throw std::invalid_argument(
             "unflatten(): replacement shape is incompatible with selected dimension");
-
-    for (int d = target_dim + 1; d < rank; ++d) {
-        out[out_rank++] = t_->ne[d];
     }
 
-    Shape result_shape;
-    result_shape.ne_ = out;
-    result_shape.rank_ = out_rank;
+    for (int d = target_dim + 1; d < rank; ++d)
+        out[dst++] = shape_[d];
 
-    return reshape(result_shape);
+    return reshape(out);
 }
 
 Tensor Tensor::narrow(int dim, int64_t start, int64_t length) const {
@@ -300,7 +323,7 @@ Tensor Tensor::narrow(int dim, int64_t start, int64_t length) const {
     const int rank = ndim();
     dim = normalize_dim(dim, rank);
 
-    const int64_t dim_size = t_->ne[dim];
+    const int64_t dim_size = shape_[dim];
 
     if (start < 0)
         start += dim_size;
@@ -311,25 +334,38 @@ Tensor Tensor::narrow(int dim, int64_t start, int64_t length) const {
     if (length < 0 || length > dim_size - start)
         throw std::out_of_range("narrow(): length is out of range");
 
-    std::array<int64_t, 4> ne = {
-        t_->ne[0], t_->ne[1], t_->ne[2], t_->ne[3]
-    };
-    ne[dim] = length;
+    Shape out = shape_;
+    out[dim] = length;
 
     const size_t offset = static_cast<size_t>(start) * t_->nb[dim];
 
     switch (rank) {
         case 1:
-            return Tensor(ctx_, ggml_view_1d(ctx_, *contiguous(), ne[0], offset));
+            return Tensor(ctx_,
+                ggml_view_1d(ctx_, *contiguous(),
+                             out[0], offset));
+
         case 2:
-            return Tensor( ctx_, ggml_view_2d(ctx_, *contiguous(), ne[0], ne[1], t_->nb[1], offset));
+            return Tensor(ctx_,
+                ggml_view_2d(ctx_, *contiguous(),
+                             out[0], out[1],
+                             t_->nb[1], offset));
+
         case 3:
-            return Tensor(ctx_, ggml_view_3d(ctx_, *contiguous(), ne[0], ne[1], ne[2], t_->nb[1], t_->nb[2], offset));
-        default:
-            break;
+            return Tensor(ctx_,
+                ggml_view_3d(ctx_, *contiguous(),
+                             out[0], out[1], out[2],
+                             t_->nb[1], t_->nb[2], offset));
+
+        case 4:
+            return Tensor(ctx_,
+                ggml_view_4d(ctx_, *contiguous(),
+                             out[0], out[1], out[2], out[3],
+                             t_->nb[1], t_->nb[2], t_->nb[3],
+                             offset));
     }
 
-    return Tensor(ctx_, ggml_view_4d(ctx_, *contiguous(), ne[0], ne[1], ne[2], ne[3], t_->nb[1], t_->nb[2], t_->nb[3], offset));
+    throw std::runtime_error("narrow(): invalid rank");
 }
 
 std::vector<Tensor> Tensor::chunk(int n, int dim) const {

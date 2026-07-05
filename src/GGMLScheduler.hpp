@@ -35,6 +35,10 @@ public:
         auto gf = ggml_new_graph(*ctx);
         auto result = compute.build(ctx);
 
+        // Materialize tensor if needed
+        if (result.is_contiguous())
+            result = result.contiguous();
+
         ggml_set_output(*result);
 
         return std::move(GGMLGraph(gf, sched_, result));

@@ -60,6 +60,7 @@ Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
 
     return result;
 }
+
 Tensor Tensor::reshape(const Shape& shape) const {
     throw_if_not_valid();
     throw_if_not_contiguous();
@@ -217,7 +218,7 @@ Tensor Tensor::unsqueeze(int dim) const {
     return reshape(out);
 }
 
-Tensor Tensor::flatten(int start_dim, int end_dim) const {
+Tensor Tensor::flatten(int64_t start_dim, int64_t end_dim) const {
     throw_if_not_valid();
     throw_if_not_contiguous();
 
@@ -252,6 +253,7 @@ Tensor Tensor::flatten(int start_dim, int end_dim) const {
 
     return reshape(out);
 }
+
 Tensor Tensor::unflatten(int64_t dim, const Shape& new_shape) {
     throw_if_not_valid();
     throw_if_not_contiguous();
@@ -337,32 +339,20 @@ Tensor Tensor::narrow(int dim, int64_t start, int64_t length) const {
     Shape out = shape_;
     out[dim] = length;
 
-    const size_t offset = static_cast<size_t>(start) * t_->nb[dim];
+    const size_t offset = static_cast<size_t>(start) * t_->nb[rank - 1 - dim];
 
     switch (rank) {
-        case 1:
-            return Tensor(ctx_,
-                ggml_view_1d(ctx_, *contiguous(),
-                             out[0], offset));
+    case 1:
+        return Tensor(ctx_, ggml_view_1d(ctx_, *clone(), out[0], offset), out).contiguous();
 
-        case 2:
-            return Tensor(ctx_,
-                ggml_view_2d(ctx_, *contiguous(),
-                             out[0], out[1],
-                             t_->nb[1], offset));
+    case 2:
+        return Tensor(ctx_, ggml_view_2d(ctx_, *clone(), out[1], out[0], t_->nb[1], offset), out).contiguous();
 
-        case 3:
-            return Tensor(ctx_,
-                ggml_view_3d(ctx_, *contiguous(),
-                             out[0], out[1], out[2],
-                             t_->nb[1], t_->nb[2], offset));
+    case 3:
+        return Tensor(ctx_, ggml_view_3d(ctx_, *clone(), out[2], out[1], out[0], t_->nb[1], t_->nb[2], offset), out).contiguous();
 
-        case 4:
-            return Tensor(ctx_,
-                ggml_view_4d(ctx_, *contiguous(),
-                             out[0], out[1], out[2], out[3],
-                             t_->nb[1], t_->nb[2], t_->nb[3],
-                             offset));
+    case 4:
+        return Tensor(ctx_, ggml_view_4d(ctx_, *clone(), out[3], out[2], out[1], out[0], t_->nb[1], t_->nb[2], t_->nb[3], offset), out).contiguous();
     }
 
     throw std::runtime_error("narrow(): invalid rank");
@@ -461,19 +451,39 @@ std::vector<Tensor> Tensor::split_with_sizes(const std::vector<int64_t>& split_s
 }
 
 Tensor Tensor::expand(const Tensor::Shape& new_shape) const {
-    auto dst = ggml_view_tensor(ctx_, t_);
-    auto ne = shape();
+    throw_if_not_valid();
+    throw_if_not_contiguous();
 
-    for (auto i = 0; i < ne.rank(); ++i) {
-        dst->ne[i] = new_shape[i];
-
-        if (ne[i] == 1 && new_shape[i] > 1)
-            dst->nb[i] = 0;
-        else
-            dst->nb[i] = t_->nb[i];
+    auto current_shape = shape();
+    const int current_rank = current_shape.rank();
+    const int new_rank = new_shape.rank();
+    
+    if (new_rank > 4)
+        throw std::runtime_error("expand(): rank cannot exceed 4");
+    
+    // Validate dimensions
+    for (int pt_dim = 0; pt_dim < new_rank; ++pt_dim) {
+        int current_pt_dim = pt_dim - (new_rank - current_rank);
+        int64_t new_size = new_shape[pt_dim];
+        
+        if (current_pt_dim >= 0) {
+            int64_t current_size = current_shape[current_pt_dim];
+            if (current_size != new_size && current_size != 1) {
+                throw std::runtime_error("expand(): cannot expand dimension " + 
+                                       std::to_string(pt_dim) + " from size " + 
+                                       std::to_string(current_size) + " to " + 
+                                       std::to_string(new_size));
+            }
+        }
     }
+    
+    // Create destination tensor with new shape
+    auto dst = ggml_new_tensor(ctx_, t_->type, new_rank, new_shape.data());
+    
+    // Use ggml_repeat for broadcasting
+    auto repeated = ggml_repeat(ctx_, t_, dst);
 
-    return Tensor(ctx_, dst);
+    return Tensor(ctx_, repeated, new_shape);
 }
 
 Tensor Tensor::operator[](const std::vector<Slice>& indices) const {

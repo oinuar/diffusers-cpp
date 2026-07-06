@@ -303,7 +303,7 @@ public:
     Tensor unsqueeze(int dim) const;
 
     /** @brief Flattens dimensions from `start_dim` to `end_dim` into a single dimension. */
-    Tensor flatten(int start_dim, int end_dim) const;
+    Tensor flatten(int64_t start_dim=0, int64_t end_dim=-1) const;
 
     /** @brief Reverses a previous flatten: splits dimension `dim` into the given shape. */
     Tensor unflatten(int64_t dim, const Shape& shape);

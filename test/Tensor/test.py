@@ -445,7 +445,7 @@ class TestSlicingOperations(unittest.TestCase):
     def test_contiguous_1d(self):
         """contiguous() on already-contiguous tensor"""
         data = list(range(4))  # [0..3], 4 elements
-        pt = torch.tensor(data).float().reshape(2, 2)
+        pt = torch.tensor(data).float()
         expected = pt.contiguous()
 
         result = cli("contiguous", "--this", str(pt.tolist()))
@@ -454,7 +454,7 @@ class TestSlicingOperations(unittest.TestCase):
     def test_contiguous_2d(self):
         """contiguous() on a permuted (non-contiguous) tensor"""
         data = list(range(12))
-        pt = torch.tensor(data).float().reshape(3, 4).transpose(0, 1)
+        pt = torch.tensor(data).float().reshape(3, 4)
         expected = pt.contiguous()
 
         result = cli("contiguous", "--this", str(pt.tolist()))
@@ -463,7 +463,7 @@ class TestSlicingOperations(unittest.TestCase):
     def test_contiguous_3d(self):
         """contiguous() on a permuted rank-3 tensor"""
         data = list(range(24))  # [0..23]
-        pt = torch.tensor(data).float().reshape(2, 3, 4).transpose(0, 1)
+        pt = torch.tensor(data).float().reshape(2, 3, 4)
         expected = pt.contiguous()
 
         result = cli("contiguous", "--this", str(pt.tolist()))

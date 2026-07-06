@@ -88,8 +88,8 @@ public:
 
         if (args_.command() == "flatten") {
             auto self = get_tensor(ctx, "--this");
-            auto start_dim = get_value<int>("--start_dim");
-            auto end_dim = get_value<int>("--end_dim");
+            auto start_dim = get_value<int>("--start_dim", 0);
+            auto end_dim = get_value<int>("--end_dim", -1);
 
             return self.flatten(start_dim, end_dim);
         }
@@ -339,7 +339,15 @@ private:
 
     template <typename T>
     T get_value(std::string_view option) {
-        auto value = args_.get<T>(option);
+        auto value = args_.get<T>(option).value();
+
+        std::cerr << "argument " << option << ": " << value << std::endl;
+        return value;
+    }
+
+    template <typename T>
+    T get_value(std::string_view option, const T& default_value) {
+        auto value = args_.get<T>(option).value_or(default_value);
 
         std::cerr << "argument " << option << ": " << value << std::endl;
         return value;

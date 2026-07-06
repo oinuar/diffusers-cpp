@@ -12,7 +12,7 @@ public:
     ArgumentParser(int argc, char** argv);
 
     template <typename T>
-    T get(std::string_view option) const;
+    std::optional<T> get(std::string_view option) const;
 
     const std::string& command() const {
         return command_;
@@ -23,7 +23,7 @@ private:
     std::unordered_map<std::string, std::string> options_;
 
     template<typename T>
-    static T parse_number(const std::string& value);
+    static std::optional<T> parse_number(const std::optional<std::string>& value);
 };
 
 ArgumentParser::ArgumentParser(int argc, char** argv)
@@ -49,47 +49,53 @@ ArgumentParser::ArgumentParser(int argc, char** argv)
 }
 
 template <>
-std::string ArgumentParser::get<std::string>(std::string_view option) const
+std::optional<std::string> ArgumentParser::get<std::string>(std::string_view option) const
 {
     auto it = options_.find(std::string(option));
 
     if (it == options_.end())
-        throw std::runtime_error("Missing required option: " + std::string(option));
+        return std::nullopt;
 
     return it->second;
 }
 
 template <>
-bool ArgumentParser::get<bool>(std::string_view option) const
+std::optional<bool> ArgumentParser::get<bool>(std::string_view option) const
 {
     auto value = get<std::string>(option);
 
-    if (value == "true")
+    if (!value)
+        return std::nullopt;
+
+    if (value.value() == "true")
         return true;
-    else if (value == "false")
+    else if (value.value() == "false")
         return false;
     
-    throw std::runtime_error("Invalid boolean: " + value);
+    throw std::runtime_error("Invalid boolean: " + value.value());
 }
 
 template <typename T>
-T ArgumentParser::get(std::string_view option) const
+std::optional<T> ArgumentParser::get(std::string_view option) const
 {
     return parse_number<T>(get<std::string>(option));
 }
 
 template<typename T>
-T ArgumentParser::parse_number(const std::string& value)
+std::optional<T> ArgumentParser::parse_number(const std::optional<std::string>& value)
 {
+    if (!value)
+        return std::nullopt;
+
     T result{};
 
     auto [ptr, ec] = std::from_chars(
-        value.data(),
-        value.data() + value.size(),
+        value.value().data(),
+        value.value().data() + value.value().size(),
         result);
 
-    if (ec != std::errc{} || ptr != value.data() + value.size())
-        throw std::runtime_error("Invalid number: " + value);
+    if (ec != std::errc{} || ptr != value.value().data() + value.value().size())
+        throw std::runtime_error("Invalid number: " + value.value());
 
     return result;
 }

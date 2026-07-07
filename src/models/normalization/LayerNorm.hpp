@@ -1,7 +1,7 @@
 #pragma once
 
-#include "modules/Module.hpp"
-#include "modules/Parameter.hpp"
+#include "nn/Module.hpp"
+#include "nn/Parameter.hpp"
 
 class LayerNorm : public Module {
 public:

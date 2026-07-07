@@ -45,10 +45,10 @@ Create `src/models/<category>/<ClassName>.hpp` in the appropriate subdirectory:
 ```cpp
 #pragma once
 
-#include "modules/Module.hpp"       // base class — always required
-#include "modules/Linear.hpp"       // any submodule you use
+#include "nn/Module.hpp"       // base class — always required
+#include "nn/Linear.hpp"       // any submodule you use
 #include "models/embeddings/RotaryEmbedding.hpp"  // other submodules
-#include "Tensor.hpp"               // Tensor type (re-exported via Module.hpp)
+#include "ggml/Tensor.hpp"               // Tensor type (re-exported via Module.hpp)
 
 class ClassName : public Module {
 public:
@@ -204,7 +204,7 @@ private:
     ClassName(...);  // private or protected — use factory instead
 };
 
-ClassName ClassName::from_pretrained(GGMLBackend& loader_backend, const std::string& path) {
+ClassName ClassName::from_pretrained(Backend& loader_backend, const std::string& path) {
 
     // NOTE: model might have been constructed with different parameters than source code defaults.
     // Always verify this by checking model config and set parameters here that match the config file.
@@ -240,8 +240,8 @@ The simplest and most reliable verification: compile a small test program that c
 
 ```cpp
 #include "models/<category>/<TopLevelClassName>.hpp" // <-- your top-level class that includes whole module tree
-#include "GGMLBackend.hpp"
-#include "GGMLScheduler.hpp"
+#include "Backend.hpp"
+#include "Scheduler.hpp"
 #include <iostream>
 
 int main(int argc, char* argv[]) {
@@ -255,7 +255,7 @@ int main(int argc, char* argv[]) {
 
     ggml_backend_load_all();
 
-    GGMLBackend cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+    Backend cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
 
     TopLevelClassName::from_pretrained(cpu, argv[1]);
 
@@ -299,12 +299,12 @@ python utils/convert-model/convert_diffusers_safetensors_to_gguf.py \
 ## Quick Reference: Key Headers to Include
 
 ```cpp
-#include "modules/Module.hpp"       // base class — every module needs this
-#include "modules/Parameter.hpp"    // leaf parameter nodes
-#include "modules/Linear.hpp"       // dense layers
-#include "modules/SiLU.hpp"         // SiLU activation (SwiGLU)
-#include "modules/Dropout.hpp"      // dropout layers
-#include "Tensor.hpp"               // Tensor type and operations
+#include "nn/Module.hpp"       // base class — every module needs this
+#include "nn/Parameter.hpp"    // leaf parameter nodes
+#include "nn/Linear.hpp"       // dense layers
+#include "nn/SiLU.hpp"         // SiLU activation (SwiGLU)
+#include "nn/Dropout.hpp"      // dropout layers
+#include "ggml/Tensor.hpp"               // Tensor type and operations
 
 // Model-specific headers (use relative paths from src/):
 #include "models/normalization/LayerNorm.hpp"

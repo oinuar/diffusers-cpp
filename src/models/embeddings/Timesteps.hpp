@@ -3,7 +3,7 @@
 #include <cmath>
 #include <vector>
 
-#include "modules/Module.hpp"
+#include "nn/Module.hpp"
 
 class Timesteps : public Module {
 public:

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "modules/Module.hpp"
-#include "modules/Linear.hpp"
-#include "modules/SiLU.hpp"
+#include "nn/Module.hpp"
+#include "nn/Linear.hpp"
+#include "nn/SiLU.hpp"
 
 class Qwen3MLP : public Module {
 public:

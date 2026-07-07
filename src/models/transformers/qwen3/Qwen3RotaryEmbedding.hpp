@@ -1,6 +1,6 @@
 #pragma once
 
-#include "modules/Module.hpp"
+#include "nn/Module.hpp"
 
 class Qwen3Config;
 

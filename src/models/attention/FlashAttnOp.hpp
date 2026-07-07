@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Tensor.hpp"
+#include "ggml/Tensor.hpp"
 
 struct FlashAttnOp {
      Tensor operator()(ggml_context* ctx, ggml_tensor* q, ggml_tensor* k,

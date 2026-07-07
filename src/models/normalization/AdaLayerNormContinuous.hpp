@@ -1,7 +1,7 @@
 #pragma once
 
-#include "modules/Module.hpp"
-#include "modules/SiLU.hpp"
+#include "nn/Module.hpp"
+#include "nn/SiLU.hpp"
 #include "models/normalization/LayerNorm.hpp"
 #include "models/normalization/RMSNorm.hpp"
 

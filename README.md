@@ -1,6 +1,6 @@
 # Diffusers Pipelines in C++ / GGML
 
-A standalone C++ implementation of [Hugging Face diffusers](https://github.com/huggingface/diffusers) pipelines, powered by [GGML](https://github.com/ggerganov/ggml) for efficient inference on CPU and GPU.
+A standalone C++ implementation of [Hugging Face diffusers](https://github.com/huggingface/diffusers) pipelines, powered by [](https://github.com/ggerganov/ggml) for efficient inference on CPU and GPU.
 
 This project port selected Python diffusers pipelines to C++, providing a drop-in replacement that runs locally without Python dependencies. Models are stored in GGUF format for efficient loading and minimal memory footprint.
 
@@ -8,7 +8,7 @@ This project port selected Python diffusers pipelines to C++, providing a drop-i
 
 - **Standalone**: No Python, no parent project dependency — only GGML as a git submodule.
 - **Fidelity**: Match the Python diffusers pipeline API and behavior as closely as possible.
-- **Performance**: Leverage GGML's optimized backends (CPU, CUDA, ROCm, Metal, Vulkan) for fast inference.
+- **Performance**: Leverage 's optimized backends (CPU, CUDA, ROCm, Metal, Vulkan) for fast inference.
 - **Modular**: Mirror the diffusers architecture — `Module` hierarchy with visitor-based weight loading.
 
 ## Implemented Pipelines
@@ -51,7 +51,7 @@ Key design points:
 
 ### GGML Backend Integration
 
-`GGMLBackend` wraps `ggml_backend_t` for device initialization (CPU, CUDA, Metal, etc.). It manages backend lifecycle and provides the execution context for building and running computation graphs.
+`Backend` wraps `ggml_backend_t` for device initialization (CPU, CUDA, Metal, etc.). It manages backend lifecycle and provides the execution context for building and running computation graphs.
 
 ### GGUF Loading
 
@@ -96,7 +96,7 @@ Here is a table of selected examples how Python syntax maps to C++:
 
 - CMake 3.12+
 - C++17 compiler (GCC, Clang, MSVC)
-- [GGML](https://github.com/ggerganov/ggml) — cloned as a git submodule
+- [](https://github.com/ggerganov/ggml) — cloned as a git submodule
 
 ### Clone & Build
 
@@ -158,8 +158,8 @@ flux2-cli/
 │   │   ├── attention/            # Attention mechanisms (FlashAttention, etc.)
 │   │   ├── embeddings/           # Positional, patch, text embeddings
 │   │   └── normalization/        # Layer norm, RMS norm, etc.
-│   ├── GGMLBackend.hpp         # ggml_backend_t wrapper for device management
-│   ├── GGMLScheduler.hpp       # Computation graph scheduling (planned)
+│   ├── Backend.hpp         # ggml_backend_t wrapper for device management
+│   ├── Scheduler.hpp       # Computation graph scheduling (planned)
 │   ├── GGUFLoaderVisitor.cpp/hpp  # Visitor for loading GGUF weights
 │   └── main.cpp                # CLI entry point
 ├── utils/convert-model/        # Conversion utility: diffusers safetensors → GGUF

@@ -2,10 +2,10 @@
 
 #include <optional>
 
-#include "modules/Module.hpp"
-#include "modules/Linear.hpp"
-#include "modules/Identity.hpp"
-#include "modules/SiLU.hpp"
+#include "nn/Module.hpp"
+#include "nn/Linear.hpp"
+#include "nn/Identity.hpp"
+#include "nn/SiLU.hpp"
 
 template <class ActFn = Identity, class PostActFn = Identity>
 class TimestepEmbedding : public Module {

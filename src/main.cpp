@@ -1,6 +1,6 @@
-#include "GGMLBackend.hpp"
-#include "GGMLScheduler.hpp"
-#include "models/transformers/flux2/Flux2Transformer2DModel.hpp"
+#include "Backend.hpp"
+#include "Scheduler.hpp"
+#include "models/diffusers/transformers/flux2/Flux2Transformer2DModel.hpp"
 #include <iostream>
 
 int main() {
@@ -9,13 +9,13 @@ int main() {
 
     ggml_backend_load_all();
 
-    GGMLBackend cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+    Backend cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
 
     std::string path = "../examples/flux2-cli/utils/convert-model/flux2-klein-9b_q8_0.gguf";
 
     auto transformer = Flux2Transformer2DModel::from_pretrained(cpu, path);
 
-    /*GGMLScheduler scheduler({*cpu});
+    /*Scheduler scheduler({*cpu});
 
     Flux2Transformer2DModelCompute transformer;
 

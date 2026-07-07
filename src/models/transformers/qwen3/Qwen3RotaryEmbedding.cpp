@@ -1,5 +1,5 @@
 #include "models/transformers/qwen3/Qwen3RotaryEmbedding.hpp"
-#include "modules/Constant.hpp"
+#include "nn/Constant.hpp"
 
 Qwen3RotaryEmbedding::Qwen3RotaryEmbedding(const Qwen3Config& config)
     : dim_(config.head_dim.value_or(config.hidden_size / config.num_attention_heads)),

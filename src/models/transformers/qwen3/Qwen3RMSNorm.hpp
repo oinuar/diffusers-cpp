@@ -1,7 +1,7 @@
 #pragma once
 
-#include "modules/Module.hpp"
-#include "modules/Parameter.hpp"
+#include "nn/Module.hpp"
+#include "nn/Parameter.hpp"
 
 class Qwen3RMSNorm : public Module {
 public:

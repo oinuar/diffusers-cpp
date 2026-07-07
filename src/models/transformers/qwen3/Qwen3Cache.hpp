@@ -2,7 +2,7 @@
 
 #include <utility>
 #include <vector>
-#include "Tensor.hpp"
+#include "ggml/Tensor.hpp"
 
 /** @brief Simple KV cache for Qwen3 attention layers.
  *

@@ -1,7 +1,7 @@
 #include "models/transformers/qwen3/Qwen3Model.hpp"
 #include "models/transformers/qwen3/Qwen3DecoderLayer.hpp"
 #include "models/transformers/qwen3/Qwen3RotaryEmbedding.hpp"
-#include "modules/Embedding.hpp"
+#include "nn/Embedding.hpp"
 
 Qwen3Model::Qwen3Model(const Qwen3Config& config) : num_hidden_layers_(config.num_hidden_layers) {
     modules["embed_tokens"] = std::make_shared<Embedding>(config.vocab_size, config.hidden_size, config.pad_token_id);

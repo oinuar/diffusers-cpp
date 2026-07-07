@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Tensor.hpp"
+#include "ggml/Tensor.hpp"
 #include "ggml-backend.h"
 
 /**

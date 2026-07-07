@@ -16,103 +16,103 @@ public:
     Tensor build(Context& ctx) {
 
         if (args_.command() == "contiguous") {
-            auto self = get_tensor(ctx, "--this");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return self.contiguous();
         }
 
 
         if (args_.command() == "scalar") {
-            auto value = get_value<float>("--value");
+            auto value = args_.get_one<float>("--value");
 
             return Tensor::scalar(*ctx, value);
         }
 
         if (args_.command() == "zeros") {
-            auto shape = get_shape("--shape");
+            auto shape = args_.get_one<Tensor::Shape>("--shape");
 
             return Tensor::zeros(*ctx, shape);
         }
 
         if (args_.command() == "ones") {
-            auto shape = get_shape("--shape");
+            auto shape = args_.get_one<Tensor::Shape>("--shape");
 
             return Tensor::ones(*ctx, shape);
         }
 
         if (args_.command() == "arange") {
-            auto start = get_value<float>("--start");
-            auto stop = get_value<float>("--stop");
-            auto step = get_value<float>("--step");
+            auto start = args_.get_one<float>("--start");
+            auto stop = args_.get_one<float>("--stop");
+            auto step = args_.get_one<float>("--step");
 
             return Tensor::arange(*ctx, start, stop, step);
         }
 
         
         if (args_.command() == "cat") {
-            /*auto tensors = args_.get<std::vector<Tensor>>("--tensor");
+            auto tensors = args_.get_many<Tensor>("--tensor", {ctx, inputs_});
+            auto dim = args_.get_one<int>("--dim");
 
-            return Tensor::cat(tensors, get_value<int>("--dim"));*/
-            throw std::runtime_error("not implemented yet");
+            return Tensor::cat(tensors, dim);
         }
 
 
         if (args_.command() == "reshape") {
-            auto self = get_tensor(ctx, "--this");
-            auto shape = get_shape("--shape");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
+            auto shape = args_.get_one<Tensor::Shape>("--shape");
 
             return self.reshape(shape);
         }
 
         if (args_.command() == "permute") {
-            auto self = get_tensor(ctx, "--this");
-            auto order = get_shape("--order");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
+            auto order = args_.get_one<Tensor::Shape>("--order");
 
             return self.permute(order);
         }
 
         if (args_.command() == "squeeze") {
-            auto self = get_tensor(ctx, "--this");
-            auto dim = get_value<int>("--dim");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
+            auto dim = args_.get_one<int>("--dim");
 
             return self.squeeze(dim);
         }
 
         if (args_.command() == "unsqueeze") {
-            auto self = get_tensor(ctx, "--this");
-            auto dim = get_value<int>("--dim");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
+            auto dim = args_.get_one<int>("--dim");
 
             return self.unsqueeze(dim);
         }
 
         if (args_.command() == "flatten") {
-            auto self = get_tensor(ctx, "--this");
-            auto start_dim = get_value<int>("--start_dim", 0);
-            auto end_dim = get_value<int>("--end_dim", -1);
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
+            auto start_dim = args_.get_optional<int>("--start_dim").value_or(0);
+            auto end_dim = args_.get_optional<int>("--end_dim").value_or(-1);
 
             return self.flatten(start_dim, end_dim);
         }
 
         if (args_.command() == "unflatten") {
-            auto self = get_tensor(ctx, "--this");
-            auto dim = get_value<int64_t>("--dim");
-            auto shape = get_shape("--shape");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
+            auto dim = args_.get_one<int64_t>("--dim");
+            auto shape = args_.get_one<Tensor::Shape>("--shape");
 
             return self.unflatten(dim, shape);
         }
 
         if (args_.command() == "narrow") {
-            auto self = get_tensor(ctx, "--this");
-            auto dim = get_value<int>("--dim");
-            auto start = get_value<int64_t>("--start");
-            auto length = get_value<int64_t>("--length");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
+            auto dim = args_.get_one<int>("--dim");
+            auto start = args_.get_one<int64_t>("--start");
+            auto length = args_.get_one<int64_t>("--length");
 
             return self.narrow(dim, start, length);
         }
 
         if (args_.command() == "expand") {
-            auto self = get_tensor(ctx, "--this");
-            auto new_shape = get_shape("--new-shape");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
+            auto new_shape = args_.get_one<Tensor::Shape>("--new-shape");
 
             return self.expand(new_shape);
         }
@@ -130,186 +130,186 @@ public:
         }
 
         if (args_.command() == "to") {
-            auto self = get_tensor(ctx, "--this");
-            auto type = (ggml_type)get_value<int>("--type");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
+            auto type = (ggml_type)args_.get_one<int>("--type");
 
             return self.to(type);
         }
 
 
         if (args_.command() == "neg") {
-            auto self = get_tensor(ctx, "--this");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             
             return -self;
         }
 
         if (args_.command() == "add") {
-            auto lhs = get_tensor(ctx, "--lhs");
-            auto rhs = get_tensor(ctx, "--rhs");
+            auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
+            auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
             return lhs + rhs;
         }
 
         if (args_.command() == "sub") {
-            auto lhs = get_tensor(ctx, "--lhs");
-            auto rhs = get_tensor(ctx, "--rhs");
+            auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
+            auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
             return lhs - rhs;
         }
 
         if (args_.command() == "mul") {
-            auto lhs = get_tensor(ctx, "--lhs");
-            auto rhs = get_tensor(ctx, "--rhs");
+            auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
+            auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
             return lhs * rhs;
         }
 
         if (args_.command() == "div") {
-            auto lhs = get_tensor(ctx, "--lhs");
-            auto rhs = get_tensor(ctx, "--rhs");
+            auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
+            auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
             return lhs / rhs;
         }
 
         if (args_.command() == "add_scalar") {
-            auto lhs = get_tensor(ctx, "--lhs");
-            auto rhs = get_value<float>("--rhs");
+            auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
+            auto rhs = args_.get_one<float>("--rhs");
 
             return lhs + rhs;
         }
 
         if (args_.command() == "sub_scalar") {
-            auto lhs = get_tensor(ctx, "--lhs");
-            auto rhs = get_value<float>("--rhs");
+            auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
+            auto rhs = args_.get_one<float>("--rhs");
 
             return lhs - rhs;
         }
 
         if (args_.command() == "mul_scalar") {
-            auto lhs = get_tensor(ctx, "--lhs");
-            auto rhs = get_value<float>("--rhs");
+            auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
+            auto rhs = args_.get_one<float>("--rhs");
 
             return lhs * rhs;
         }
 
         if (args_.command() == "div_scalar") {
-            auto lhs = get_tensor(ctx, "--lhs");
-            auto rhs = get_value<float>("--rhs");
+            auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
+            auto rhs = args_.get_one<float>("--rhs");
 
             return lhs / rhs;
         }
 
 
         if (args_.command() == "scalar_add") {
-            auto lhs = get_value<float>("--lhs");
-            auto rhs = get_tensor(ctx, "--rhs");
+            auto lhs = args_.get_one<float>("--lhs");
+            auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
             return lhs + rhs;
         }
 
         if (args_.command() == "scalar_sub") {
-            auto lhs = get_value<float>("--lhs");
-            auto rhs = get_tensor(ctx, "--rhs");
+            auto lhs = args_.get_one<float>("--lhs");
+            auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
             return lhs - rhs;
         }
 
         if (args_.command() == "scalar_mul") {
-            auto lhs = get_value<float>("--lhs");
-            auto rhs = get_tensor(ctx, "--rhs");
+            auto lhs = args_.get_one<float>("--lhs");
+            auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
             return lhs * rhs;
         }
 
         if (args_.command() == "scalar_div") {
-            auto lhs = get_value<float>("--lhs");
-            auto rhs = get_tensor(ctx, "--rhs");
+            auto lhs = args_.get_one<float>("--lhs");
+            auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
             return lhs / rhs;
         }
 
         if (args_.command() == "pow") {
-            auto self = get_tensor(ctx, "--this");
-            auto exponent = get_value<float>("--exponent");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
+            auto exponent = args_.get_one<float>("--exponent");
 
             return self.pow(exponent);
         }
 
         
         if (args_.command() == "clip") {
-            auto self = get_tensor(ctx, "--this");
-            auto min = get_value<float>("--min");
-            auto max = get_value<float>("--max");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
+            auto min = args_.get_one<float>("--min");
+            auto max = args_.get_one<float>("--max");
 
             return self.clip(min, max);
         }
 
         if (args_.command() == "sum") {
-            auto self = get_tensor(ctx, "--this");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return self.sum();
         }
 
         if (args_.command() == "mean") {
-            auto self = get_tensor(ctx, "--this");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return self.mean();
         }
 
 
         if (args_.command() == "index") {
-            auto self = get_tensor(ctx, "--this");
-            auto index = get_value<size_t>("--index");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
+            auto index = args_.get_one<size_t>("--index");
 
             return self[index];
         }
 
         if (args_.command() == "slice") {
-            auto self = get_tensor(ctx, "--this");
-            auto slice = get_slice("--slice");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
+            auto slice = args_.get_one<std::vector<Tensor::Slice>>("--slice");
 
             return self[slice];
         }
 
 
         if (args_.command() == "abs") {
-            auto self = get_tensor(ctx, "--this");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return abs(self);
         }
 
         if (args_.command() == "sqrt") {
-            auto self = get_tensor(ctx, "--this");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return sqrt(self);
         }
 
         if (args_.command() == "exp") {
-            auto self = get_tensor(ctx, "--this");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return exp(self);
         }
 
         if (args_.command() == "log") {
-            auto self = get_tensor(ctx, "--this");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return log(self);
         }
 
         if (args_.command() == "sin") {
-            auto self = get_tensor(ctx, "--this");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return sin(self);
         }
 
         if (args_.command() == "cos") {
-            auto self = get_tensor(ctx, "--this");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return cos(self);
         }
 
         if (args_.command() == "rsqrt") {
-            auto self = get_tensor(ctx, "--this");
+            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return rsqrt(self);
         }
@@ -335,53 +335,6 @@ public:
 private:
     ArgumentParser args_;
     std::vector<std::pair<Tensor, std::vector<float>>> inputs_;
-
-    template <typename T>
-    T get_value(std::string_view option) {
-        auto value = args_.get<T>(option).value();
-
-        std::cerr << "argument " << option << ": " << value << std::endl;
-        return value;
-    }
-
-    template <typename T>
-    T get_value(std::string_view option, const T& default_value) {
-        auto value = args_.get<T>(option).value_or(default_value);
-
-        std::cerr << "argument " << option << ": " << value << std::endl;
-        return value;
-    }
-
-    Tensor::Shape get_shape(std::string_view option) {
-        auto value = get_value<std::string>(option);
-        
-        ShapeParser parser(value);
-
-        return parser.parse();
-    }
-
-    std::vector<Tensor::Slice> get_slice(std::string_view option) {
-        auto value = get_value<std::string>(option);
-        
-        SliceParser parser(value);
-
-        return parser.parse();
-    }
-
-    Tensor get_tensor(Context& ctx, std::string_view option) {
-        auto value = get_value<std::string>(option);
-
-        TensorParser parser(value);
-
-        auto [shape, data] = parser.parse();
-        auto tensor = Tensor::empty(*ctx, shape, GGML_TYPE_F32);
-
-        std::cerr << "inferred shape for " << option << ": " << shape.to_string() << std::endl;
-
-        inputs_.push_back({tensor, data});
-
-        return tensor;
-    }
 
     template <typename T>
     void print_tensor(const std::vector<T>& data, const Tensor::Shape& shape) {

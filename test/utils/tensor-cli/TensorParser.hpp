@@ -6,203 +6,230 @@
 #include <string_view>
 #include <vector>
 #include <cctype>
+#include "../../ArgumentParser.hpp"
 
 #include "ggml/Tensor.hpp"
 
-class TensorParser {
-public:
-    explicit TensorParser(std::string_view s)
-        : s_(s), i_(0) {}
+class Context;
 
-    std::pair<Tensor::Shape, std::vector<float>> parse() {
-        skip_ws();
+template <>
+struct ArgumentParser::parser<Tensor> {
+    parser(Context& ctx, std::vector<std::pair<Tensor, std::vector<float>>>& inputs) : ctx_(ctx), inputs_(inputs) {
 
-        Node result = parse_array();
+    }
 
-        skip_ws();
+    Tensor operator ()(const std::string& option, const std::string& value) const {
+        TensorParser parser(value);
 
-        if (i_ != s_.size())
-            throw std::runtime_error("Unexpected trailing characters in tensor literal");
+        auto [shape, data] = parser.parse();
+        auto tensor = Tensor::empty(*ctx_, shape, GGML_TYPE_F32);
 
-        return {result.shape, std::move(result.values)};
+        inputs_.push_back(std::make_pair(tensor, data));
+
+        std::cerr << "inferred shape for " << option << ": " << shape.to_string() << std::endl;
+
+        return tensor;
     }
 
 private:
-    struct Node {
-        std::vector<float> values;
-        Tensor::Shape shape;
-        bool scalar = false; // true only for parse_number()
-    };
+    Context& ctx_;
+    std::vector<std::pair<Tensor, std::vector<float>>>& inputs_;
 
-    std::string_view s_;
-    size_t i_;
+    class TensorParser {
+    public:
+        explicit TensorParser(std::string_view s)
+            : s_(s), i_(0) {}
 
-    Node parse_array() {
-        expect('[');
+        std::pair<Tensor::Shape, std::vector<float>> parse() {
+            skip_ws();
 
-        std::vector<Node> elements;
+            Node result = parse_array();
 
-        skip_ws();
+            skip_ws();
 
-        if (peek() == ']') {
-            consume();
+            if (i_ != s_.size())
+                throw std::runtime_error("Unexpected trailing characters in tensor literal");
 
-            Node out;
-            out.shape = Tensor::Shape{0};
-            return out;
+            return {result.shape, std::move(result.values)};
         }
 
-        while (true) {
+    private:
+        struct Node {
+            std::vector<float> values;
+            Tensor::Shape shape;
+            bool scalar = false; // true only for parse_number()
+        };
+
+        std::string_view s_;
+        size_t i_;
+
+        Node parse_array() {
+            expect('[');
+
+            std::vector<Node> elements;
+
             skip_ws();
-
-            if (peek() == '[')
-                elements.push_back(parse_array());
-            else
-                elements.push_back(parse_number());
-
-            skip_ws();
-
-            if (peek() == ',') {
-                consume();
-                continue;
-            }
 
             if (peek() == ']') {
                 consume();
-                break;
+
+                Node out;
+                out.shape = Tensor::Shape{0};
+                return out;
             }
 
-            throw std::runtime_error("Expected ',' or ']'");
+            while (true) {
+                skip_ws();
+
+                if (peek() == '[')
+                    elements.push_back(parse_array());
+                else
+                    elements.push_back(parse_number());
+
+                skip_ws();
+
+                if (peek() == ',') {
+                    consume();
+                    continue;
+                }
+
+                if (peek() == ']') {
+                    consume();
+                    break;
+                }
+
+                throw std::runtime_error("Expected ',' or ']'");
+            }
+
+            return flatten(elements);
         }
 
-        return flatten(elements);
-    }
+        Node parse_number() {
+            skip_ws();
 
-    Node parse_number() {
-        skip_ws();
+            bool neg = false;
 
-        bool neg = false;
+            if (peek() == '-') {
+                neg = true;
+                consume();
+            }
 
-        if (peek() == '-') {
-            neg = true;
-            consume();
-        }
-
-        float value = 0.0f;
-        bool found = false;
-
-        while (std::isdigit(static_cast<unsigned char>(peek()))) {
-            found = true;
-            value = value * 10.0f + (peek() - '0');
-            consume();
-        }
-
-        if (peek() == '.') {
-            consume();
-
-            float frac = 0.1f;
+            float value = 0.0f;
+            bool found = false;
 
             while (std::isdigit(static_cast<unsigned char>(peek()))) {
                 found = true;
-                value += (peek() - '0') * frac;
-                frac *= 0.1f;
+                value = value * 10.0f + (peek() - '0');
                 consume();
             }
+
+            if (peek() == '.') {
+                consume();
+
+                float frac = 0.1f;
+
+                while (std::isdigit(static_cast<unsigned char>(peek()))) {
+                    found = true;
+                    value += (peek() - '0') * frac;
+                    frac *= 0.1f;
+                    consume();
+                }
+            }
+
+            if (!found)
+                throw std::runtime_error("Invalid number in tensor literal");
+
+            if (neg)
+                value = -value;
+
+            Node out;
+            out.values.push_back(value);
+            out.shape = Tensor::Shape{1};
+            out.scalar = true;
+
+            return out;
         }
 
-        if (!found)
-            throw std::runtime_error("Invalid number in tensor literal");
+        Node flatten(const std::vector<Node>& nodes) {
+            Node out;
 
-        if (neg)
-            value = -value;
+            if (nodes.empty())
+                return out;
 
-        Node out;
-        out.values.push_back(value);
-        out.shape = Tensor::Shape{1};
-        out.scalar = true;
+            // Array of scalars: [1, 2, 3]
+            if (nodes[0].scalar) {
+                for (const auto& n : nodes) {
+                    if (!n.scalar)
+                        throw std::runtime_error("Mixed scalars and arrays are not supported");
 
-        return out;
-    }
+                    out.values.push_back(n.values[0]);
+                }
 
-    Node flatten(const std::vector<Node>& nodes) {
-        Node out;
+                out.shape = Tensor::Shape{static_cast<int64_t>(nodes.size())};
+                out.scalar = false;
+                return out;
+            }
 
-        if (nodes.empty())
-            return out;
+            // Array of arrays: [[...], [...], ...]
+            const Tensor::Shape& firstShape = nodes[0].shape;
 
-        // Array of scalars: [1, 2, 3]
-        if (nodes[0].scalar) {
             for (const auto& n : nodes) {
-                if (!n.scalar)
+                if (n.scalar)
                     throw std::runtime_error("Mixed scalars and arrays are not supported");
 
-                out.values.push_back(n.values[0]);
+                if (n.shape.rank() != firstShape.rank())
+                    throw std::runtime_error("Jagged tensor not supported");
+
+                for (int i = 0; i < firstShape.rank(); ++i) {
+                    if (n.shape[i] != firstShape[i])
+                        throw std::runtime_error("Jagged tensor not supported");
+                }
+
+                out.values.insert(
+                    out.values.end(),
+                    n.values.begin(),
+                    n.values.end());
             }
 
-            out.shape = Tensor::Shape{static_cast<int64_t>(nodes.size())};
+            std::vector<int64_t> dims;
+            dims.push_back(static_cast<int64_t>(nodes.size()));
+
+            for (int i = 0; i < firstShape.rank(); ++i)
+                dims.push_back(firstShape[i]);
+
+            Tensor::Shape shape(dims.size());
+
+            for (size_t i = 0; i < dims.size(); ++i)
+                shape[i] = dims[i];
+
+            out.shape = std::move(shape);
             out.scalar = false;
+
             return out;
         }
 
-        // Array of arrays: [[...], [...], ...]
-        const Tensor::Shape& firstShape = nodes[0].shape;
+        char peek() const {
+            if (i_ >= s_.size())
+                return '\0';
 
-        for (const auto& n : nodes) {
-            if (n.scalar)
-                throw std::runtime_error("Mixed scalars and arrays are not supported");
-
-            if (n.shape.rank() != firstShape.rank())
-                throw std::runtime_error("Jagged tensor not supported");
-
-            for (int i = 0; i < firstShape.rank(); ++i) {
-                if (n.shape[i] != firstShape[i])
-                    throw std::runtime_error("Jagged tensor not supported");
-            }
-
-            out.values.insert(
-                out.values.end(),
-                n.values.begin(),
-                n.values.end());
+            return s_[i_];
         }
 
-        std::vector<int64_t> dims;
-        dims.push_back(static_cast<int64_t>(nodes.size()));
+        char consume() {
+            return s_[i_++];
+        }
 
-        for (int i = 0; i < firstShape.rank(); ++i)
-            dims.push_back(firstShape[i]);
+        void expect(char c) {
+            if (peek() != c)
+                throw std::runtime_error(std::string("Expected '") + c + "'");
 
-        Tensor::Shape shape(dims.size());
+            consume();
+        }
 
-        for (size_t i = 0; i < dims.size(); ++i)
-            shape[i] = dims[i];
-
-        out.shape = std::move(shape);
-        out.scalar = false;
-
-        return out;
-    }
-
-    char peek() const {
-        if (i_ >= s_.size())
-            return '\0';
-
-        return s_[i_];
-    }
-
-    char consume() {
-        return s_[i_++];
-    }
-
-    void expect(char c) {
-        if (peek() != c)
-            throw std::runtime_error(std::string("Expected '") + c + "'");
-
-        consume();
-    }
-
-    void skip_ws() {
-        while (i_ < s_.size() &&
-               std::isspace(static_cast<unsigned char>(s_[i_])))
-            ++i_;
-    }
+        void skip_ws() {
+            while (i_ < s_.size() &&
+                std::isspace(static_cast<unsigned char>(s_[i_])))
+                ++i_;
+        }
+    };
 };

@@ -169,6 +169,8 @@ endif()
 option(DIFFUSERS_BUILD_TESTS "diffusers: build test utilities" ON)
 
 if(DIFFUSERS_BUILD_TESTS)
+    enable_testing()
+
     add_executable(tensor-cli
         test/utils/tensor-cli/main.cpp
     )
@@ -178,11 +180,9 @@ if(DIFFUSERS_BUILD_TESTS)
     target_link_libraries(tensor-cli PRIVATE diffusers)
 
     # Create a test target that runs the Python unit tests.
-    # Usage:  cmake --build . --target test-tensor && ctest -R tensor --output-on-failure
     add_test(
         NAME test-tensor
-        COMMAND python3 -m unittest discover -s ${CMAKE_CURRENT_SOURCE_DIR}/test/ggml -p "Tensor.py" -v
-        ENV TENSOR_CLI=$<TARGET_FILE:tensor-cli>
+        COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/test/ggml/Tensor.py -v
     )
 
     # Make it depend on tensor-cli being built first
@@ -190,6 +190,10 @@ if(DIFFUSERS_BUILD_TESTS)
         DEPENDS tensor-cli
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test/ggml
     )
+
+    # Setup tensor-cli path
+    set_tests_properties(test-tensor PROPERTIES
+        ENVIRONMENT TENSOR_CLI=$<TARGET_FILE:tensor-cli>)
 
     message(STATUS "diffusers: unit tests enabled")
 endif()

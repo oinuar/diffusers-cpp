@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: log
-
 import ast
 import math
 import subprocess
@@ -22,21 +19,18 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorLog(unittest.TestCase):
     def test_log_1d(self):
-        """log([1])"""
         data = [1.0]
         pt = torch.tensor(data)
         expected = torch.log(pt)
         result = cli('log', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_log_2d(self):
-        """log([[1],[e]]"""
         data = [[1.0], [math.e]]
         pt = torch.tensor(data)
         expected = torch.log(pt)
         result = cli('log', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_log_values(self):
-        """log([10])"""
         data = [10.0]
         pt = torch.tensor(data)
         expected = torch.log(pt)

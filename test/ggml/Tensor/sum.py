@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: sum
-
 import ast
 import math
 import subprocess
@@ -22,28 +19,24 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorSum(unittest.TestCase):
     def test_sum_1d(self):
-        """sum([1])"""
         data = [1.0]
         pt = torch.tensor(data)
         expected = torch.sum(pt)
         result = cli('sum', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_sum_2d(self):
-        """sum([[1],[2]])"""
         data = [[1.0], [2.0]]
         pt = torch.tensor(data)
         expected = torch.sum(pt)
         result = cli('sum', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_sum_3d(self):
-        """sum on rank-3 tensor with negative values"""
         data = [[[-1.0], [2.0], [3.0]], [[4.0], [-5.0], [6.0]]]
         pt = torch.tensor(data)
         expected = torch.sum(pt)
         result = cli('sum', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_sum_negative(self):
-        """sum([-1])"""
         data = [-1.0]
         pt = torch.tensor(data)
         expected = torch.sum(pt)

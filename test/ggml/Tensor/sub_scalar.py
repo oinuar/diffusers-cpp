@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: sub_scalar
-
 import ast
 import math
 import subprocess
@@ -22,14 +19,12 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorSubScalar(unittest.TestCase):
     def test_sub_scalar_1d(self):
-        """[10] - 5"""
         a_vals = [10.0]
         pt = torch.tensor(a_vals)
         expected = pt - 5.0
         result = cli('sub_scalar', '--lhs', str(pt.tolist()), '--rhs', '5.0')
         verify(self, result, expected)
     def test_sub_scalar_2d(self):
-        """[[10],[20]] - 5"""
         a_vals = [[10.0], [20.0]]
         pt = torch.tensor(a_vals) - 5.0
         expected = pt - 5.0

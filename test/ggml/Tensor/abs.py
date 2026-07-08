@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: abs
-
 import ast
 import math
 import subprocess
@@ -22,28 +19,24 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorAbs(unittest.TestCase):
     def test_abs_1d(self):
-        """abs([-3.5,-1.2])"""
         data = [-3.5]
         pt = torch.tensor(data)
         expected = torch.abs(pt)
         result = cli('abs', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_abs_2d(self):
-        """abs([[-3.5,-1.2]])"""
         data = [[-3.5], [-1.2]]
         pt = torch.tensor(data)
         expected = torch.abs(pt)
         result = cli('abs', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_abs_3d(self):
-        """abs on rank-3 tensor"""
         data = [[[-3.5], [-1.2]], [[2.0], [-0.5]]]
         pt = torch.tensor(data)
         expected = torch.abs(pt)
         result = cli('abs', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_abs_all_positive(self):
-        """abs([1]) — no-op"""
         data = [1.0]
         pt = torch.tensor(data)
         expected = torch.abs(pt)

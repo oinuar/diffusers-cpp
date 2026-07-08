@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: index
-
 import ast
 import math
 import subprocess
@@ -22,21 +19,18 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorIndex(unittest.TestCase):
     def test_index_single(self):
-        """index [1] on (4,)"""
         data = list(range(4))
         pt = torch.tensor(data).float()
         expected = pt[1]
         result = cli('index', '--this', str(pt.tolist()), '--index', '1')
         verify(self, result, expected)
     def test_index_first(self):
-        """index [0] on (3,)"""
         data = list(range(3))
         pt = torch.tensor(data).float()
         expected = pt[0]
         result = cli('index', '--this', str(pt.tolist()), '--index', '0')
         verify(self, result, expected)
     def test_index_2d(self):
-        """index [1] on (2,4)"""
         data = list(range(8))
         pt = torch.tensor(data).float().reshape(2, 4)
         expected = pt[1]

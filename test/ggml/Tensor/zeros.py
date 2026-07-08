@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: zeros
-
 import ast
 import math
 import subprocess

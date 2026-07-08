@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: scalar_div
-
 import ast
 import math
 import subprocess
@@ -22,14 +19,12 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorScalarDiv(unittest.TestCase):
     def test_scalar_div_1d(self):
-        """50 / [5]"""
         b_vals = [5.0]
         pt = torch.tensor(b_vals)
         expected = 50.0 / pt
         result = cli('scalar_div', '--lhs', '50.0', '--rhs', str(pt.tolist()))
         verify(self, result, expected)
     def test_scalar_div_2d(self):
-        """50 / [[5],[10]]"""
         b_vals = [[5.0], [10.0]]
         pt = torch.tensor(b_vals)
         expected = 50.0 / pt

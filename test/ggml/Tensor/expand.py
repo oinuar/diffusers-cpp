@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: expand
-
 import ast
 import math
 import subprocess
@@ -22,14 +19,12 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorExpand(unittest.TestCase):
     def test_expand(self):
-        """expand (1,) -> (2,) — broadcasting"""
         data = [1.0]
         pt = torch.tensor(data)
         expected = pt.expand(2)
         result = cli('expand', '--this', str(pt.tolist()), '--new-shape', '(2)')
         verify(self, result, expected)
     def test_expand_2d(self):
-        """expand (1,2) -> (3,2) — broadcasting on rank-2 tensor"""
         data = [1.0, 2.0]
         pt = torch.tensor(data).reshape(1, 2)
         expected = pt.expand(3, 2)

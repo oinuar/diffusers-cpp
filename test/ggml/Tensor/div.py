@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: div
-
 import ast
 import math
 import subprocess
@@ -22,7 +19,6 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorDiv(unittest.TestCase):
     def test_div_1d(self):
-        """[10.] / [2.]"""
         a_vals = [10.0]
         b_vals = [2.0]
         lhs = torch.tensor(a_vals)
@@ -31,7 +27,6 @@ class TestTensorDiv(unittest.TestCase):
         result = cli('div', '--lhs', str(lhs.tolist()), '--rhs', str(rhs.tolist()))
         verify(self, result, expected)
     def test_div_2d(self):
-        """[[10],[30]] / [[2.5],[6.5]]"""
         a_vals = [[10.0], [30.0]]
         b_vals = [[2.5], [6.5]]
         lhs = torch.tensor(a_vals)
@@ -40,7 +35,6 @@ class TestTensorDiv(unittest.TestCase):
         result = cli('div', '--lhs', str(lhs.tolist()), '--rhs', str(rhs.tolist()))
         verify(self, result, expected)
     def test_div_3d(self):
-        """[2] / [2] — rank-3 tensor"""
         data = list(range(1, 25))
         a_vals = [float(v) + 1.0 for v in data]
         b_vals = [float(v) + 2.0 for v in data]

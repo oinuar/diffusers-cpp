@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: pow
-
 import ast
 import math
 import subprocess
@@ -22,28 +19,24 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorPow(unittest.TestCase):
     def test_pow_integer_1d(self):
-        """[1]^2"""
         data = [1.0]
         pt = torch.tensor(data)
         expected = torch.pow(pt, 2.0)
         result = cli('pow', '--this', str(pt.tolist()), '--exponent', '2.0')
         verify(self, result, expected)
     def test_pow_integer_2d(self):
-        """[[1],[4]]^2"""
         data = [[1.0], [4.0]]
         pt = torch.tensor(data)
         expected = torch.pow(pt, 2.0)
         result = cli('pow', '--this', str(pt.tolist()), '--exponent', '2.0')
         verify(self, result, expected)
     def test_pow_half(self):
-        """[4]^0.5"""
         data = [4.0]
         pt = torch.tensor(data)
         expected = torch.pow(pt, 0.5)
         result = cli('pow', '--this', str(pt.tolist()), '--exponent', '0.5')
         verify(self, result, expected)
     def test_pow_cube(self):
-        """[1]^3"""
         data = [1.0]
         pt = torch.tensor(data)
         expected = torch.pow(pt, 3.0)

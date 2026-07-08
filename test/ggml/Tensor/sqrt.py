@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: sqrt
-
 import ast
 import math
 import subprocess
@@ -22,28 +19,24 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorSqrt(unittest.TestCase):
     def test_sqrt_1d(self):
-        """sqrt([4])"""
         data = [4.0]
         pt = torch.tensor(data)
         expected = torch.sqrt(pt)
         result = cli('sqrt', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_sqrt_2d(self):
-        """sqrt([[4],[9]]"""
         data = [[4.0], [9.0]]
         pt = torch.tensor(data)
         expected = torch.sqrt(pt)
         result = cli('sqrt', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_sqrt_3d(self):
-        """sqrt on rank-3 tensor"""
         data = [[[4.0], [9.0]], [[16.0], [25.0]]]
         pt = torch.tensor(data)
         expected = torch.sqrt(pt)
         result = cli('sqrt', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_sqrt_small(self):
-        """sqrt([0.25])"""
         data = [0.25]
         pt = torch.tensor(data)
         expected = torch.sqrt(pt)

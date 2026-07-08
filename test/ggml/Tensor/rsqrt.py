@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: rsqrt
-
 import ast
 import math
 import subprocess
@@ -22,28 +19,24 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorRsqrt(unittest.TestCase):
     def test_rsqrt_1d(self):
-        """rsqrt([4])"""
         data = [4.0]
         pt = torch.tensor(data)
         expected = torch.rsqrt(pt)
         result = cli('rsqrt', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_rsqrt_2d(self):
-        """rsqrt([[4],[25]]"""
         data = [[4.0], [25.0]]
         pt = torch.tensor(data)
         expected = torch.rsqrt(pt)
         result = cli('rsqrt', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_rsqrt_3d(self):
-        """rsqrt on rank-3 tensor"""
         data = [[[4.0], [25.0]], [[9.0], [16.0]]]
         pt = torch.tensor(data)
         expected = torch.rsqrt(pt)
         result = cli('rsqrt', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_rsqrt_single(self):
-        """rsqrt([9])"""
         data = [9.0]
         pt = torch.tensor(data)
         expected = torch.rsqrt(pt)

@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: mul_scalar
-
 import ast
 import math
 import subprocess
@@ -22,21 +19,18 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorMulScalar(unittest.TestCase):
     def test_mul_scalar_1d(self):
-        """[2] * 4"""
         a_vals = [2.0]
         pt = torch.tensor(a_vals)
         expected = pt * 4.0
         result = cli('mul_scalar', '--lhs', str(pt.tolist()), '--rhs', '4.0')
         verify(self, result, expected)
     def test_mul_scalar_2d(self):
-        """[[2],[3]] * 4"""
         a_vals = [[2.0], [3.0]]
         pt = torch.tensor(a_vals)
         expected = pt * 4.0
         result = cli('mul_scalar', '--lhs', str(pt.tolist()), '--rhs', '4.0')
         verify(self, result, expected)
     def test_mul_scalar_3d(self):
-        """tensor * 4.0 — rank-3 tensor"""
         data = list(range(1, 25))
         a_vals = [float(v) for v in data]
         pt = torch.tensor(a_vals).reshape(2, 3, 4)

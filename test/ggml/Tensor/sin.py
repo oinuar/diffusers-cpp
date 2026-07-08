@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: sin
-
 import ast
 import math
 import subprocess
@@ -22,14 +19,12 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorSin(unittest.TestCase):
     def test_sin_1d(self):
-        """sin([0])"""
         data = [0.0]
         pt = torch.tensor(data)
         expected = torch.sin(pt)
         result = cli('sin', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_sin_2d(self):
-        """sin([[0],[pi/2]]"""
         data = [[0.0], [math.pi / 2]]
         pt = torch.tensor(data)
         expected = torch.sin(pt)

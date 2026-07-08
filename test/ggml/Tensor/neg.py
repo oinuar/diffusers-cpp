@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: neg
-
 import ast
 import math
 import subprocess
@@ -22,35 +19,30 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorNeg(unittest.TestCase):
     def test_neg_1d(self):
-        """-[1,-2]"""
         data = [1.0, -2.0]
         pt = torch.tensor(data)
         expected = -pt
         result = cli('neg', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_neg_2d(self):
-        """-[[1,-2],[3,-4]]"""
         data = [[1.0], [-2.0]]
         pt = torch.tensor(data)
         expected = -pt
         result = cli('neg', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_neg_3d(self):
-        """neg on rank-3 tensor (N,M,P,Q)"""
         data = [[[-1.0], [2.0]], [[-3.0], [4.0]]]
         pt = torch.tensor(data)
         expected = -pt
         result = cli('neg', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_neg_zeros_1d(self):
-        """-[0]"""
         data = [0.0]
         pt = torch.tensor(data)
         expected = -pt
         result = cli('neg', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_neg_zeros_2d(self):
-        """-[[0],[0]]"""
         data = [[0.0], [0.0]]
         pt = torch.tensor(data)
         expected = -pt

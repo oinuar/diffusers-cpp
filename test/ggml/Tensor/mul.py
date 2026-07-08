@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: mul
-
 import ast
 import math
 import subprocess
@@ -22,7 +19,6 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorMul(unittest.TestCase):
     def test_mul_1d(self):
-        """[2] * [4]"""
         a_vals = [2.0]
         b_vals = [4.0]
         lhs = torch.tensor(a_vals)
@@ -31,7 +27,6 @@ class TestTensorMul(unittest.TestCase):
         result = cli('mul', '--lhs', str(lhs.tolist()), '--rhs', str(rhs.tolist()))
         verify(self, result, expected)
     def test_mul_2d(self):
-        """[[2],[3]] * [[4],[5]]"""
         a_vals = [[2.0], [3.0]]
         b_vals = [[4.0], [5.0]]
         lhs = torch.tensor(a_vals)
@@ -40,7 +35,6 @@ class TestTensorMul(unittest.TestCase):
         result = cli('mul', '--lhs', str(lhs.tolist()), '--rhs', str(rhs.tolist()))
         verify(self, result, expected)
     def test_mul_3d(self):
-        """[2] * [2] — rank-3 tensor"""
         data = list(range(1, 25))
         a_vals = [float(v) for v in data]
         b_vals = [float(v) + 1.0 for v in data]

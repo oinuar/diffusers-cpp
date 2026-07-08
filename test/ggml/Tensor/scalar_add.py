@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: scalar_add
-
 import ast
 import math
 import subprocess
@@ -22,14 +19,12 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorScalarAdd(unittest.TestCase):
     def test_scalar_add_1d(self):
-        """10 + [1]"""
         b_vals = [1.0]
         pt = torch.tensor(b_vals)
         expected = 10.0 + pt
         result = cli('scalar_add', '--lhs', '10.0', '--rhs', str(pt.tolist()))
         verify(self, result, expected)
     def test_scalar_add_2d(self):
-        """10 + [[1],[2]]"""
         b_vals = [[1.0], [2.0]]
         pt = torch.tensor(b_vals)
         expected = 10.0 + pt

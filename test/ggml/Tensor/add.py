@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: add
-
 import ast
 import math
 import subprocess
@@ -22,7 +19,6 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorAdd(unittest.TestCase):
     def test_add_1d(self):
-        """[1] + [4]"""
         a_vals = [1.0]
         b_vals = [4.0]
         lhs = torch.tensor(a_vals)
@@ -31,7 +27,6 @@ class TestTensorAdd(unittest.TestCase):
         result = cli('add', '--lhs', str(lhs.tolist()), '--rhs', str(rhs.tolist()))
         verify(self, result, expected)
     def test_add_2d(self):
-        """[[1],[3]] + [[5],[7]]"""
         a_vals = [[1.0], [3.0]]
         b_vals = [[5.0], [7.0]]
         lhs = torch.tensor(a_vals)
@@ -40,7 +35,6 @@ class TestTensorAdd(unittest.TestCase):
         result = cli('add', '--lhs', str(lhs.tolist()), '--rhs', str(rhs.tolist()))
         verify(self, result, expected)
     def test_add_3d(self):
-        """[2] + [2] — rank-3 tensor"""
         data = list(range(1, 25))
         a_vals = [float(v) for v in data]
         b_vals = [float(v) * 0.5 for v in data]

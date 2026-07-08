@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: contiguous
-
 import ast
 import math
 import subprocess
@@ -22,21 +19,18 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorContiguous(unittest.TestCase):
     def test_contiguous_1d(self):
-        """contiguous() on already-contiguous tensor"""
         data = list(range(4))
         pt = torch.tensor(data).float()
         expected = pt.contiguous()
         result = cli('contiguous', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_contiguous_2d(self):
-        """contiguous() on a permuted (non-contiguous) tensor"""
         data = list(range(12))
         pt = torch.tensor(data).float().reshape(3, 4)
         expected = pt.contiguous()
         result = cli('contiguous', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_contiguous_3d(self):
-        """contiguous() on a permuted rank-3 tensor"""
         data = list(range(24))
         pt = torch.tensor(data).float().reshape(2, 3, 4)
         expected = pt.contiguous()

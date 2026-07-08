@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: flatten
-
 import ast
 import math
 import subprocess
@@ -22,28 +19,24 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorFlatten(unittest.TestCase):
     def test_flatten_all(self):
-        """flatten entire tensor"""
         data = list(range(6))
         pt = torch.tensor(data).float().reshape(2, 3)
         expected = pt.flatten()
         result = cli('flatten', '--this', str(pt.tolist()))
         verify(self, result, expected)
     def test_flatten_4d(self):
-        """flatten dimensions 1..2"""
         data = list(range(24))
         pt = torch.tensor(data).float().reshape(1, 2, 3, 4)
         expected = pt.flatten(1, 2)
         result = cli('flatten', '--this', str(pt.tolist()), '--start_dim', '1', '--end_dim', '2')
         verify(self, result, expected)
     def test_flatten_middle_dims(self):
-        """flatten dimensions 1..2"""
         data = list(range(120))
         pt = torch.tensor(data).float().reshape(2, 3, 4, 5)
         expected = pt.flatten(1, 2)
         result = cli('flatten', '--this', str(pt.tolist()), '--start_dim', '1', '--end_dim', '2')
         verify(self, result, expected)
     def test_flatten_all_4d(self):
-        """flatten rank-4 tensor"""
         data = list(range(24))
         pt = torch.tensor(data).float().reshape(1, 2, 3, 4)
         expected = pt.flatten()

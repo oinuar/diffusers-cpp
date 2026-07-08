@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: narrow
-
 import ast
 import math
 import subprocess
@@ -22,14 +19,12 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorNarrow(unittest.TestCase):
     def test_narrow(self):
-        """narrow(dim=1, start=1, length=2) on (2,4)"""
         data = list(range(8))
         pt = torch.tensor(data).float().reshape(2, 4)
         expected = pt.narrow(1, 1, 2)
         result = cli('narrow', '--this', str(pt.tolist()), '--dim', '1', '--start', '1', '--length', '2')
         verify(self, result, expected)
     def test_narrow_3d(self):
-        """narrow(dim=0, start=1, length=1) on rank-3 tensor (2,3,4)"""
         data = list(range(24))
         pt = torch.tensor(data).float().reshape(2, 3, 4)
         expected = pt.narrow(0, 1, 1)

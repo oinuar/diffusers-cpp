@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: scalar_mul
-
 import ast
 import math
 import subprocess
@@ -22,14 +19,12 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorScalarMul(unittest.TestCase):
     def test_scalar_mul_1d(self):
-        """3 * [4]"""
         b_vals = [4.0]
         pt = torch.tensor(b_vals)
         expected = 3.0 * pt
         result = cli('scalar_mul', '--lhs', '3.0', '--rhs', str(pt.tolist()))
         verify(self, result, expected)
     def test_scalar_mul_2d(self):
-        """3 * [[4],[6]]"""
         b_vals = [[4.0], [6.0]]
         pt = torch.tensor(b_vals)
         expected = 3.0 * pt

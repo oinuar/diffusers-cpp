@@ -1,6 +1,3 @@
-# Auto-generated from Tensor.py -- do not edit manually.
-# Operator: clip
-
 import ast
 import math
 import subprocess
@@ -22,21 +19,18 @@ def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05
 
 class TestTensorClip(unittest.TestCase):
     def test_clip_1d(self):
-        """clip([-5],[-3], min=-1)"""
         data = [-5.0]
         pt = torch.tensor(data)
         expected = torch.clip(pt, min=-1.0, max=1.0)
         result = cli('clip', '--this', str(pt.tolist()), '--min', '-1.0', '--max', '1.0')
         verify(self, result, expected)
     def test_clip_2d(self):
-        """clip([[-5],[-3]], min=-1)"""
         data = [[-5.0], [-3.0]]
         pt = torch.tensor(data)
         expected = torch.clip(pt, min=-1.0, max=1.0)
         result = cli('clip', '--this', str(pt.tolist()), '--min', '-1.0', '--max', '1.0')
         verify(self, result, expected)
     def test_clip_no_op(self):
-        """clip([1], min=0) — no clamping"""
         data = [1.0]
         pt = torch.tensor(data)
         expected = torch.clip(pt, min=-1.0, max=1.0)

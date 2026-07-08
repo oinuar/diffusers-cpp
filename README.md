@@ -23,38 +23,55 @@ This project ports selected Python diffusers pipelines to C++, providing a drop-
 
 ### Prerequisites
 
-- CMake 3.12+
-- C++17 compiler (GCC, Clang, MSVC)
-- [ggml](https://github.com/ggerganov/ggml) — cloned as a git submodule
+- CMake 3.18+
+- C++17 compiler (GCC 9+, Clang 10+, MSVC 19.20+)
+- [ggml](https://github.com/ggml-org/ggml) — cloned as a git submodule
+- Python 3.8+ (for running unit tests)
 
 ### Clone & Build
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/oinuar/diffusers-cpp
 cd diffusers-cpp
 git submodule update --init   # initializes GGML submodule
 
 mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake .. -DCMAKE_BUILD_TYPE=Release -DDIFFUSERS_CUDA=ON   # or OFF for CPU-only
 cmake --build . --config Release -j$(nproc)
 ```
 
 ### GPU Backend Options
 
-Enable GPU backends via CMake flags (passed to the cmake configure step):
+Enable GPU backends via `DIFFUSERS_*` CMake flags at configure time.
 
-| Flag | Backend |
-|------|---------|
-| `-DSD_CUDA=ON` | NVIDIA CUDA |
-| `-DSD_METAL=ON` | Apple Metal (macOS/iOS) |
-| `-DSD_HIPBLAS=ON` | AMD ROCm/HIP |
-| `-DSD_VULKAN=ON` | Vulkan (cross-platform GPU) |
-| `-DSD_OPENCL=ON` | OpenCL |
-| `-DSD_SYCL=ON` | Intel SYCL |
+| Flag | Backend | Platform |
+|------|---------|----------|
+| `-DDIFFUSERS_CUDA=ON` | NVIDIA CUDA (cuBLAS + mmq) | Linux, Windows |
+| `-DDIFFUSERS_METAL=ON` | Apple Metal (BLAS + compute) | macOS, iOS *(default on Apple)* |
+| `-DDIFFUSERS_HIP=ON` | AMD ROCm/HIP (rocBLAS) | Linux, Windows *(via WSL not supported)* |
+| `-DDIFFUSERS_VULKAN=ON` | Vulkan (cross-platform GPU) | Linux, Windows, macOS |
+| `-DDIFFUSERS_OPENCL=ON` | OpenCL 1.2/2.x fallback | Cross-platform |
+| `-DDIFFUSERS_SYCL=ON` | Intel oneAPI SYCL *(experimental)* | Linux, Windows *(requires Intel compiler or DPC++)* |
+| `-DDIFFUSERS_MUSA=ON` | MOFUSE MUSA (Moore Threads GPU) | Linux *(requires MUSA toolkit)* |
+
+### Running Unit Tests
+
+The project ships with unit tests:
+
+```bash
+# After building, run tests via CTest:
+ctest --output-on-failure
+```
 
 ### Standalone Build
 
-This project is fully standalone. The only external dependency is GGML (via submodule).
+This project is fully standalone. The only external dependency is GGML (via git submodule).
+
+Optionally build against a system-installed ggml instead of the submodule:
+
+```bash
+cmake .. -DCMAKE_BUILD_TYPE=Release -DDIFFUSERS_USE_SYSTEM_GGML=ON
+```
 
 ## Usage
 
@@ -83,8 +100,6 @@ diffusers-cpp/
 │   ├── ggml/                   # GGML C library wrapper (Tensor, Backend, Scheduler)
 │   └── main.cpp                # CLI entry point
 ├── utils/convert-model/        # Conversion utility: diffusers safetensors → GGUF
-├── diffusers/                  # Reference: Hugging Face diffusers Python repo (for porting)
-├── transformers/               # Reference: Hugging Face transformers Python repo (for porting)
 └── CMakeLists.txt              # Build configuration
 ```
 

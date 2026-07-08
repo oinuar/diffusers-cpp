@@ -1,5 +1,5 @@
-#include "Backend.hpp"
-#include "Scheduler.hpp"
+#include "ggml/Backend.hpp"
+#include "ggml/Scheduler.hpp"
 #include "models/diffusers/transformers/flux2/Flux2Transformer2DModel.hpp"
 #include <iostream>
 

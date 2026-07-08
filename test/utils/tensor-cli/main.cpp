@@ -4,7 +4,7 @@
 #include "ggml/Context.hpp"
 #include "ggml/Backend.hpp"
 #include "ggml/Scheduler.hpp"
-#include "../../ArgumentParser.hpp"
+#include "../ArgumentParser.hpp"
 #include "./TensorParser.hpp"
 #include "./ShapeParser.hpp"
 #include "./SliceParser.hpp"

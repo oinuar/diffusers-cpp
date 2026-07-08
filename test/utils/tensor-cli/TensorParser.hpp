@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 #include <cctype>
-#include "../../ArgumentParser.hpp"
+#include "../ArgumentParser.hpp"
 
 #include "ggml/Tensor.hpp"
 

@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 #include "ggml/Tensor.hpp"
-#include "../../ArgumentParser.hpp"
+#include "../ArgumentParser.hpp"
 
 template <>
 struct ArgumentParser::parser<Tensor::Shape> {

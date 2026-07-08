@@ -60,7 +60,7 @@ The project ships with unit tests:
 
 ```bash
 # After building, run tests via CTest:
-ctest --verbose --progress
+ctest --progress --output-on-failure
 ```
 
 ### Standalone Build

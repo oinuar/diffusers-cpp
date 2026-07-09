@@ -8,14 +8,15 @@
 
 class Graph {
 public:
-    Graph(ggml_cgraph* gf, ggml_backend_sched_t sched, Tensor tensor)
-        : gf_(gf), sched_(sched), tensor_(tensor)
+    Graph(ggml_cgraph* gf, ggml_backend_sched_t sched, std::vector<Tensor>&& tensors)
+        : gf_(gf), sched_(sched), tensors_(tensors)
     {
-        ggml_build_forward_expand(gf_, *tensor_);
+        for (auto& tensor : tensors_)
+            ggml_build_forward_expand(gf_, *tensor);
     }
 
     Graph(Graph&& other)
-        : gf_(other.gf_), sched_(other.sched_), tensor_(other.tensor_)
+        : gf_(other.gf_), sched_(other.sched_), tensors_(std::move(other.tensors_))
     {
         other.gf_ = nullptr;
     }
@@ -30,7 +31,7 @@ public:
 private:
     ggml_cgraph* gf_;
     ggml_backend_sched_t sched_;
-    Tensor tensor_;
+    std::vector<Tensor> tensors_;
 
     friend class Computation;
 };

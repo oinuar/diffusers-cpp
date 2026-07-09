@@ -2,11 +2,15 @@
 
 #include "ggml/Tensor.hpp"
 
+#include <vector>
+
 class Context;
 class Graph;
 
 class Compute {
 public:
-    virtual Tensor build(Context& ctx) = 0;
+    typedef std::vector<Tensor> Plan;
+
+    virtual Plan build(Context& ctx) = 0;
     virtual void compute(Graph& graph) = 0;
 };

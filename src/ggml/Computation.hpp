@@ -9,6 +9,9 @@
 
 class Computation {
 public:
+    template <typename T> 
+    using Result = std::vector<std::pair<Tensor::Shape, std::vector<T>>>;
+
     Computation(Graph& graph) : graph_(graph) {
         ggml_backend_sched_reset(graph.sched_);
         ggml_backend_sched_alloc_graph(graph.sched_, graph.gf_);
@@ -23,13 +26,19 @@ public:
     }
 
     template <class T>
-    std::pair<Tensor::Shape, std::vector<T>> read() {
-        std::vector<T> data(ggml_nelements(*graph_.tensor_));
+    Result<T> read() {
+        Result<T> result;
 
-        // Bring the data from the backend memory
-        ggml_backend_tensor_get(*graph_.tensor_, data.data(), 0, ggml_nbytes(*graph_.tensor_));
+        for (auto& tensor : graph_.tensors_) {
+            std::vector<T> data(ggml_nelements(*tensor));
 
-        return {graph_.tensor_.shape(), std::move(data)};
+            // Bring the data from the backend memory
+            ggml_backend_tensor_get(*tensor, data.data(), 0, ggml_nbytes(*tensor));
+
+            result.push_back({tensor.shape(), std::move(data)});
+        }
+
+        return std::move(result);
     }
 
     Computation(Computation&) = delete;

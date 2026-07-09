@@ -637,7 +637,7 @@ void Tensor::throw_if_not_valid() const {
 }
 
 void Tensor::throw_if_not_contiguous() const {
-    if (!ggml_is_contiguous(t_))
+    if (!is_contiguous())
         throw std::runtime_error(
             "a contiguous tensor is required; call contiguous() first");
 }

@@ -33,15 +33,18 @@ public:
         Context ctx(arena_);
 
         auto gf = ggml_new_graph(*ctx);
-        auto result = compute.build(ctx);
+        auto tensors = compute.build(ctx);
 
-        // Materialize tensor if needed
-        if (!result.is_contiguous())
-            result = result.contiguous();
+        for (auto& tensor : tensors) {
 
-        ggml_set_output(*result);
+            // Materialize tensor if needed
+            if (!tensor.is_contiguous())
+                tensor = tensor.contiguous();
 
-        return std::move(Graph(gf, sched_, result));
+            ggml_set_output(*tensor);
+        }
+
+        return std::move(Graph(gf, sched_, std::move(tensors)));
     }
 
     Scheduler(Scheduler&) = delete;

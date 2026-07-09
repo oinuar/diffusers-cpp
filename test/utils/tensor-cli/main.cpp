@@ -15,32 +15,32 @@ public:
 
     Tensor build(Context& ctx) {
 
-        if (args_.command() == "contiguous") {
+        if (args_.get(0) == "contiguous") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return self.contiguous();
         }
 
 
-        if (args_.command() == "scalar") {
+        if (args_.get(0) == "scalar") {
             auto value = args_.get_one<float>("--value");
 
             return Tensor::scalar(*ctx, value);
         }
 
-        if (args_.command() == "zeros") {
+        if (args_.get(0) == "zeros") {
             auto shape = args_.get_one<Tensor::Shape>("--shape");
 
             return Tensor::zeros(*ctx, shape);
         }
 
-        if (args_.command() == "ones") {
+        if (args_.get(0) == "ones") {
             auto shape = args_.get_one<Tensor::Shape>("--shape");
 
             return Tensor::ones(*ctx, shape);
         }
 
-        if (args_.command() == "arange") {
+        if (args_.get(0) == "arange") {
             auto start = args_.get_one<float>("--start");
             auto stop = args_.get_one<float>("--stop");
             auto step = args_.get_one<float>("--step");
@@ -49,7 +49,7 @@ public:
         }
 
         
-        if (args_.command() == "cat") {
+        if (args_.get(0) == "cat") {
             auto tensors = args_.get_many<Tensor>("--tensor", {ctx, inputs_});
             auto dim = args_.get_one<int>("--dim");
 
@@ -57,35 +57,35 @@ public:
         }
 
 
-        if (args_.command() == "reshape") {
+        if (args_.get(0) == "reshape") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto shape = args_.get_one<Tensor::Shape>("--shape");
 
             return self.reshape(shape);
         }
 
-        if (args_.command() == "permute") {
+        if (args_.get(0) == "permute") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto order = args_.get_one<Tensor::Shape>("--order");
 
             return self.permute(order);
         }
 
-        if (args_.command() == "squeeze") {
+        if (args_.get(0) == "squeeze") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto dim = args_.get_one<int>("--dim");
 
             return self.squeeze(dim);
         }
 
-        if (args_.command() == "unsqueeze") {
+        if (args_.get(0) == "unsqueeze") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto dim = args_.get_one<int>("--dim");
 
             return self.unsqueeze(dim);
         }
 
-        if (args_.command() == "flatten") {
+        if (args_.get(0) == "flatten") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto start_dim = args_.get_optional<int>("--start_dim").value_or(0);
             auto end_dim = args_.get_optional<int>("--end_dim").value_or(-1);
@@ -93,7 +93,7 @@ public:
             return self.flatten(start_dim, end_dim);
         }
 
-        if (args_.command() == "unflatten") {
+        if (args_.get(0) == "unflatten") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto dim = args_.get_one<int64_t>("--dim");
             auto shape = args_.get_one<Tensor::Shape>("--shape");
@@ -101,7 +101,7 @@ public:
             return self.unflatten(dim, shape);
         }
 
-        if (args_.command() == "narrow") {
+        if (args_.get(0) == "narrow") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto dim = args_.get_one<int>("--dim");
             auto start = args_.get_one<int64_t>("--start");
@@ -110,26 +110,26 @@ public:
             return self.narrow(dim, start, length);
         }
 
-        if (args_.command() == "expand") {
+        if (args_.get(0) == "expand") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto new_shape = args_.get_one<Tensor::Shape>("--new-shape");
 
             return self.expand(new_shape);
         }
 
-        if (args_.command() == "chunk") {
+        if (args_.get(0) == "chunk") {
             throw std::runtime_error("not implemented yet");
         }
 
-        if (args_.command() == "split") {
+        if (args_.get(0) == "split") {
             throw std::runtime_error("not implemented yet");
         }
 
-        if (args_.command() == "split_with_sizes") {
+        if (args_.get(0) == "split_with_sizes") {
             throw std::runtime_error("not implemented yet");
         }
 
-        if (args_.command() == "to") {
+        if (args_.get(0) == "to") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto type = (ggml_type)args_.get_one<int>("--type");
 
@@ -137,62 +137,62 @@ public:
         }
 
 
-        if (args_.command() == "neg") {
+        if (args_.get(0) == "neg") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             
             return -self;
         }
 
-        if (args_.command() == "add") {
+        if (args_.get(0) == "add") {
             auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
             auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
             return lhs + rhs;
         }
 
-        if (args_.command() == "sub") {
+        if (args_.get(0) == "sub") {
             auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
             auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
             return lhs - rhs;
         }
 
-        if (args_.command() == "mul") {
+        if (args_.get(0) == "mul") {
             auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
             auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
             return lhs * rhs;
         }
 
-        if (args_.command() == "div") {
+        if (args_.get(0) == "div") {
             auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
             auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
             return lhs / rhs;
         }
 
-        if (args_.command() == "add_scalar") {
+        if (args_.get(0) == "add_scalar") {
             auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
             auto rhs = args_.get_one<float>("--rhs");
 
             return lhs + rhs;
         }
 
-        if (args_.command() == "sub_scalar") {
+        if (args_.get(0) == "sub_scalar") {
             auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
             auto rhs = args_.get_one<float>("--rhs");
 
             return lhs - rhs;
         }
 
-        if (args_.command() == "mul_scalar") {
+        if (args_.get(0) == "mul_scalar") {
             auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
             auto rhs = args_.get_one<float>("--rhs");
 
             return lhs * rhs;
         }
 
-        if (args_.command() == "div_scalar") {
+        if (args_.get(0) == "div_scalar") {
             auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
             auto rhs = args_.get_one<float>("--rhs");
 
@@ -200,35 +200,35 @@ public:
         }
 
 
-        if (args_.command() == "scalar_add") {
+        if (args_.get(0) == "scalar_add") {
             auto lhs = args_.get_one<float>("--lhs");
             auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
             return lhs + rhs;
         }
 
-        if (args_.command() == "scalar_sub") {
+        if (args_.get(0) == "scalar_sub") {
             auto lhs = args_.get_one<float>("--lhs");
             auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
             return lhs - rhs;
         }
 
-        if (args_.command() == "scalar_mul") {
+        if (args_.get(0) == "scalar_mul") {
             auto lhs = args_.get_one<float>("--lhs");
             auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
             return lhs * rhs;
         }
 
-        if (args_.command() == "scalar_div") {
+        if (args_.get(0) == "scalar_div") {
             auto lhs = args_.get_one<float>("--lhs");
             auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
             return lhs / rhs;
         }
 
-        if (args_.command() == "pow") {
+        if (args_.get(0) == "pow") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto exponent = args_.get_one<float>("--exponent");
 
@@ -236,7 +236,7 @@ public:
         }
 
         
-        if (args_.command() == "clip") {
+        if (args_.get(0) == "clip") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto min = args_.get_one<float>("--min");
             auto max = args_.get_one<float>("--max");
@@ -244,27 +244,27 @@ public:
             return self.clip(min, max);
         }
 
-        if (args_.command() == "sum") {
+        if (args_.get(0) == "sum") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return self.sum();
         }
 
-        if (args_.command() == "mean") {
+        if (args_.get(0) == "mean") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return self.mean();
         }
 
 
-        if (args_.command() == "index") {
+        if (args_.get(0) == "index") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto index = args_.get_one<size_t>("--index");
 
             return self[index];
         }
 
-        if (args_.command() == "slice") {
+        if (args_.get(0) == "slice") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto slice = args_.get_one<std::vector<Tensor::Slice>>("--slice");
 
@@ -272,49 +272,49 @@ public:
         }
 
 
-        if (args_.command() == "abs") {
+        if (args_.get(0) == "abs") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return abs(self);
         }
 
-        if (args_.command() == "sqrt") {
+        if (args_.get(0) == "sqrt") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return sqrt(self);
         }
 
-        if (args_.command() == "exp") {
+        if (args_.get(0) == "exp") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return exp(self);
         }
 
-        if (args_.command() == "log") {
+        if (args_.get(0) == "log") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return log(self);
         }
 
-        if (args_.command() == "sin") {
+        if (args_.get(0) == "sin") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return sin(self);
         }
 
-        if (args_.command() == "cos") {
+        if (args_.get(0) == "cos") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return cos(self);
         }
 
-        if (args_.command() == "rsqrt") {
+        if (args_.get(0) == "rsqrt") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
             return rsqrt(self);
         }
 
-        throw std::runtime_error("Uknown command: " + args_.command());
+        throw std::runtime_error("Uknown command: " + args_.get(0));
     }
 
     void compute(Graph& graph) {

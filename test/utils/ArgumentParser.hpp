@@ -16,45 +16,7 @@ public:
         T operator ()(const std::string& option, const std::string& value) const;
     };
 
-    template<typename T, typename Parser>
-    class iterator {
-    public:
-        using iterator_category = std::input_iterator_tag;
-        using value_type = T;
-        using difference_type = std::ptrdiff_t;
-        using pointer = const T*;
-        using reference = const T&;
-
-        iterator() : it_(), parser_() {}
-
-        explicit iterator(
-            std::unordered_multimap<std::string, std::string>::const_iterator it,
-            Parser parser)
-            : it_(it), parser_(std::move(parser))
-        {}
-
-        T operator*() const {
-            return parser_(it_->first, it_->second);
-        }
-
-        iterator& operator++() {
-            ++it_;
-            return *this;
-        }
-
-        iterator operator++(int) {
-            auto tmp = *this;
-            ++(*this);
-            return tmp;
-        }
-
-        bool operator==(const iterator<T, Parser>& other) const { return it_ == other.it_; }
-        bool operator!=(const iterator<T, Parser>& other) const { return it_ != other.it_; }
-
-    private:
-        std::unordered_multimap<std::string, std::string>::const_iterator it_;
-        Parser parser_;
-    };
+    typedef std::unordered_multimap<std::string, std::string>::const_iterator iterator;
 
     ArgumentParser(int argc, char** argv);
 
@@ -67,87 +29,91 @@ public:
     template <typename T, class Parser = parser<T>>
     std::vector<T> get_many(std::string_view option, Parser parser = Parser()) const;
 
-    template <typename T, class Parser = parser<T>>
-    std::pair<iterator<T, Parser>, iterator<T, Parser>> get(std::string_view option, Parser parser = Parser()) const;
+    std::pair<iterator, iterator> get(std::string_view option) const;
 
-    const std::string& command() const {
-        return command_;
-    }
+    const std::string& get(const size_t& index) const;
 
 private:
     std::string command_;
     std::unordered_multimap<std::string, std::string> options_;
+    std::vector<std::string> positional_;
 };
 
-ArgumentParser::ArgumentParser(int argc, char** argv) {
-    if (argc < 2)
-        throw std::runtime_error("Missing command.");
+inline
+ArgumentParser::ArgumentParser(int argc, char** argv) : options_(), positional_() {
+    for (int i = 1; i < argc; ++i) {
+        std::string_view arg{argv[i]};
 
-    command_ = argv[1];
+        if (arg.rfind("--") == 0) {
+            if (arg.size() == 2)
+                throw std::runtime_error("Invalid option '--'.");
 
-    for (int i = 2; i < argc; ++i) {
-        std::string key = argv[i];
+            std::string key(arg);
 
-        if (!key.rfind("--", 0) == 0)
-            throw std::runtime_error("Expected option beginning with '--': " + key);
+            // --key value
+            if (i + 1 < argc && std::string_view(argv[i + 1]).rfind("--") != 0)
+                options_.emplace(std::move(key), argv[++i]);
 
-        // Boolean flag
-        if (i + 1 == argc || std::string_view(argv[i + 1]).rfind("--", 0) == 0) {
-            options_.insert(std::make_pair(std::move(key), ""));
-        } else {
-            options_.insert(std::make_pair(std::move(key), argv[++i]));
+            // --flag
+            else
+                options_.emplace(std::move(key), "");
         }
+        else
+            positional_.emplace_back(arg);
     }
 }
 
 template <typename T, class Parser>
 T ArgumentParser::get_one(std::string_view option, Parser parser) const {
-    auto [start, end] = get<T>(option, parser);
+    auto [start, end] = get(option);
 
     if (start == end)
         throw std::runtime_error("Missing option: " + std::string(option));
 
-    auto value = *(start++);
+    auto it = start++;
 
     if (start != end)
         throw std::runtime_error("Multiple options: " + std::string(option));
 
-    return std::move(value);
+    return std::move(parser(it->first, it->second));
 }
 
 template <typename T, class Parser>
 std::optional<T> ArgumentParser::get_optional(std::string_view option, Parser parser) const {
-    auto [start, end] = get<T>(option, parser);
+    auto [start, end] = get(option);
 
     if (start == end)
         return std::nullopt;
 
-    auto value = *(start++);
+    auto it = start++;
 
     if (start != end)
         throw std::runtime_error("Multiple options: " + std::string(option));
 
-    return value;
+    return std::move(parser(it->first, it->second));
 }
 
 template <typename T, class Parser>
 std::vector<T> ArgumentParser::get_many(std::string_view option, Parser parser) const {
-    auto [start, end] = get<T>(option, parser);
+    auto [start, end] = get(option);
     std::vector<T> result;
 
     for (auto it = start; it != end; ++it)
-        result.push_back(*it);
+        result.emplace_back(parser(it->first, it->second));
 
     return std::move(result);
 }
 
-template <typename T, class Parser>
-std::pair<ArgumentParser::iterator<T, Parser>, ArgumentParser::iterator<T, Parser>> ArgumentParser::get(
-    std::string_view option, Parser parser) const
-{
+inline
+std::pair<ArgumentParser::iterator, ArgumentParser::iterator> ArgumentParser::get(std::string_view option) const {
     auto [start, end] = options_.equal_range(std::string(option));
 
-    return std::make_pair(iterator<T, Parser>(start, std::move(parser)), iterator<T, Parser>(end, std::move(parser)));
+    return std::make_pair(start, end);
+}
+
+inline
+const std::string& ArgumentParser::get(const size_t& index) const {
+    return positional_.at(index);
 }
 
 template <typename T>

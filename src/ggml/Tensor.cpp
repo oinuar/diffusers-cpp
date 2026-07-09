@@ -17,48 +17,53 @@ std::string Tensor::Shape::to_string() const {
 }
 
 Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
-    if (tensors.empty()) {
+    if (tensors.empty())
         throw std::invalid_argument("cat(): expected a non-empty list of tensors");
-    }
 
-    const Tensor& first = tensors.front();
+    auto& first = tensors.front();
     first.throw_if_not_valid();
 
     const int rank = first.ndim();
     dim = normalize_dim(dim, rank);
-
-    ggml_context* ctx = first.ctx_;
-    ggml_type type = first.dtype();
+    
+    auto ctx = first.ctx_;
+    auto type = first.dtype();
 
     for (const Tensor& tensor : tensors) {
         tensor.throw_if_not_valid();
 
-        if (tensor.ctx_ != ctx) {
-            throw std::invalid_argument("cat(): all tensors must belong to the same ggml context");
-        }
-
-        if (tensor.dtype() != type) {
+        if (tensor.dtype() != type)
             throw std::invalid_argument("cat(): all tensors must have the same dtype");
-        }
 
-        if (tensor.ndim() != rank) {
+        if (tensor.ndim() != rank)
             throw std::invalid_argument("cat(): tensors must have the same number of dimensions");
-        }
 
         for (int d = 0; d < rank; ++d) {
-            if (d != dim && tensor.t_->ne[d] != first.t_->ne[d]) {
+            if (d != dim && tensor.shape()[d] != first.shape()[d]) {
                 throw std::invalid_argument(
                     "cat(): tensor sizes must match except in the concatenation dimension");
             }
         }
     }
 
-    Tensor result = first;
-    for (size_t i = 1; i < tensors.size(); ++i) {
-        result = Tensor(ctx, ggml_concat(ctx, result.t_, tensors[i].t_, dim));
+    // Perform concatenation with swapped arguments to get correct order
+    auto tensor = tensors[0].t_;
+    for (auto i = 1; i < tensors.size(); ++i)
+        tensor = ggml_concat(ctx, tensors[i].t_, tensor, rank - 1 - dim);
+
+    // Calculate the correct output shape using PyTorch indexing
+    Shape shape(rank);
+    for (int i = 0; i < rank; ++i) {
+        if (i == dim) {
+            int64_t total_size = 0;
+            for (const auto& tensor : tensors)
+                total_size += tensor.shape_[i];
+            shape[i] = total_size;
+        } else
+            shape[i] = first.shape_[i];
     }
 
-    return result;
+    return Tensor(ctx, tensor, shape);
 }
 
 Tensor Tensor::reshape(const Shape& shape) const {
@@ -174,7 +179,7 @@ Tensor Tensor::permute(const Shape& order) const {
     
     return Tensor(ctx_, ggml_permute(ctx_, *clone(), 
                   ggml_permute_args[0], ggml_permute_args[1], 
-                  ggml_permute_args[2], ggml_permute_args[3]), out).contiguous();
+                  ggml_permute_args[2], ggml_permute_args[3]), out);
 }
 
 Tensor Tensor::squeeze(int dim) const {
@@ -343,16 +348,16 @@ Tensor Tensor::narrow(int dim, int64_t start, int64_t length) const {
 
     switch (rank) {
     case 1:
-        return Tensor(ctx_, ggml_view_1d(ctx_, *clone(), out[0], offset), out).contiguous();
+        return Tensor(ctx_, ggml_view_1d(ctx_, *clone(), out[0], offset), out);
 
     case 2:
-        return Tensor(ctx_, ggml_view_2d(ctx_, *clone(), out[1], out[0], t_->nb[1], offset), out).contiguous();
+        return Tensor(ctx_, ggml_view_2d(ctx_, *clone(), out[1], out[0], t_->nb[1], offset), out);
 
     case 3:
-        return Tensor(ctx_, ggml_view_3d(ctx_, *clone(), out[2], out[1], out[0], t_->nb[1], t_->nb[2], offset), out).contiguous();
+        return Tensor(ctx_, ggml_view_3d(ctx_, *clone(), out[2], out[1], out[0], t_->nb[1], t_->nb[2], offset), out);
 
     case 4:
-        return Tensor(ctx_, ggml_view_4d(ctx_, *clone(), out[3], out[2], out[1], out[0], t_->nb[1], t_->nb[2], t_->nb[3], offset), out).contiguous();
+        return Tensor(ctx_, ggml_view_4d(ctx_, *clone(), out[3], out[2], out[1], out[0], t_->nb[1], t_->nb[2], t_->nb[3], offset), out);
     }
 
     throw std::runtime_error("narrow(): invalid rank");

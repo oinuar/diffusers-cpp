@@ -179,7 +179,7 @@ if(DIFFUSERS_BUILD_TESTS)
     target_link_libraries(tensor-cli PRIVATE diffusers)
 
     # Generate an individual ctest entry for each Python test file.
-    file(GLOB TEST_FILES ${CMAKE_CURRENT_SOURCE_DIR}/test/src/ggml/Tensor/*.py)
+    file(GLOB TEST_FILES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/src/ggml/Tensor/*.py)
     foreach(TEST_FILE ${TEST_FILES})
         get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
         add_test(

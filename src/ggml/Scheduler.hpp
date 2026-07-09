@@ -36,7 +36,7 @@ public:
         auto result = compute.build(ctx);
 
         // Materialize tensor if needed
-        if (result.is_contiguous())
+        if (!result.is_contiguous())
             result = result.contiguous();
 
         ggml_set_output(*result);

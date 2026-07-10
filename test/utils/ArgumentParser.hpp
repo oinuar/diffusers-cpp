@@ -113,6 +113,9 @@ std::pair<ArgumentParser::iterator, ArgumentParser::iterator> ArgumentParser::ge
 
 inline
 const std::string& ArgumentParser::get(const size_t& index) const {
+    if (index >= positional_.size())
+        throw std::runtime_error("Missing argument at position " + std::to_string(index));
+
     return positional_.at(index);
 }
 

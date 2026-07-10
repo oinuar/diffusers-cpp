@@ -367,25 +367,19 @@ std::vector<Tensor> Tensor::chunk(int n, int dim) const {
     throw_if_not_valid();
 
     if (n <= 0)
-        throw std::invalid_argument("chunk(): chunks must be greater than zero");
+        throw std::invalid_argument("chunk(): n must be greater than zero");
 
     dim = normalize_dim(dim, ndim());
 
-    const int64_t dim_size = t_->ne[dim];
+    const int64_t dim_size = shape_[dim];
 
     if (dim_size == 0)
         return { narrow(dim, 0, 0) };
 
     // PyTorch's chunk chooses ceil(dim_size / n), and may return fewer than n chunks.
-    const int64_t chunk_size = (dim_size + n - 1) / n;
+    const int64_t split_size = (dim_size + n - 1) / n;
 
-    std::vector<Tensor> result;
-    result.reserve(static_cast<size_t>((dim_size + chunk_size - 1) / chunk_size));
-
-    for (int64_t start = 0; start < dim_size; start += chunk_size)
-        result.push_back(narrow(dim, start, std::min(chunk_size, dim_size - start)));
-
-    return result;
+    return split(split_size, dim);
 }
 
 std::vector<Tensor> Tensor::split(int64_t split_size, int dim) const {
@@ -396,14 +390,13 @@ std::vector<Tensor> Tensor::split(int64_t split_size, int dim) const {
 
     dim = normalize_dim(dim, ndim());
 
-    const int64_t dim_size = t_->ne[dim];
+    const int64_t dim_size = shape_[dim];
 
-    if (dim_size == 0) {
+    if (dim_size == 0)
         return { narrow(dim, 0, 0) };
-    }
 
     std::vector<Tensor> result;
-    result.reserve(static_cast<size_t>((dim_size + split_size - 1) / split_size));
+    result.reserve((dim_size + split_size - 1) / split_size);
 
     for (int64_t start = 0; start < dim_size; start += split_size)
         result.push_back(narrow(dim, start, std::min(split_size, dim_size - start)));

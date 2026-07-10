@@ -403,7 +403,6 @@ private:
     friend Tensor cos(const Tensor& tensor);
 
     static int normalize_dim(int dim, int rank, bool allow_end = false);
-    static int64_t checked_numel(const std::array<int64_t, 4>& shape, int rank);
 
     void throw_if_not_valid() const;
     void throw_if_not_contiguous() const;

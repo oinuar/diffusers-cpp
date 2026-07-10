@@ -532,13 +532,15 @@ Tensor Tensor::operator[](const std::vector<Slice>& indices) const {
             expanded.push_back(Slice::all());
     }
 
-    Tensor result = *this;
-    int output_dim = 0;
+    auto result = *this;
+    auto output_dim = 0;
+    auto cloned = false;
 
     for (const Slice& item : expanded) {
         switch (item.kind) {
             case Slice::Kind::NewAxis:
                 result = result.unsqueeze(output_dim);
+                cloned = true;
                 ++output_dim;
                 break;
 
@@ -558,6 +560,7 @@ Tensor Tensor::operator[](const std::vector<Slice>& indices) const {
 
                 result = result.narrow(output_dim, normalized_index, 1);
                 result = result.squeeze(output_dim);
+                cloned = true;
                 // Do not increment output_dim: integer indexing removed it.
                 break;
             }
@@ -591,6 +594,7 @@ Tensor Tensor::operator[](const std::vector<Slice>& indices) const {
                     normalized_start,
                     normalized_stop - normalized_start);
 
+                cloned = true;
                 ++output_dim;
                 break;
             }
@@ -599,6 +603,10 @@ Tensor Tensor::operator[](const std::vector<Slice>& indices) const {
                 break;
         }
     }
+
+    // Clone tensor if not already cloned
+    if (!cloned)
+        result = result.clone();
 
     return result;
 }

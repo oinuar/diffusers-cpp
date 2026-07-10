@@ -18,26 +18,26 @@ public:
         if (args_.get(0) == "contiguous") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
-            return {self.contiguous()};
+            return self.contiguous();
         }
 
 
         if (args_.get(0) == "scalar") {
             auto value = args_.get_one<float>("--value");
 
-            return {Tensor::scalar(*ctx, value)};
+            return Tensor::scalar(*ctx, value);
         }
 
         if (args_.get(0) == "zeros") {
             auto shape = args_.get_one<Tensor::Shape>("--shape");
 
-            return {Tensor::zeros(*ctx, shape)};
+            return Tensor::zeros(*ctx, shape);
         }
 
         if (args_.get(0) == "ones") {
             auto shape = args_.get_one<Tensor::Shape>("--shape");
 
-            return {Tensor::ones(*ctx, shape)};
+            return Tensor::ones(*ctx, shape);
         }
 
         if (args_.get(0) == "arange") {
@@ -45,7 +45,7 @@ public:
             auto stop = args_.get_one<float>("--stop");
             auto step = args_.get_one<float>("--step");
 
-            return {Tensor::arange(*ctx, start, stop, step)};
+            return Tensor::arange(*ctx, start, stop, step);
         }
 
         
@@ -53,7 +53,7 @@ public:
             auto tensors = args_.get_many<Tensor>("--tensor", {ctx, inputs_});
             auto dim = args_.get_one<int>("--dim");
 
-            return {Tensor::cat(tensors, dim)};
+            return Tensor::cat(tensors, dim);
         }
 
 
@@ -61,28 +61,28 @@ public:
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto shape = args_.get_one<Tensor::Shape>("--shape");
 
-            return {self.reshape(shape)};
+            return self.reshape(shape);
         }
 
         if (args_.get(0) == "permute") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto order = args_.get_one<Tensor::Shape>("--order");
 
-            return {self.permute(order)};
+            return self.permute(order);
         }
 
         if (args_.get(0) == "squeeze") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto dim = args_.get_one<int>("--dim");
 
-            return {self.squeeze(dim)};
+            return self.squeeze(dim);
         }
 
         if (args_.get(0) == "unsqueeze") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto dim = args_.get_one<int>("--dim");
 
-            return {self.unsqueeze(dim)};
+            return self.unsqueeze(dim);
         }
 
         if (args_.get(0) == "flatten") {
@@ -90,7 +90,7 @@ public:
             auto start_dim = args_.get_optional<int>("--start_dim").value_or(0);
             auto end_dim = args_.get_optional<int>("--end_dim").value_or(-1);
 
-            return {self.flatten(start_dim, end_dim)};
+            return self.flatten(start_dim, end_dim);
         }
 
         if (args_.get(0) == "unflatten") {
@@ -98,7 +98,7 @@ public:
             auto dim = args_.get_one<int64_t>("--dim");
             auto shape = args_.get_one<Tensor::Shape>("--shape");
 
-            return {self.unflatten(dim, shape)};
+            return self.unflatten(dim, shape);
         }
 
         if (args_.get(0) == "narrow") {
@@ -107,14 +107,14 @@ public:
             auto start = args_.get_one<int64_t>("--start");
             auto length = args_.get_one<int64_t>("--length");
 
-            return {self.narrow(dim, start, length)};
+            return self.narrow(dim, start, length);
         }
 
         if (args_.get(0) == "expand") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto new_shape = args_.get_one<Tensor::Shape>("--new-shape");
 
-            return {self.expand(new_shape)};
+            return self.expand(new_shape);
         }
 
         if (args_.get(0) == "chunk") {
@@ -145,70 +145,70 @@ public:
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto type = (ggml_type)args_.get_one<int>("--type");
 
-            return {self.to(type)};
+            return self.to(type);
         }
 
 
         if (args_.get(0) == "neg") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             
-            return {-self};
+            return -self;
         }
 
         if (args_.get(0) == "add") {
             auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
             auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
-            return {lhs + rhs};
+            return lhs + rhs;
         }
 
         if (args_.get(0) == "sub") {
             auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
             auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
-            return {lhs - rhs};
+            return lhs - rhs;
         }
 
         if (args_.get(0) == "mul") {
             auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
             auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
-            return {lhs * rhs};
+            return lhs * rhs;
         }
 
         if (args_.get(0) == "div") {
             auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
             auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
-            return {lhs / rhs};
+            return lhs / rhs;
         }
 
         if (args_.get(0) == "add_scalar") {
             auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
             auto rhs = args_.get_one<float>("--rhs");
 
-            return {lhs + rhs};
+            return lhs + rhs;
         }
 
         if (args_.get(0) == "sub_scalar") {
             auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
             auto rhs = args_.get_one<float>("--rhs");
 
-            return {lhs - rhs};
+            return lhs - rhs;
         }
 
         if (args_.get(0) == "mul_scalar") {
             auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
             auto rhs = args_.get_one<float>("--rhs");
 
-            return {lhs * rhs};
+            return lhs * rhs;
         }
 
         if (args_.get(0) == "div_scalar") {
             auto lhs = args_.get_one<Tensor>("--lhs", {ctx, inputs_});
             auto rhs = args_.get_one<float>("--rhs");
 
-            return {lhs / rhs};
+            return lhs / rhs;
         }
 
 
@@ -216,35 +216,35 @@ public:
             auto lhs = args_.get_one<float>("--lhs");
             auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
-            return {lhs + rhs};
+            return lhs + rhs;
         }
 
         if (args_.get(0) == "scalar_sub") {
             auto lhs = args_.get_one<float>("--lhs");
             auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
-            return {lhs - rhs};
+            return lhs - rhs;
         }
 
         if (args_.get(0) == "scalar_mul") {
             auto lhs = args_.get_one<float>("--lhs");
             auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
-            return {lhs * rhs};
+            return lhs * rhs;
         }
 
         if (args_.get(0) == "scalar_div") {
             auto lhs = args_.get_one<float>("--lhs");
             auto rhs = args_.get_one<Tensor>("--rhs", {ctx, inputs_});
 
-            return {lhs / rhs};
+            return lhs / rhs;
         }
 
         if (args_.get(0) == "pow") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto exponent = args_.get_one<float>("--exponent");
 
-            return {self.pow(exponent)};
+            return self.pow(exponent);
         }
 
         
@@ -253,19 +253,19 @@ public:
             auto min = args_.get_one<float>("--min");
             auto max = args_.get_one<float>("--max");
 
-            return {self.clip(min, max)};
+            return self.clip(min, max);
         }
 
         if (args_.get(0) == "sum") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
-            return {self.sum()};
+            return self.sum();
         }
 
         if (args_.get(0) == "mean") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
-            return {self.mean()};
+            return self.mean();
         }
 
 
@@ -273,57 +273,57 @@ public:
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto index = args_.get_one<size_t>("--index");
 
-            return {self[index]};
+            return self[index];
         }
 
         if (args_.get(0) == "slice") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto slice = args_.get_one<std::vector<Tensor::Slice>>("--slice");
 
-            return {self[slice]};
+            return self[slice];
         }
 
 
         if (args_.get(0) == "abs") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
-            return {abs(self)};
+            return abs(self);
         }
 
         if (args_.get(0) == "sqrt") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
-            return {sqrt(self)};
+            return sqrt(self);
         }
 
         if (args_.get(0) == "exp") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
-            return {exp(self)};
+            return exp(self);
         }
 
         if (args_.get(0) == "log") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
-            return {log(self)};
+            return log(self);
         }
 
         if (args_.get(0) == "sin") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
-            return {sin(self)};
+            return sin(self);
         }
 
         if (args_.get(0) == "cos") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
-            return {cos(self)};
+            return cos(self);
         }
 
         if (args_.get(0) == "rsqrt") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
 
-            return {rsqrt(self)};
+            return rsqrt(self);
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));
@@ -411,5 +411,5 @@ int main(int argc, char** argv) {
     auto graph = scheduler.plan(tensor_cli);
     tensor_cli.compute(graph);
 
-    return {EXIT_SUCCESS};
+    return EXIT_SUCCESS;
 }

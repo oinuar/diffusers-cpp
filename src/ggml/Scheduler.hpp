@@ -33,9 +33,9 @@ public:
         Context ctx(arena_);
 
         auto gf = ggml_new_graph(*ctx);
-        auto tensors = compute.build(ctx);
+        auto compute_plan = compute.build(ctx);
 
-        for (auto& tensor : tensors) {
+        for (auto& tensor : compute_plan.tensors()) {
 
             // Materialize tensor if needed
             if (!tensor.is_contiguous())
@@ -44,7 +44,7 @@ public:
             ggml_set_output(*tensor);
         }
 
-        return std::move(Graph(gf, sched_, std::move(tensors)));
+        return std::move(Graph(gf, sched_, std::move(compute_plan.tensors())));
     }
 
     Scheduler(Scheduler&) = delete;

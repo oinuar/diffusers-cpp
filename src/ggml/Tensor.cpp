@@ -29,7 +29,7 @@ Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
     auto ctx = first.ctx_;
     auto type = first.dtype();
 
-    for (const Tensor& tensor : tensors) {
+    for (auto& tensor : tensors) {
         tensor.throw_if_not_valid();
 
         if (tensor.dtype() != type)
@@ -46,10 +46,10 @@ Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
         }
     }
 
-    // Perform concatenation with swapped arguments to get correct order
-    auto tensor = tensors[0].t_;
+    // Perform concatenation
+    auto tensor = *first;
     for (auto i = 1; i < tensors.size(); ++i)
-        tensor = ggml_concat(ctx, tensors[i].t_, tensor, rank - 1 - dim);
+        tensor = ggml_concat(ctx, tensor, tensors[i].t_, rank - 1 - dim);
 
     // Calculate the correct output shape using PyTorch indexing
     Shape shape(rank);
@@ -407,39 +407,31 @@ std::vector<Tensor> Tensor::split(int64_t split_size, int dim) const {
 std::vector<Tensor> Tensor::split_with_sizes(const std::vector<int64_t>& split_sizes, int dim) const {
     throw_if_not_valid();
 
-    const int rank = ndim();
-    dim = normalize_dim(dim, rank);
-
     if (split_sizes.empty())
-        throw std::invalid_argument(
-            "split_with_sizes(): split_sizes must not be empty");
+        throw std::invalid_argument("split_with_sizes(): split_sizes must not be empty");
 
-    const int64_t dim_size = t_->ne[dim];
+    dim = normalize_dim(dim, ndim());
+    const int64_t dim_size = shape_[dim];
 
+    // Validate and sum sizes
     int64_t total = 0;
     for (const int64_t size : split_sizes) {
-        if (size < 0) {
-            throw std::invalid_argument(
-                "split_with_sizes(): split sizes must be non-negative");
-        }
-
-        if (size > std::numeric_limits<int64_t>::max() - total)
-            throw std::overflow_error(
-                "split_with_sizes(): sum of split sizes overflowed");
-
+        if (size < 0)
+            throw std::invalid_argument("split_with_sizes(): split sizes must be non-negative");
+        
         total += size;
+        if (total < 0)
+            throw std::overflow_error("split_with_sizes(): sum of split sizes overflowed");
     }
 
     if (total != dim_size)
-        throw std::invalid_argument(
-            "split_with_sizes(): split sizes must sum exactly to the size "
-            "of the selected dimension");
+        throw std::invalid_argument("split_with_sizes(): split sizes must sum exactly to the size of the selected dimension");
 
+    // Build result
     std::vector<Tensor> result;
     result.reserve(split_sizes.size());
 
     int64_t start = 0;
-
     for (const int64_t size : split_sizes) {
         result.push_back(narrow(dim, start, size));
         start += size;

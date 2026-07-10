@@ -323,7 +323,7 @@ public:
     std::vector<Tensor> split(int64_t split_size, int dim = 0) const;
 
     /** @brief Splits a tensor into chunks of specified sizes along dimension `dim`. */
-    std::vector<Tensor> split_with_sizes(const std::vector<int64_t>& split_sizes, int dim) const;
+    std::vector<Tensor> split_with_sizes(const std::vector<int64_t>& split_sizes, int dim = 0) const;
 
     /** @brief Casts a tensor to type `type`. */
     Tensor to(ggml_type type) const {

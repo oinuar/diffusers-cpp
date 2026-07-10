@@ -136,7 +136,7 @@ public:
         if (args_.get(0) == "split_with_sizes") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto split_sizes = args_.get_many<int64_t>("--split_size");
-            auto dim = args_.get_one<int>("--dim");
+            auto dim = args_.get_optional<int>("--dim").value_or(0);
 
             return self.split_with_sizes(split_sizes, dim);
         }

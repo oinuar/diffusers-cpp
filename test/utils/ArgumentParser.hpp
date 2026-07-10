@@ -98,8 +98,10 @@ std::vector<T> ArgumentParser::get_many(std::string_view option, Parser parser) 
     auto [start, end] = get(option);
     std::vector<T> result;
 
+    // TODO: unordered_map returns these options in reverse order. Bad since order
+    // is unspecified anyway and may change. Need to fix to keep proper (argument) ordering!
     for (auto it = start; it != end; ++it)
-        result.emplace_back(parser(it->first, it->second));
+        result.emplace(result.begin(), parser(it->first, it->second));
 
     return std::move(result);
 }

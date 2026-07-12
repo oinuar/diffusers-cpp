@@ -191,11 +191,11 @@ if(DIFFUSERS_BUILD_TESTS)
         get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
         add_test(
             NAME tensor-${TEST_NAME}
-            COMMAND python -m unittest ${CMAKE_CURRENT_SOURCE_DIR}/test/src/ggml/Tensor/${TEST_NAME}.py -v
+            COMMAND python -m unittest src/ggml/Tensor/${TEST_NAME}.py -v
         )
         set_tests_properties(tensor-${TEST_NAME} PROPERTIES
             DEPENDS tensor-cli
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test/src/ggml/Tensor
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test
             ENVIRONMENT TENSOR_CLI=$<TARGET_FILE:tensor-cli>
         )
     endforeach()
@@ -206,26 +206,11 @@ if(DIFFUSERS_BUILD_TESTS)
         get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
         add_test(
             NAME nn-${TEST_NAME}
-            COMMAND python -m unittest ${CMAKE_CURRENT_SOURCE_DIR}/test/src/nn/${TEST_NAME}.py -v
+            COMMAND python -m unittest src/nn/${TEST_NAME}.py -v
         )
         set_tests_properties(nn-${TEST_NAME} PROPERTIES
             DEPENDS nn-cli
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test/src/nn
-            ENVIRONMENT NN_CLI=$<TARGET_FILE:nn-cli>
-        )
-    endforeach()
-
-    # Generate an individual ctest entry for each NN normalization test
-    file(GLOB TEST_FILES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/src/nn/normalization/*.py)
-    foreach(TEST_FILE ${TEST_FILES})
-        get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
-        add_test(
-            NAME nn-normalization-${TEST_NAME}
-            COMMAND python -m unittest ${CMAKE_CURRENT_SOURCE_DIR}/test/src/nn/normalization/${TEST_NAME}.py -v
-        )
-        set_tests_properties(nn-normalization-${TEST_NAME} PROPERTIES
-            DEPENDS nn-cli
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test/src/nn/normalization
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test
             ENVIRONMENT NN_CLI=$<TARGET_FILE:nn-cli>
         )
     endforeach()

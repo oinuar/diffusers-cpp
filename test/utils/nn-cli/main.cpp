@@ -14,8 +14,8 @@
 
 #include "nn/Linear.hpp"
 #include "nn/SiLU.hpp"
-#include "nn/normalization/RMSNorm.hpp"
-#include "nn/normalization/LayerNorm.hpp"
+#include "nn/RMSNorm.hpp"
+#include "nn/LayerNorm.hpp"
 
 struct Node {
     std::string op;

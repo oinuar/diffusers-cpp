@@ -1,9 +1,10 @@
 #pragma once
 
 #include "nn/Module.hpp"
+#include "nn/Linear.hpp"
 #include "nn/SiLU.hpp"
-#include "models/normalization/LayerNorm.hpp"
-#include "models/normalization/RMSNorm.hpp"
+#include "nn/normalization/LayerNorm.hpp"
+#include "nn/normalization/RMSNorm.hpp"
 
 class AdaLayerNormContinuous : public Module {
 public:

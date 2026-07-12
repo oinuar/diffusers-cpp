@@ -6,7 +6,7 @@
 
 class Arena {
 public:
-    Arena(size_t graph_size) : buffer_() {
+    Arena(size_t graph_size = GGML_DEFAULT_GRAPH_SIZE) : buffer_() {
         size_t buf_size = ggml_tensor_overhead()*graph_size + ggml_graph_overhead();
         buffer_.resize(buf_size);
     }

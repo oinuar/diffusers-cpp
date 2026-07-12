@@ -148,3 +148,7 @@ struct ArgumentParser::parser<std::string> {
         return value;
     }
 };
+
+#include "./TensorParser.hpp"
+#include "./ShapeParser.hpp"
+#include "./SliceParser.hpp"

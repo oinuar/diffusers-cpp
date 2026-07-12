@@ -9,7 +9,7 @@ std::string Tensor::Shape::to_string() const {
     for (auto i = 0; i < rank(); ++i) {
         if (i > 0)
             oss << ", ";
-        oss << (*this)[i];
+        oss << (*this)[rank() - 1 - i];
     }
 
     oss << ')';

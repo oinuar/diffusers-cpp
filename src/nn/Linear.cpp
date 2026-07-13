@@ -7,7 +7,7 @@ Linear::Linear(
     bool bias
 ) : bias_(bias)
 {
-    modules["weight"] = std::make_shared<Parameter>(Tensor::Shape({in_features, out_features}));
+    modules["weight"] = std::make_shared<Parameter>(Tensor::Shape({out_features, in_features}));
 
     if (bias_)
         modules["bias"] = std::make_shared<Parameter>(Tensor::Shape({out_features}));
@@ -16,10 +16,11 @@ Linear::Linear(
 Tensor Linear::forward(ggml_context* ctx, Tensor x) {
     auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward();
 
-    auto wt = ggml_transpose(ctx, *weight);
-    wt = ggml_cont(ctx, wt);
-
-    auto y = ggml_mul_mat(ctx, wt, *x);
+    // Weight is logically shaped [out_features, in_features] (PyTorch),
+    // but stored in GGML's native reversed layout {in_features, out_features}.
+    // Since ggml_mul_mat() already performs Aᵀ * B on its first operand,
+    // explicitly transposing the weight would transpose it twice.
+    auto y = ggml_mul_mat(ctx, *weight, *x);
 
     if (bias_) {
         auto bias = std::static_pointer_cast<Parameter>(modules["bias"])->forward();

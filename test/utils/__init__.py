@@ -220,8 +220,7 @@ class NNTestCase(unittest.TestCase):
                 bias, input, weight = node.all_input_nodes
                 wdtype, wshape = meta(weight)
 
-                visit(weight)
-                emit("CONT", wdtype, wshape)
+                emit("NONE", wdtype, tuple(reversed(wshape))) # Weight is already transposed
                 visit(input)
                 emit("MUL_MAT", dtype, shape)
                 visit(bias)

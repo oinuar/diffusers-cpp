@@ -76,7 +76,7 @@ private:
 };
 
 Tensor build(Context& ctx, const ArgumentParser& args) {
-    if (args.get(0) == "linear") {
+    if (args.get(0) == "Linear") {
         auto in_features = args.get_one<int64_t>("--in_features");
         auto out_features = args.get_one<int64_t>("--out_features");
         auto bias = args.get_optional<bool>("--bias").value_or(true);
@@ -93,7 +93,7 @@ Tensor build(Context& ctx, const ArgumentParser& args) {
         return y;
     }
     
-    if (args.get(0) == "silu") {
+    if (args.get(0) == "SiLU") {
         auto input = args.get_one<Tensor::Shape>("--input");
 
         SiLU model;
@@ -104,7 +104,7 @@ Tensor build(Context& ctx, const ArgumentParser& args) {
         return y;
     }
 
-    if (args.get(0) == "rmsnorm") {
+    if (args.get(0) == "RMSNorm") {
         auto dim = args.get_one<int64_t>("--dim");
         auto input = args.get_one<Tensor::Shape>("--input");
         auto eps = args.get_optional<float>("--eps").value_or(1e-5f);
@@ -121,7 +121,7 @@ Tensor build(Context& ctx, const ArgumentParser& args) {
         return y;
     }
 
-    if (args.get(0) == "layernorm") {
+    if (args.get(0) == "LayerNorm") {
         auto dim = args.get_one<int64_t>("--dim");
         auto input = args.get_one<Tensor::Shape>("--input");
         auto eps = args.get_optional<float>("--eps").value_or(1e-5f);

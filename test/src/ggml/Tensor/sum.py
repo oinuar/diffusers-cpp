@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorSum(TensorTestCase):
+class TestTensorSum(TestCase):
     def test_sum_1d(self):
         data = [1.0]
         pt = torch.tensor(data)

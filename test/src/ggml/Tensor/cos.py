@@ -1,8 +1,8 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 import math
 
-class TestTensorCos(TensorTestCase):
+class TestTensorCos(TestCase):
     def test_cos_1d(self):
         data = [0.0]
         pt = torch.tensor(data)

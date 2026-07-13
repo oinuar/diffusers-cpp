@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorChunk(TensorTestCase):
+class TestTensorChunk(TestCase):
     def test_chunk_1d(self):
         pt = torch.tensor([1.0, 2.0, 3.0, 4.0])
         expected = torch.chunk(pt, 2)

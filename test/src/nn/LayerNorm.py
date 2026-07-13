@@ -1,10 +1,20 @@
-from utils import NNTestCase
+from utils import TestCase
 import torch
 import torch.nn as nn
 
-class TestNNNormalizationLayerNorm(NNTestCase):
+class TestNNNormalizationLayerNorm(TestCase):
     def test_dim3(self):
         model = nn.modules.normalization.LayerNorm(3)
-        expected = self.traverse(model, torch.randn(2, 2, 3))
-        actual = self.cli('LayerNorm', '--dim', '3', '--input', '(2, 2, 3)')
-        self.assertEqual(actual, expected)
+        x = torch.randn(2, 2, 3)
+
+        expected = model.forward(x)
+
+        actual = self.cli(
+            'LayerNorm',
+            '--dim', '3',
+            '--x', str(x.tolist()),
+            '--param-weight', str(model.weight.tolist()),
+            '--param-bias', str(model.bias.tolist()),
+        )
+
+        self.assertTensors(actual, [expected])

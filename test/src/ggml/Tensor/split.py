@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorSplit(TensorTestCase):
+class TestTensorSplit(TestCase):
     def test_split_1d_even(self):
         pt = torch.tensor([1.0, 2.0, 3.0, 4.0])
         expected = torch.split(pt, 2)

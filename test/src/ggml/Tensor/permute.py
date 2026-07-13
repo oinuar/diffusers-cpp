@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorPermute(TensorTestCase):
+class TestTensorPermute(TestCase):
     def test_permute_2d(self):
         data = list(range(12))
         pt = torch.tensor(data).float().reshape(3, 4)

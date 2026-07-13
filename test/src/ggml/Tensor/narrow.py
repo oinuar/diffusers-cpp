@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorNarrow(TensorTestCase):
+class TestTensorNarrow(TestCase):
     def test_narrow(self):
         data = list(range(8))
         pt = torch.tensor(data).float().reshape(2, 4)

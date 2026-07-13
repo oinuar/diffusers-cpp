@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorSplitWithSizes(TensorTestCase):
+class TestTensorSplitWithSizes(TestCase):
     def test_split_with_sizes_1d(self):
         pt = torch.tensor([1.0, 2.0, 3.0, 4.0])
         expected = torch.split_with_sizes(pt, [2, 2])

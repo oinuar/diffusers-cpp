@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorContiguous(TensorTestCase):
+class TestTensorContiguous(TestCase):
     def test_contiguous_1d(self):
         data = list(range(4))
         pt = torch.tensor(data).float()

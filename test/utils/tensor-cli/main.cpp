@@ -1,16 +1,10 @@
-#include "ggml/Compute.hpp"
-#include "ggml/Graph.hpp"
-#include "ggml/Computation.hpp"
-#include "ggml/Context.hpp"
-#include "ggml/Backend.hpp"
-#include "ggml/Scheduler.hpp"
-#include "../ArgumentParser.hpp"
+#include "../TestCLI.hpp"
 
-class TensorCLI : public Compute {
+class TestTensorCLI : public TestCLI {
 public:
-    TensorCLI(int argc, char** argv) : args_(argc, argv) {}
+    TestTensorCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    Plan build(Context& ctx) {
+    virtual Plan build(Context& ctx) {
 
         if (args_.get(0) == "contiguous") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
@@ -325,88 +319,9 @@ public:
 
         throw std::runtime_error("Uknown command: " + args_.get(0));
     }
-
-    void compute(Graph& graph) {
-        Computation computation(graph);
-
-        for (auto& [tensor, data] : inputs_)
-            computation.load(tensor, reinterpret_cast<std::byte*>(data.data()));
-
-        computation.execute();
-
-        auto result = computation.read<float>();
-
-        for (auto& [shape, data] : result) {
-            std::cerr << "output shape: " << shape.to_string() << std::endl;
-            print_tensor(data, shape);
-        }
-    }
-
-private:
-    ArgumentParser args_;
-    std::vector<std::pair<Tensor, std::vector<float>>> inputs_;
-
-    template <typename T>
-    void print_tensor(const std::vector<T>& data, const Tensor::Shape& shape) {
-        size_t expected = 1;
-        for (auto i = 0; i < shape.rank(); ++i)
-            expected *= shape[i];
-
-        if (expected != data.size())
-            throw std::runtime_error("tensor data size does not match shape");
-
-        size_t index = 0;
-        print_tensor_recursively(data, shape, 0, index);
-        std::cout << std::endl;
-    }
-
-    template <typename T>
-    void print_tensor_recursively(const std::vector<T>& data, const Tensor::Shape& shape, size_t dim, size_t& index) {
-        if (shape.rank() == 0 && dim == 0) {
-            std::cout << data[index++];
-            return;
-        }
-
-        std::cout << "[";
-
-        if (dim == shape.rank() - 1)
-        {
-            // Last dimension: print elements
-            for (auto i = 0; i < shape[dim]; ++i)
-            {
-                std::cout << data[index++];
-                if (i + 1 != shape[dim])
-                    std::cout << ", ";
-            }
-        }
-        else
-        {
-            // Print nested arrays
-            for (auto i = 0; i < shape[dim]; ++i)
-            {
-                print_tensor_recursively(data, shape, dim + 1, index);
-                if (i + 1 != shape[dim])
-                    std::cout << ", ";
-            }
-        }
-
-        std::cout << "]";
-    }
 };
 
 int main(int argc, char** argv) {
-    ggml_time_init();
-    ggml_log_set([](ggml_log_level, const char* text, void*) { std::cerr << text; }, nullptr);
-
-    ggml_backend_load_all();
-
-    Backend cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-    Scheduler scheduler({*cpu});
-
-    TensorCLI tensor_cli(argc, argv);
-
-    auto graph = scheduler.plan(tensor_cli);
-    tensor_cli.compute(graph);
-
-    return EXIT_SUCCESS;
+    TestTensorCLI cli(argc, argv);
+    return cli.main();
 }

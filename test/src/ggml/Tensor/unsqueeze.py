@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorUnsqueeze(TensorTestCase):
+class TestTensorUnsqueeze(TestCase):
     def test_unsqueeze(self):
         data = list(range(3))
         pt = torch.tensor(data).float().reshape(3)

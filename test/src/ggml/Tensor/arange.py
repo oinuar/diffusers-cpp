@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorArange(TensorTestCase):
+class TestTensorArange(TestCase):
     def test_arange_default(self):
         pt = torch.arange(0.0, 5.0)
         expected = pt

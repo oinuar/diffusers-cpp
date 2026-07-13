@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorNeg(TensorTestCase):
+class TestTensorNeg(TestCase):
     def test_neg_1d(self):
         data = [1.0, -2.0]
         pt = torch.tensor(data)

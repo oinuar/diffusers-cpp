@@ -1,29 +1,90 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorSub(TensorTestCase):
-    def test_sub_1d(self):
-        a_vals = [10.0]
-        b_vals = [1.0]
-        lhs = torch.tensor(a_vals)
-        rhs = torch.tensor(b_vals)
-        expected = lhs - rhs
-        actual = self.cli('sub', '--lhs', str(lhs.tolist()), '--rhs', str(rhs.tolist()))
+class TestTensorSub(TestCase):
+    def test_sub_same_shape(self):
+        a = torch.randn(2, 8)
+        b = torch.randn(2, 8)
+
+        expected = a - b
+
+        actual = self.cli(
+            'sub',
+            '--lhs', str(a.tolist()),
+            '--rhs', str(b.tolist()),
+        )
+
         self.assertTensors(actual, [expected])
-    def test_sub_2d(self):
-        a_vals = [[5.0], [7.0]]
-        b_vals = [[1.0], [3.0]]
-        lhs = torch.tensor(a_vals)
-        rhs = torch.tensor(b_vals)
-        expected = lhs - rhs
-        actual = self.cli('sub', '--lhs', str(lhs.tolist()), '--rhs', str(rhs.tolist()))
+
+    def test_sub_trailing_dimension_broadcast(self):
+        # [2, 4, 8] + [8] -> [2, 4, 8]
+        a = torch.randn(2, 4, 8)
+        b = torch.randn(8)
+
+        expected = a - b
+
+        actual = self.cli(
+            'sub',
+            '--lhs', str(a.tolist()),
+            '--rhs', str(b.tolist()),
+        )
+
         self.assertTensors(actual, [expected])
-    def test_sub_3d(self):
-        data = list(range(1, 25))
-        a_vals = [float(v) for v in data]
-        b_vals = [float(v) * 0.5 for v in data]
-        lhs = torch.tensor(a_vals).reshape(2, 3, 4)
-        rhs = torch.tensor(b_vals).reshape(2, 3, 4)
-        expected = lhs - rhs
-        actual = self.cli('sub', '--lhs', str(lhs.tolist()), '--rhs', str(rhs.tolist()))
+
+    def test_sub_singleton_dimension_broadcast(self):
+        # [2, 1, 8] + [2, 77, 8] -> [2, 77, 8]
+        a = torch.randn(2, 1, 8)
+        b = torch.randn(2, 77, 8)
+
+        expected = a - b
+
+        actual = self.cli(
+            'sub',
+            '--lhs', str(a.tolist()),
+            '--rhs', str(b.tolist()),
+        )
+
+        self.assertTensors(actual, [expected])
+
+    def test_sub_both_tensors_expand(self):
+        # [2, 1, 8] + [1, 77, 1] -> [2, 77, 8]
+        a = torch.randn(2, 1, 8)
+        b = torch.randn(1, 77, 1)
+
+        expected = a - b
+
+        actual = self.cli(
+            'sub',
+            '--lhs', str(a.tolist()),
+            '--rhs', str(b.tolist()),
+        )
+
+        self.assertTensors(actual, [expected])
+
+    def test_sub_scalar(self):
+        a = torch.randn(2, 3, 4)
+        b = torch.tensor(2.0)
+
+        expected = a - b
+
+        actual = self.cli(
+            'sub_scalar',
+            '--lhs', str(a.tolist()),
+            '--rhs', str(b.tolist()),
+        )
+
+        self.assertTensors(actual, [expected])
+
+    def test_scalar_sub(self):
+        a = torch.tensor(2.0)
+        b = torch.randn(2, 3, 4)
+
+        expected = a - b
+
+        actual = self.cli(
+            'scalar_sub',
+            '--lhs', str(a.tolist()),
+            '--rhs', str(b.tolist()),
+        )
+
         self.assertTensors(actual, [expected])

@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorTo(TensorTestCase):
+class TestTensorTo(TestCase):
     def test_to_same_type(self):
         data = [1.0]
         pt = torch.tensor(data)

@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorOnes(TensorTestCase):
+class TestTensorOnes(TestCase):
     def test_ones_1d(self):
         pt = torch.ones(4)
         expected = pt

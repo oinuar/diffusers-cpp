@@ -1,8 +1,8 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 import math
 
-class TestTensorLog(TensorTestCase):
+class TestTensorLog(TestCase):
     def test_log_1d(self):
         data = [1.0]
         pt = torch.tensor(data)

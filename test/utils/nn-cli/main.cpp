@@ -1,155 +1,119 @@
-#include <vector>
-#include <unordered_set>
-#include <array>
-#include <iostream>
-#include "ggml/Compute.hpp"
-#include "ggml/Graph.hpp"
-#include "ggml/Computation.hpp"
-#include "ggml/Context.hpp"
-#include "ggml/Backend.hpp"
-#include "ggml/Scheduler.hpp"
+#include "../TestCLI.hpp"
 #include "nn/Parameter.hpp"
 #include "nn/Visitor.hpp"
-#include "../ArgumentParser.hpp"
-
 #include "nn/Linear.hpp"
 #include "nn/SiLU.hpp"
 #include "nn/RMSNorm.hpp"
 #include "nn/LayerNorm.hpp"
+#include "nn/AdaLayerNormContinuous.hpp"
+#include <numeric>
 
-struct Node {
-    std::string op;
-    std::string type;
-    Tensor::Shape shape;
-};
-
-void traverse(
-    ggml_tensor* tensor,
-    std::vector<Node>& out,
-    std::unordered_set<ggml_tensor*>& visited)
-{
-    if (!tensor)
-        return;
-
-    if (!visited.insert(tensor).second)
-        return;
-
-    for (int i = 0; i < GGML_MAX_SRC; ++i)
-        traverse(tensor->src[i], out, visited);
-
-    Tensor::Shape shape(ggml_n_dims(tensor));
-
-    for (auto i = 0; i < shape.rank(); ++i)
-        shape[i] = tensor->ne[i];
-
-    std::string op(ggml_op_name(tensor->op));
-
-    if (tensor->op == GGML_OP_UNARY)
-        op = ggml_unary_op_name(ggml_get_unary_op(tensor));
-
-    std::string type(ggml_type_name(tensor->type));
-
-    out.push_back({ op, type, shape });
-}
-
-void print_dag(ggml_tensor* root)
-{
-    std::vector<Node> graph;
-    std::unordered_set<ggml_tensor*> visited;
-
-    traverse(root, graph, visited);
-
-    for (auto& node : graph)
-        std::cout << node.op << " " << node.type << " " << node.shape.to_string() << std::endl;
-}
-
-class CreateParametersVisitor : public Visitor {
+class TestNnCLI : public TestCLI {
 public:
-    CreateParametersVisitor(Context& ctx) : ctx_(ctx) {}
+    TestNnCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual void visit(Parameter& parameter, std::vector<std::string>) {
-        parameter.set(Tensor::empty(*ctx_, parameter.shape()));
+    virtual Plan build(Context& ctx) {
+
+        if (args_.get(0) == "Linear") {
+            auto in_features = args_.get_one<int64_t>("--in_features");
+            auto out_features = args_.get_one<int64_t>("--out_features");
+            auto bias = args_.get_optional<bool>("--bias").value_or(true);
+            auto x = args_.get_one<Tensor>("--x", {ctx, inputs_});
+
+            Linear model(in_features, out_features, bias);
+
+            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            model.accept(visitor);
+
+            return model.forward(*ctx, x);
+        }
+        
+        if (args_.get(0) == "SiLU") {
+            auto x = args_.get_one<Tensor>("--x", {ctx, inputs_});
+
+            SiLU model;
+
+            return model.forward(*ctx, x);
+        }
+
+        if (args_.get(0) == "RMSNorm") {
+            auto dim = args_.get_one<int64_t>("--dim");
+            auto eps = args_.get_optional<float>("--eps").value_or(1e-5f);
+            auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
+            auto x = args_.get_one<Tensor>("--x", {ctx, inputs_});
+
+            RMSNorm model(dim, eps, elementwise_affine);
+
+            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            model.accept(visitor);
+
+            return model.forward(*ctx, x);
+        }
+
+        if (args_.get(0) == "LayerNorm") {
+            auto dim = args_.get_one<int64_t>("--dim");
+            auto eps = args_.get_optional<float>("--eps").value_or(1e-5f);
+            auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
+            auto bias = args_.get_optional<bool>("--bias").value_or(true);
+            auto x = args_.get_one<Tensor>("--x", {ctx, inputs_});
+
+            LayerNorm model(dim, eps, elementwise_affine, bias);
+
+            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            model.accept(visitor);
+
+            return model.forward(*ctx, x);
+        }
+
+        if (args_.get(0) == "AdaLayerNormContinuous") {
+            auto embedding_dim = args_.get_one<int64_t>("--embedding_dim");
+            auto conditioning_embedding_dim = args_.get_one<int64_t>("--conditioning_embedding_dim");
+            auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
+            auto eps = args_.get_optional<float>("--eps").value_or(1e-5f);
+            auto bias = args_.get_optional<bool>("--bias").value_or(true);
+            auto norm_type = args_.get_optional<std::string>("--norm_type").value_or("layer_norm");
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
+            auto conditioning_embedding = args_.get_one<Tensor>("--conditioning_embedding", {ctx, inputs_});
+
+            AdaLayerNormContinuous model(embedding_dim, conditioning_embedding_dim, elementwise_affine, eps, bias, norm_type.c_str());
+
+            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            model.accept(visitor);
+
+            return model.forward(*ctx, hidden_states, conditioning_embedding);
+        }
+
+        throw std::runtime_error("Uknown command: " + args_.get(0));
     }
 
 private:
-    Context& ctx_;
+    class CreateParametersVisitor : public Visitor {
+    public:
+        CreateParametersVisitor(Context& ctx, std::vector<std::pair<Tensor, std::vector<float>>>& inputs, ArgumentParser& args)
+            : ctx_(ctx), inputs_(inputs), args_(args)
+        {}
+
+        virtual void visit(Parameter& parameter, std::vector<std::string> path) {
+            auto joined_path = join_path(path);
+            auto tensor = args_.get_one<Tensor>(joined_path, {ctx_, inputs_});
+
+            parameter.set(tensor);
+        }
+
+    private:
+        Context& ctx_;
+        std::vector<std::pair<Tensor, std::vector<float>>>& inputs_;
+        ArgumentParser& args_;
+        
+        static std::string join_path(const std::vector<std::string>& path) {
+            return std::accumulate(std::begin(path), std::end(path), std::string("--param"), [](const std::string& acc, const std::string& x) {
+                return acc + "-" + x;
+            });
+        }
+    };
 };
 
-Tensor build(Context& ctx, const ArgumentParser& args) {
-    if (args.get(0) == "Linear") {
-        auto in_features = args.get_one<int64_t>("--in_features");
-        auto out_features = args.get_one<int64_t>("--out_features");
-        auto bias = args.get_optional<bool>("--bias").value_or(true);
-        auto input = args.get_one<Tensor::Shape>("--input");
-
-        Linear model(in_features, out_features, bias);
-
-        CreateParametersVisitor visitor(ctx);
-        model.accept(visitor);
-
-        auto x = Tensor::empty(*ctx, input);
-        auto y = model.forward(*ctx, x);
-
-        return y;
-    }
-    
-    if (args.get(0) == "SiLU") {
-        auto input = args.get_one<Tensor::Shape>("--input");
-
-        SiLU model;
-
-        auto x = Tensor::empty(*ctx, input);
-        auto y = model.forward(*ctx, x);
-
-        return y;
-    }
-
-    if (args.get(0) == "RMSNorm") {
-        auto dim = args.get_one<int64_t>("--dim");
-        auto input = args.get_one<Tensor::Shape>("--input");
-        auto eps = args.get_optional<float>("--eps").value_or(1e-5f);
-        auto elementwise_affine = args.get_optional<bool>("--elementwise_affine").value_or(true);
-
-        RMSNorm model(dim, eps, elementwise_affine);
-
-        CreateParametersVisitor visitor(ctx);
-        model.accept(visitor);
-
-        auto x = Tensor::empty(*ctx, input);
-        auto y = model.forward(*ctx, x);
-
-        return y;
-    }
-
-    if (args.get(0) == "LayerNorm") {
-        auto dim = args.get_one<int64_t>("--dim");
-        auto input = args.get_one<Tensor::Shape>("--input");
-        auto eps = args.get_optional<float>("--eps").value_or(1e-5f);
-        auto elementwise_affine = args.get_optional<bool>("--elementwise_affine").value_or(true);
-        auto bias = args.get_optional<bool>("--bias").value_or(true);
-
-        LayerNorm model(dim, eps, elementwise_affine, bias);
-
-        CreateParametersVisitor visitor(ctx);
-        model.accept(visitor);
-
-        auto x = Tensor::empty(*ctx, input);
-        auto y = model.forward(*ctx, x);
-
-        return y;
-    }
-
-    throw std::runtime_error("Uknown command: " + args.get(0));
-}
-
 int main(int argc, char** argv) {
-    ArgumentParser args(argc, argv);
-    Arena arena;
-    Context ctx(arena);
-
-    auto tensor = build(ctx, args);
-
-    print_dag(*tensor);
-
-    return EXIT_SUCCESS;
+    TestNnCLI cli(argc, argv);
+    return cli.main();
 }

@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorScalar(TensorTestCase):
+class TestTensorScalar(TestCase):
     def test_scalar(self):
         pt = torch.tensor(42.0)
         expected = pt

@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorSlice(TensorTestCase):
+class TestTensorSlice(TestCase):
     def test_slice_all(self):
         data = list(range(3))
         pt = torch.tensor(data).float()

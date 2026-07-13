@@ -170,6 +170,22 @@ option(DIFFUSERS_BUILD_TESTS "diffusers: build test utilities" ON)
 
 if(DIFFUSERS_BUILD_TESTS)
     enable_testing()
+    find_program(UV_EXECUTABLE uv REQUIRED)
+
+    set(UV_ENV_STAMP ${CMAKE_CURRENT_BINARY_DIR}/uv-env.stamp)
+
+    add_custom_command(
+        OUTPUT ${UV_ENV_STAMP}
+        COMMAND ${UV_EXECUTABLE} venv --clear
+        COMMAND ${UV_EXECUTABLE} pip install -r requirements.txt
+        COMMAND ${CMAKE_COMMAND} -E touch ${UV_ENV_STAMP}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test
+        COMMENT "Creating uv test environment"
+    )
+
+    add_custom_target(uv-env ALL
+        DEPENDS ${UV_ENV_STAMP}
+    )
 
     add_executable(tensor-cli
         test/utils/tensor-cli/main.cpp
@@ -191,12 +207,11 @@ if(DIFFUSERS_BUILD_TESTS)
         get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
         add_test(
             NAME tensor-${TEST_NAME}
-            COMMAND python -m unittest src/ggml/Tensor/${TEST_NAME}.py -v
+            COMMAND ${UV_EXECUTABLE} run python -m unittest src/ggml/Tensor/${TEST_NAME}.py -v
         )
         set_tests_properties(tensor-${TEST_NAME} PROPERTIES
-            DEPENDS tensor-cli
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test
-            ENVIRONMENT TENSOR_CLI=$<TARGET_FILE:tensor-cli>
+            ENVIRONMENT CLI=$<TARGET_FILE:tensor-cli>
         )
     endforeach()
 
@@ -206,12 +221,11 @@ if(DIFFUSERS_BUILD_TESTS)
         get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
         add_test(
             NAME nn-${TEST_NAME}
-            COMMAND python -m unittest src/nn/${TEST_NAME}.py -v
+            COMMAND ${UV_EXECUTABLE} run python -m unittest src/nn/${TEST_NAME}.py -v
         )
         set_tests_properties(nn-${TEST_NAME} PROPERTIES
-            DEPENDS nn-cli
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test
-            ENVIRONMENT NN_CLI=$<TARGET_FILE:nn-cli>
+            ENVIRONMENT CLI=$<TARGET_FILE:nn-cli>
         )
     endforeach()
 

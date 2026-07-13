@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorMean(TensorTestCase):
+class TestTensorMean(TestCase):
     def test_mean_1d(self):
         data = [2.0]
         pt = torch.tensor(data).float()

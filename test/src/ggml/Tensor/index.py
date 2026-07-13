@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorIndex(TensorTestCase):
+class TestTensorIndex(TestCase):
     def test_index_single(self):
         data = list(range(4))
         pt = torch.tensor(data).float()

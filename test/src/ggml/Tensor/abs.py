@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorAbs(TensorTestCase):
+class TestTensorAbs(TestCase):
     def test_abs_1d(self):
         data = [-3.5]
         pt = torch.tensor(data)

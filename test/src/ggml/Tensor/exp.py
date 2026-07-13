@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorExp(TensorTestCase):
+class TestTensorExp(TestCase):
     def test_exp_1d(self):
         data = [0.0]
         pt = torch.tensor(data)

@@ -76,6 +76,13 @@ public:
         /** @brief Converts the shape to a human-readable string representation. */
         std::string to_string() const;
 
+        bool operator==(const Shape& other) const {
+            return rank_ == other.rank_ && ne_ == other.ne_;
+        }
+
+        bool operator!=(const Shape& other) const {
+            return !(*this == other);
+        }
     private:
         std::array<int64_t, 4> ne_;
         int rank_;
@@ -334,20 +341,28 @@ public:
         return Tensor(ctx_, ggml_neg(ctx_, t_), shape_);
     }
 
-    Tensor operator+(const Tensor & rhs) const {
-        return Tensor(ctx_, ggml_add(ctx_, t_, rhs.t_), shape_);
+    Tensor operator+(Tensor rhs) const {
+        auto lhs = *this;
+        align_shapes(lhs, rhs);
+        return Tensor(lhs.ctx_, ggml_add(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_);
     }
 
-    Tensor operator-(const Tensor & rhs) const {
-        return Tensor(ctx_, ggml_sub(ctx_, t_, rhs.t_), shape_);
+    Tensor operator-(Tensor rhs) const {
+        auto lhs = *this;
+        align_shapes(lhs, rhs);
+        return Tensor(lhs.ctx_, ggml_sub(ctx_, lhs.t_, rhs.t_), lhs.shape_);
     }
 
-    Tensor operator*(const Tensor & rhs) const {
-        return Tensor(ctx_, ggml_mul(ctx_, t_, rhs.t_), shape_);
+    Tensor operator*(Tensor rhs) const {
+        auto lhs = *this;
+        align_shapes(lhs, rhs);
+        return Tensor(lhs.ctx_, ggml_mul(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_);
     }
 
-    Tensor operator/(const Tensor & rhs) const {
-        return Tensor(ctx_, ggml_div(ctx_, t_, rhs.t_), shape_);
+    Tensor operator/(Tensor rhs) const {
+        auto lhs = *this;
+        align_shapes(lhs, rhs);
+        return Tensor(lhs.ctx_, ggml_div(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_);
     }
 
     Tensor operator+(float rhs) const {
@@ -402,7 +417,9 @@ private:
     friend Tensor sin(const Tensor& tensor);
     friend Tensor cos(const Tensor& tensor);
 
-    static int normalize_dim(int dim, int rank, bool allow_end = false);
+    static int normalize_dim(const std::string& method, int dim, int rank, bool allow_end = false);
+
+    static void align_shapes(Tensor& lhs, Tensor& rhs);
 
     void throw_if_not_valid() const;
     void throw_if_not_contiguous() const;
@@ -413,8 +430,7 @@ inline Tensor operator+(float value, const Tensor& tensor) {
 }
 
 inline Tensor operator-(float value, const Tensor& tensor) {
-    // Use neg and addition to make broadcasting work correctly
-    return -tensor + Tensor::scalar(tensor.ctx_, value);
+    return Tensor::scalar(tensor.ctx_, value) - tensor;
 }
 
 inline Tensor operator*(float value, const Tensor& tensor) {
@@ -422,12 +438,7 @@ inline Tensor operator*(float value, const Tensor& tensor) {
 }
 
 inline Tensor operator/(float value, const Tensor& tensor) {
-    // Create special "scalar" tensor with the same shape as the original
-    // to make broadcasting work
-    auto scalar = Tensor::empty(tensor.ctx_, tensor.shape_);
-    scalar.t_ = ggml_fill_inplace(scalar.ctx_, scalar.t_, value);
-
-    return scalar / tensor;
+    return Tensor::scalar(tensor.ctx_, value) / tensor;
 }
 
 inline Tensor abs(const Tensor& tensor) {

@@ -1,8 +1,8 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 import math
 
-class TestTensorSin(TensorTestCase):
+class TestTensorSin(TestCase):
     def test_sin_1d(self):
         data = [0.0]
         pt = torch.tensor(data)

@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorZeros(TensorTestCase):
+class TestTensorZeros(TestCase):
     def test_zeros_1d(self):
         pt = torch.zeros(5)
         expected = pt

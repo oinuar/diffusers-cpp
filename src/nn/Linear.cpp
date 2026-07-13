@@ -28,5 +28,8 @@ Tensor Linear::forward(ggml_context* ctx, Tensor x) {
         y = ggml_add(ctx, y, *bias);
     }
 
-    return Tensor(ctx, y);
+    Tensor::Shape shape = x.shape();
+    shape[shape.rank() - 1] = weight.shape()[0];
+
+    return Tensor(ctx, y, shape);
 }

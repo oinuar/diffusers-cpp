@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorCat(TensorTestCase):
+class TestTensorCat(TestCase):
     def test_cat_1d_dim0(self):
         a = torch.tensor([1.0, 2.0])
         b = torch.tensor([3.0, 4.0])

@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorUnflatten(TensorTestCase):
+class TestTensorUnflatten(TestCase):
     def test_unflatten(self):
         data = [float(i) for i in range(6)]
         pt = torch.tensor(data).reshape(6)

@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorReshape(TensorTestCase):
+class TestTensorReshape(TestCase):
     def test_reshape_1d_to_2d(self):
         data = list(range(1, 7))
         pt = torch.tensor(data).float().reshape(6)

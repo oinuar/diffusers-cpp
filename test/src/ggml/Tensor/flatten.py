@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorFlatten(TensorTestCase):
+class TestTensorFlatten(TestCase):
     def test_flatten_all(self):
         data = list(range(6))
         pt = torch.tensor(data).float().reshape(2, 3)

@@ -1,6 +1,7 @@
 #include "ggml/Tensor.hpp"
 #include <limits>
 #include <sstream>
+#include <algorithm>
 
 std::string Tensor::Shape::to_string() const {
     std::ostringstream oss;
@@ -9,7 +10,7 @@ std::string Tensor::Shape::to_string() const {
     for (auto i = 0; i < rank(); ++i) {
         if (i > 0)
             oss << ", ";
-        oss << (*this)[rank() - 1 - i];
+        oss << (*this)[i];
     }
 
     oss << ')';
@@ -24,7 +25,7 @@ Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
     first.throw_if_not_valid();
 
     const int rank = first.ndim();
-    dim = normalize_dim(dim, rank);
+    dim = normalize_dim("cat()", dim, rank);
     
     auto ctx = first.ctx_;
     auto type = first.dtype();
@@ -186,7 +187,7 @@ Tensor Tensor::squeeze(int dim) const {
     throw_if_not_valid();
 
     const int rank = ndim();
-    dim = normalize_dim(dim, rank);
+    dim = normalize_dim("squeeze()", dim, rank);
 
     if (shape_[dim] != 1)
         throw std::invalid_argument("squeeze(): selected dimension must have size 1");
@@ -208,7 +209,7 @@ Tensor Tensor::unsqueeze(int dim) const {
     throw_if_not_valid();
 
     const int rank = ndim();
-    dim = normalize_dim(dim, rank, true);
+    dim = normalize_dim("unsqueeze()", dim, rank, true);
 
     Shape out(rank + 1);
 
@@ -229,8 +230,8 @@ Tensor Tensor::flatten(int64_t start_dim, int64_t end_dim) const {
 
     const int rank = ndim();
 
-    start_dim = normalize_dim(start_dim, rank);
-    end_dim   = normalize_dim(end_dim, rank);
+    start_dim = normalize_dim("flatten()", start_dim, rank);
+    end_dim   = normalize_dim("flatten()", end_dim, rank);
 
     if (start_dim > end_dim)
         throw std::invalid_argument("flatten(): start_dim must be <= end_dim");
@@ -264,7 +265,7 @@ Tensor Tensor::unflatten(int64_t dim, const Shape& new_shape) {
     throw_if_not_contiguous();
 
     const int rank = ndim();
-    const int target_dim = normalize_dim(static_cast<int>(dim), rank);
+    const int target_dim = normalize_dim("unflatten()", dim, rank);
 
     const int out_rank = rank - 1 + static_cast<int>(new_shape.rank());
 
@@ -328,7 +329,7 @@ Tensor Tensor::narrow(int dim, int64_t start, int64_t length) const {
     throw_if_not_valid();
 
     const int rank = ndim();
-    dim = normalize_dim(dim, rank);
+    dim = normalize_dim("narrow()", dim, rank);
 
     const int64_t dim_size = shape_[dim];
 
@@ -369,7 +370,7 @@ std::vector<Tensor> Tensor::chunk(int n, int dim) const {
     if (n <= 0)
         throw std::invalid_argument("chunk(): n must be greater than zero");
 
-    dim = normalize_dim(dim, ndim());
+    dim = normalize_dim("chunk()", dim, ndim());
 
     const int64_t dim_size = shape_[dim];
 
@@ -388,7 +389,7 @@ std::vector<Tensor> Tensor::split(int64_t split_size, int dim) const {
     if (split_size <= 0)
         throw std::invalid_argument("split(): split_size must be greater than zero");
 
-    dim = normalize_dim(dim, ndim());
+    dim = normalize_dim("split()", dim, ndim());
 
     const int64_t dim_size = shape_[dim];
 
@@ -410,7 +411,7 @@ std::vector<Tensor> Tensor::split_with_sizes(const std::vector<int64_t>& split_s
     if (split_sizes.empty())
         throw std::invalid_argument("split_with_sizes(): split_sizes must not be empty");
 
-    dim = normalize_dim(dim, ndim());
+    dim = normalize_dim("split_with_sizes()", dim, ndim());
     const int64_t dim_size = shape_[dim];
 
     // Validate and sum sizes
@@ -611,17 +612,71 @@ Tensor Tensor::operator[](const std::vector<Slice>& indices) const {
     return result;
 }
 
-int Tensor::normalize_dim(int dim, int rank, bool allow_end) {
+int Tensor::normalize_dim(const std::string& method, int dim, int rank, bool allow_end) {
     const int upper = allow_end ? rank : rank - 1;
     const int lower = allow_end ? -(rank + 1) : -rank;
 
     if (dim < lower || dim > upper)
-        throw std::out_of_range("dimension out of range");
+        throw std::out_of_range(method + ": dimension out of range");
 
     if (dim < 0)
         dim += rank + (allow_end ? 1 : 0);
 
     return dim;
+}
+
+void Tensor::align_shapes(Tensor& lhs, Tensor& rhs) {
+    size_t n_dims = std::max(lhs.shape_.rank(), rhs.shape_.rank());
+    if (n_dims == 0) {
+        return; // Both are scalars, no alignment needed
+    }
+
+    // 1. Compute the target broadcasted shape.
+    // Shape::data() returns the internal GGML-ordered ne_ array, so we can 
+    // evaluate dimensions directly in GGML's native order.
+    int64_t target_ne[4] = {1, 1, 1, 1};
+    for (size_t i = 0; i < n_dims; ++i) {
+        int64_t dim_lhs = (i < lhs.shape_.rank()) ? lhs.shape_.data()[i] : 1;
+        int64_t dim_rhs = (i < rhs.shape_.rank()) ? rhs.shape_.data()[i] : 1;
+        target_ne[i] = std::max(dim_lhs, dim_rhs);
+    }
+
+    // 2. Check which tensors actually need expansion
+    bool lhs_needs_expand = false;
+    bool rhs_needs_expand = false;
+
+    for (size_t i = 0; i < n_dims; ++i) {
+        int64_t dim_lhs = (i < lhs.shape_.rank()) ? lhs.shape_.data()[i] : 1;
+        int64_t dim_rhs = (i < rhs.shape_.rank()) ? rhs.shape_.data()[i] : 1;
+        if (dim_lhs != target_ne[i]) lhs_needs_expand = true;
+        if (dim_rhs != target_ne[i]) rhs_needs_expand = true;
+    }
+
+    // 3. Perform expansions if necessary
+    if (lhs_needs_expand || rhs_needs_expand) {
+        // Create a dummy tensor with the target shape to use as the repeat target.
+        // GGML's ggml_repeat only reads the 'ne' array of the target tensor, 
+        // so the type (GGML_TYPE_F32) and lack of a data buffer are perfectly safe.
+        struct ggml_tensor* target = ggml_new_tensor(lhs.ctx_, GGML_TYPE_F32, n_dims, target_ne);
+        
+        // Construct the target shape for the Tensor wrapper.
+        // This is allowed because Tensor is a friend of Shape.
+        Shape target_shape(n_dims);
+        for (size_t i = 0; i < n_dims; ++i) {
+            target_shape.ne_[i] = target_ne[i];
+        }
+
+        if (lhs_needs_expand && rhs_needs_expand) {
+            // Expand lhs to the target shape first
+            lhs = Tensor(lhs.ctx_, ggml_repeat(lhs.ctx_, lhs.t_, target), target_shape);
+            // Now lhs has the target shape, so we can safely use lhs.t_ as the target for rhs!
+            rhs = Tensor(rhs.ctx_, ggml_repeat(rhs.ctx_, rhs.t_, lhs.t_), target_shape);
+        } else if (lhs_needs_expand) {
+            lhs = Tensor(lhs.ctx_, ggml_repeat(lhs.ctx_, lhs.t_, rhs.t_), target_shape);
+        } else if (rhs_needs_expand) {
+            rhs = Tensor(rhs.ctx_, ggml_repeat(rhs.ctx_, rhs.t_, lhs.t_), target_shape);
+        }
+    }
 }
 
 void Tensor::throw_if_not_valid() const {

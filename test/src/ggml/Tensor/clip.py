@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorClip(TensorTestCase):
+class TestTensorClip(TestCase):
     def test_clip_1d(self):
         data = [-5.0]
         pt = torch.tensor(data)

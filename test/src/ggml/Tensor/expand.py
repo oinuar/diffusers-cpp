@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorExpand(TensorTestCase):
+class TestTensorExpand(TestCase):
     def test_expand(self):
         data = [1.0]
         pt = torch.tensor(data)

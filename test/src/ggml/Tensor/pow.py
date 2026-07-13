@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorPow(TensorTestCase):
+class TestTensorPow(TestCase):
     def test_pow_integer_1d(self):
         data = [1.0]
         pt = torch.tensor(data)

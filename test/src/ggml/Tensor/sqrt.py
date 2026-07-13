@@ -1,7 +1,7 @@
-from utils import TensorTestCase
+from utils import TestCase
 import torch
 
-class TestTensorSqrt(TensorTestCase):
+class TestTensorSqrt(TestCase):
     def test_sqrt_1d(self):
         data = [4.0]
         pt = torch.tensor(data)

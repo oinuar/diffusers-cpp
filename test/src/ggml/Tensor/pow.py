@@ -1,44 +1,28 @@
-import ast
-import math
-import subprocess
-import unittest
+from utils import TensorTestCase
 import torch
-import os
 
-def cli(*args: str) -> torch.Tensor:
-    cli = os.environ.get('TENSOR_CLI', 'tensor-cli')
-    result = subprocess.run([cli, *args], capture_output=True, text=True, timeout=30)
-    if result.returncode != 0:
-        raise RuntimeError(f'tensor-cli failed (rc={result.returncode}):\n{result.stderr}')
-    return torch.tensor(ast.literal_eval(result.stdout), dtype=torch.float32)
-
-def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05, atol: float=1e-08):
-    self.assertEqual(actual.shape, expected.shape)
-    self.assertEqual(actual.dtype, expected.dtype)
-    self.assertTrue(torch.allclose(actual, expected, rtol=rtol, atol=atol), f'\nActual: {str(actual.tolist())}\nExpected: {str(expected.tolist())}')
-
-class TestTensorPow(unittest.TestCase):
+class TestTensorPow(TensorTestCase):
     def test_pow_integer_1d(self):
         data = [1.0]
         pt = torch.tensor(data)
         expected = torch.pow(pt, 2.0)
-        result = cli('pow', '--this', str(pt.tolist()), '--exponent', '2.0')
-        verify(self, result, expected)
+        actual = self.cli('pow', '--this', str(pt.tolist()), '--exponent', '2.0')
+        self.assertTensors(actual, [expected])
     def test_pow_integer_2d(self):
         data = [[1.0], [4.0]]
         pt = torch.tensor(data)
         expected = torch.pow(pt, 2.0)
-        result = cli('pow', '--this', str(pt.tolist()), '--exponent', '2.0')
-        verify(self, result, expected)
+        actual = self.cli('pow', '--this', str(pt.tolist()), '--exponent', '2.0')
+        self.assertTensors(actual, [expected])
     def test_pow_half(self):
         data = [4.0]
         pt = torch.tensor(data)
         expected = torch.pow(pt, 0.5)
-        result = cli('pow', '--this', str(pt.tolist()), '--exponent', '0.5')
-        verify(self, result, expected)
+        actual = self.cli('pow', '--this', str(pt.tolist()), '--exponent', '0.5')
+        self.assertTensors(actual, [expected])
     def test_pow_cube(self):
         data = [1.0]
         pt = torch.tensor(data)
         expected = torch.pow(pt, 3.0)
-        result = cli('pow', '--this', str(pt.tolist()), '--exponent', '3.0')
-        verify(self, result, expected)
+        actual = self.cli('pow', '--this', str(pt.tolist()), '--exponent', '3.0')
+        self.assertTensors(actual, [expected])

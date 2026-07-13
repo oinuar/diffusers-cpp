@@ -1,44 +1,28 @@
-import ast
-import math
-import subprocess
-import unittest
+from utils import TensorTestCase
 import torch
-import os
 
-def cli(*args: str) -> torch.Tensor:
-    cli = os.environ.get('TENSOR_CLI', 'tensor-cli')
-    result = subprocess.run([cli, *args], capture_output=True, text=True, timeout=30)
-    if result.returncode != 0:
-        raise RuntimeError(f'tensor-cli failed (rc={result.returncode}):\n{result.stderr}')
-    return torch.tensor(ast.literal_eval(result.stdout), dtype=torch.float32)
-
-def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05, atol: float=1e-08):
-    self.assertEqual(actual.shape, expected.shape)
-    self.assertEqual(actual.dtype, expected.dtype)
-    self.assertTrue(torch.allclose(actual, expected, rtol=rtol, atol=atol), f'\nActual: {str(actual.tolist())}\nExpected: {str(expected.tolist())}')
-
-class TestTensorRsqrt(unittest.TestCase):
+class TestTensorRsqrt(TensorTestCase):
     def test_rsqrt_1d(self):
         data = [4.0]
         pt = torch.tensor(data)
         expected = torch.rsqrt(pt)
-        result = cli('rsqrt', '--this', str(pt.tolist()))
-        verify(self, result, expected)
+        actual = self.cli('rsqrt', '--this', str(pt.tolist()))
+        self.assertTensors(actual, [expected])
     def test_rsqrt_2d(self):
         data = [[4.0], [25.0]]
         pt = torch.tensor(data)
         expected = torch.rsqrt(pt)
-        result = cli('rsqrt', '--this', str(pt.tolist()))
-        verify(self, result, expected)
+        actual = self.cli('rsqrt', '--this', str(pt.tolist()))
+        self.assertTensors(actual, [expected])
     def test_rsqrt_3d(self):
         data = [[[4.0], [25.0]], [[9.0], [16.0]]]
         pt = torch.tensor(data)
         expected = torch.rsqrt(pt)
-        result = cli('rsqrt', '--this', str(pt.tolist()))
-        verify(self, result, expected)
+        actual = self.cli('rsqrt', '--this', str(pt.tolist()))
+        self.assertTensors(actual, [expected])
     def test_rsqrt_single(self):
         data = [9.0]
         pt = torch.tensor(data)
         expected = torch.rsqrt(pt)
-        result = cli('rsqrt', '--this', str(pt.tolist()))
-        verify(self, result, expected)
+        actual = self.cli('rsqrt', '--this', str(pt.tolist()))
+        self.assertTensors(actual, [expected])

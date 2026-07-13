@@ -1,9 +1,32 @@
 import unittest
 import subprocess
 import os
+import ast
 import operator
 import torch
 from torch.fx.experimental.proxy_tensor import make_fx
+
+
+class TensorTestCase(unittest.TestCase):
+    def cli(self, *args: str) -> list:
+        cli_bin = os.environ.get('TENSOR_CLI', 'tensor-cli')
+        result = subprocess.run([cli_bin, *args], capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            raise RuntimeError(f'tensor-cli failed (rc={result.returncode}):\n{result.stderr}')
+
+        outputs = []
+        for line in result.stdout.strip().split('\n'):
+            outputs.append(torch.tensor(ast.literal_eval(line), dtype=torch.float32))
+
+        return outputs
+
+    def assertTensors(self, actual: list, expected: list, rtol: float=1e-05, atol: float=1e-08):
+        self.assertEqual(len(actual), len(expected))
+        for a, e in zip(actual, expected):
+            self.assertEqual(a.shape, e.shape)
+            self.assertEqual(a.dtype, e.dtype)
+            self.assertTrue(torch.allclose(a, e, rtol=rtol, atol=atol), f'\nActual: {str(a.tolist())}\nExpected: {str(e.tolist())}')
+
 
 class NNTestCase(unittest.TestCase):
     def cli(self, *args: str) -> list:

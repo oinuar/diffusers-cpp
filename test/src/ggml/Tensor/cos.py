@@ -1,38 +1,23 @@
-import ast
-import math
-import subprocess
-import unittest
+from utils import TensorTestCase
 import torch
-import os
+import math
 
-def cli(*args: str) -> torch.Tensor:
-    cli = os.environ.get('TENSOR_CLI', 'tensor-cli')
-    result = subprocess.run([cli, *args], capture_output=True, text=True, timeout=30)
-    if result.returncode != 0:
-        raise RuntimeError(f'tensor-cli failed (rc={result.returncode}):\n{result.stderr}')
-    return torch.tensor(ast.literal_eval(result.stdout), dtype=torch.float32)
-
-def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05, atol: float=1e-08):
-    self.assertEqual(actual.shape, expected.shape)
-    self.assertEqual(actual.dtype, expected.dtype)
-    self.assertTrue(torch.allclose(actual, expected, rtol=rtol, atol=atol), f'\nActual: {str(actual.tolist())}\nExpected: {str(expected.tolist())}')
-
-class TestTensorCos(unittest.TestCase):
+class TestTensorCos(TensorTestCase):
     def test_cos_1d(self):
         data = [0.0]
         pt = torch.tensor(data)
         expected = torch.cos(pt)
-        result = cli('cos', '--this', str(pt.tolist()))
-        verify(self, result, expected)
+        actual = self.cli('cos', '--this', str(pt.tolist()))
+        self.assertTensors(actual, [expected])
     def test_cos_2d(self):
         data = [[0.0], [math.pi]]
         pt = torch.tensor(data)
         expected = torch.cos(pt)
-        result = cli('cos', '--this', str(pt.tolist()))
-        verify(self, result, expected)
+        actual = self.cli('cos', '--this', str(pt.tolist()))
+        self.assertTensors(actual, [expected])
     def test_cos_zero(self):
         data = [0.0]
         pt = torch.tensor(data)
         expected = torch.cos(pt)
-        result = cli('cos', '--this', str(pt.tolist()))
-        verify(self, result, expected)
+        actual = self.cli('cos', '--this', str(pt.tolist()))
+        self.assertTensors(actual, [expected])

@@ -1,44 +1,28 @@
-import ast
-import math
-import subprocess
-import unittest
+from utils import TensorTestCase
 import torch
-import os
 
-def cli(*args: str) -> torch.Tensor:
-    cli = os.environ.get('TENSOR_CLI', 'tensor-cli')
-    result = subprocess.run([cli, *args], capture_output=True, text=True, timeout=30)
-    if result.returncode != 0:
-        raise RuntimeError(f'tensor-cli failed (rc={result.returncode}):\n{result.stderr}')
-    return torch.tensor(ast.literal_eval(result.stdout), dtype=torch.float32)
-
-def verify(self, actual: torch.Tensor, expected: torch.Tensor, rtol: float=1e-05, atol: float=1e-08):
-    self.assertEqual(actual.shape, expected.shape)
-    self.assertEqual(actual.dtype, expected.dtype)
-    self.assertTrue(torch.allclose(actual, expected, rtol=rtol, atol=atol), f'\nActual: {str(actual.tolist())}\nExpected: {str(expected.tolist())}')
-
-class TestTensorUnflatten(unittest.TestCase):
+class TestTensorUnflatten(TensorTestCase):
     def test_unflatten(self):
         data = [float(i) for i in range(6)]
         pt = torch.tensor(data).reshape(6)
         expected = pt.unflatten(0, (2, 3))
-        result = cli('unflatten', '--this', str(pt.tolist()), '--dim', '0', '--shape', '(2, 3)')
-        verify(self, result, expected)
+        actual = self.cli('unflatten', '--this', str(pt.tolist()), '--dim', '0', '--shape', '(2, 3)')
+        self.assertTensors(actual, [expected])
     def test_unflatten_3d(self):
         data = [float(i) for i in range(12)]
         pt = torch.tensor(data).reshape(12)
         expected = pt.unflatten(0, (3, 4))
-        result = cli('unflatten', '--this', str(pt.tolist()), '--dim', '0', '--shape', '(3, 4)')
-        verify(self, result, expected)
+        actual = self.cli('unflatten', '--this', str(pt.tolist()), '--dim', '0', '--shape', '(3, 4)')
+        self.assertTensors(actual, [expected])
     def test_unflatten_middle_dim(self):
         data = list(range(24))
         pt = torch.tensor(data).float().reshape(2, 12)
         expected = pt.unflatten(1, (3, 4))
-        result = cli('unflatten', '--this', str(pt.tolist()), '--dim', '1', '--shape', '(3,4)')
-        verify(self, result, expected)
+        actual = self.cli('unflatten', '--this', str(pt.tolist()), '--dim', '1', '--shape', '(3,4)')
+        self.assertTensors(actual, [expected])
     def test_unflatten_3d_input(self):
         data = list(range(24))
         pt = torch.tensor(data).float().reshape(2, 3, 4)
         expected = pt.unflatten(2, (2, 2))
-        result = cli('unflatten', '--this', str(pt.tolist()), '--dim', '2', '--shape', '(2,2)')
-        verify(self, result, expected)
+        actual = self.cli('unflatten', '--this', str(pt.tolist()), '--dim', '2', '--shape', '(2,2)')
+        self.assertTensors(actual, [expected])

@@ -7,16 +7,15 @@
 #include "nn/Identity.hpp"
 #include "nn/SiLU.hpp"
 
-template <class ActFn = Identity, class PostActFn = Identity>
+template <class ActFn = SiLU, class PostActFn = Identity>
 class TimestepEmbedding : public Module {
 public:
     TimestepEmbedding(
         int64_t in_channels,
         int64_t time_embed_dim,
-        bool sample_proj_bias = true,
         std::optional<int64_t> out_dim = {},
-        std::optional<const char*> post_act_fn = {},
-        std::optional<int64_t> cond_proj_dim = {}
+        std::optional<int64_t> cond_proj_dim = {},
+        bool sample_proj_bias = true
     ) {
         modules["linear_1"] = std::make_shared<Linear>(in_channels, time_embed_dim, sample_proj_bias);
 

@@ -7,6 +7,7 @@
 #include "nn/RMSNorm.hpp"
 #include <iostream>
 
+template <class NormFn = LayerNorm>
 class AdaLayerNormContinuous : public Module {
 public:
     AdaLayerNormContinuous(
@@ -14,16 +15,15 @@ public:
         int64_t conditioning_embedding_dim,
         bool elementwise_affine = true,
         float eps = 1e-5f,
-        bool bias = true,
-        const char* norm_type = "layer_norm"
-    ) : norm_type_(norm_type) {
+        bool bias = true
+    ) {
         modules["silu"] = std::make_shared<SiLU>();
         modules["linear"] = std::make_shared<Linear>(conditioning_embedding_dim, embedding_dim * 2, bias);
 
-        if (norm_type_ == "layer_norm")
-            modules["norm"] = std::make_shared<LayerNorm>(embedding_dim, eps, elementwise_affine, bias);
-        else if (norm_type_ == "rms_norm")
-            modules["norm"] = std::make_shared<RMSNorm>(embedding_dim, eps, elementwise_affine);
+        if constexpr (std::is_same_v<NormFn, LayerNorm>)
+            modules["norm"] = std::make_shared<NormFn>(embedding_dim, eps, elementwise_affine, bias);
+        else if constexpr (std::is_same_v<NormFn, RMSNorm>)
+            modules["norm"] = std::make_shared<NormFn>(embedding_dim, eps, elementwise_affine);
     }
 
     Tensor forward(ggml_context* ctx, Tensor hidden_states, Tensor conditioning_embedding) {
@@ -35,15 +35,13 @@ public:
         auto scale = chunk.at(0);
         auto shift = chunk.at(1);
 
-        if (norm_type_ == "layer_norm")
-            hidden_states = std::static_pointer_cast<LayerNorm>(modules["norm"])->forward(ctx, hidden_states);
-        else if (norm_type_ == "rms_norm")
-            hidden_states = std::static_pointer_cast<RMSNorm>(modules["norm"])->forward(ctx, hidden_states);
+        auto it = modules.find("norm");
+
+        if (it != std::end(modules))
+            hidden_states = std::static_pointer_cast<NormFn>(it->second)->forward(ctx, hidden_states);
 
         hidden_states = hidden_states * (1 + scale)[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}] + shift[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}];
 
         return hidden_states;
     }
-private:
-    std::string norm_type_;
 };

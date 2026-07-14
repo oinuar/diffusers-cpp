@@ -6,6 +6,8 @@
 #include "nn/RMSNorm.hpp"
 #include "nn/LayerNorm.hpp"
 #include "nn/AdaLayerNormContinuous.hpp"
+#include "nn/TimestepEmbedding.hpp"
+#include "nn/Timesteps.hpp"
 #include <numeric>
 
 class TestNnCLI : public TestCLI {
@@ -71,16 +73,47 @@ public:
             auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
             auto eps = args_.get_optional<float>("--eps").value_or(1e-5f);
             auto bias = args_.get_optional<bool>("--bias").value_or(true);
-            auto norm_type = args_.get_optional<std::string>("--norm_type").value_or("layer_norm");
             auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
             auto conditioning_embedding = args_.get_one<Tensor>("--conditioning_embedding", {ctx, inputs_});
 
-            AdaLayerNormContinuous model(embedding_dim, conditioning_embedding_dim, elementwise_affine, eps, bias, norm_type.c_str());
+            AdaLayerNormContinuous<> model(embedding_dim, conditioning_embedding_dim, elementwise_affine, eps, bias);
 
             CreateParametersVisitor visitor(ctx, inputs_, args_);
             model.accept(visitor);
 
             return model.forward(*ctx, hidden_states, conditioning_embedding);
+        }
+
+        if (args_.get(0) == "TimestepEmbedding") {
+            auto in_channels = args_.get_one<int64_t>("--in_channels");
+            auto time_embed_dim = args_.get_one<int64_t>("--time_embed_dim");
+            auto out_dim = args_.get_optional<int64_t>("--out_dim");
+            auto cond_proj_dim = args_.get_optional<int64_t>("--cond_proj_dim");
+            auto sample_proj_bias = args_.get_optional<bool>("--sample_proj_bias").value_or(true);
+            auto sample = args_.get_one<Tensor>("--sample", {ctx, inputs_});
+            auto condition = args_.get_optional<Tensor>("--condition", {ctx, inputs_});
+
+            TimestepEmbedding<> model(in_channels, time_embed_dim, out_dim, cond_proj_dim, sample_proj_bias);
+
+            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            model.accept(visitor);
+
+            return model.forward(*ctx, sample, condition);
+        }
+
+        if (args_.get(0) == "Timesteps") {
+            auto num_channels = args_.get_one<int64_t>("--num_channels");
+            auto flip_sin_to_cos = args_.get_one<bool>("--flip_sin_to_cos");
+            auto downscale_freq_shift = args_.get_one<float>("--downscale_freq_shift");
+            auto scale = args_.get_optional<float>("--scale").value_or(1.0);
+            auto timesteps = args_.get_one<Tensor>("--timesteps", {ctx, inputs_});
+
+            Timesteps model(num_channels, flip_sin_to_cos, downscale_freq_shift, scale);
+
+            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            model.accept(visitor);
+
+            return model.forward(*ctx, timesteps);
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));

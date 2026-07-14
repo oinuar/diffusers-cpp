@@ -48,7 +48,7 @@ public:
     class Shape {
     public:
         /** @brief Default-constructs a zero-shape with specified rank. */
-        Shape(size_t rank = 0) : ne_({0, 0, 0, 0}), rank_(rank) {}
+        Shape(int64_t rank = 0) : ne_({0, 0, 0, 0}), rank_(rank) {}
 
         /** @brief Constructs a shape from an initializer list of dimension sizes.
          *
@@ -68,7 +68,7 @@ public:
         int64_t& operator [](const size_t& index) { return ne_[rank_ - 1 - index]; }
 
         /** @brief Returns the logical number of dimensions (0–4). */
-        size_t rank() const { return rank_; }
+        const int64_t& rank() const { return rank_; }
 
         /** @brief Returns a pointer to the raw dimension array. */
         const int64_t* data() const { return ne_.data(); }
@@ -79,7 +79,7 @@ public:
         static Shape broadcast(const Shape& lhs, const Shape& rhs);
     private:
         std::array<int64_t, 4> ne_;
-        int rank_;
+        int64_t rank_;
 
         friend class Tensor;
     };
@@ -275,7 +275,9 @@ public:
         float stop,
         float step = 1.0f)
     {
-        return Tensor(ctx, ggml_arange(ctx, start, stop, step));
+        const int64_t size = static_cast<int64_t>(std::ceil((stop - start) / step));
+
+        return Tensor(ctx, ggml_arange(ctx, start, stop, step), {size});
     }
 
     /** @brief Concatenates a list of tensors along the given dimension `dim`. */
@@ -298,10 +300,10 @@ public:
     Tensor permute(const Shape& dims) const;
 
     /** @brief Removes a single dimension at the given index `dim` (must have size 1). */
-    Tensor squeeze(int dim) const;
+    Tensor squeeze(int64_t dim) const;
 
     /** @brief Inserts a new dimension of size 1 at the given index `dim`. */
-    Tensor unsqueeze(int dim) const;
+    Tensor unsqueeze(int64_t dim) const;
 
     /** @brief Flattens dimensions from `start_dim` to `end_dim` into a single dimension. */
     Tensor flatten(int64_t start_dim=0, int64_t end_dim=-1) const;
@@ -313,18 +315,18 @@ public:
      *
      * This produces a view tensor (shares underlying buffer). Equivalent to PyTorch's narrow() indexing.
      */
-    Tensor narrow(int dim, int64_t start, int64_t length) const;
+    Tensor narrow(int64_t dim, int64_t start, int64_t length) const;
 
     Tensor expand(const Shape& new_shape) const;
 
     /** @brief Chunks a tensor into `n` roughly equal pieces along dimension `dim`. */
-    std::vector<Tensor> chunk(int n, int dim = 0) const;
+    std::vector<Tensor> chunk(int n, int64_t dim = 0) const;
 
     /** @brief Splits a tensor into chunks of size `split_size` along dimension `dim`. */
-    std::vector<Tensor> split(int64_t split_size, int dim = 0) const;
+    std::vector<Tensor> split(int64_t split_size, int64_t dim = 0) const;
 
     /** @brief Splits a tensor into chunks of specified sizes along dimension `dim`. */
-    std::vector<Tensor> split_with_sizes(const std::vector<int64_t>& split_sizes, int dim = 0) const;
+    std::vector<Tensor> split_with_sizes(const std::vector<int64_t>& split_sizes, int64_t dim = 0) const;
 
     /** @brief Casts a tensor to type `type`. */
     Tensor to(ggml_type type) const {
@@ -423,7 +425,7 @@ private:
     friend Tensor sin(const Tensor& tensor);
     friend Tensor cos(const Tensor& tensor);
 
-    static int normalize_dim(const std::string& method, int dim, int rank, bool allow_end = false);
+    static int normalize_dim(const std::string& method, int64_t dim, int64_t rank, bool allow_end = false);
 
     void throw_if_not_valid() const;
     void throw_if_not_contiguous() const;

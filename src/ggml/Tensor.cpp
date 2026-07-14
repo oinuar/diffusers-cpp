@@ -2,6 +2,7 @@
 #include <limits>
 #include <sstream>
 #include <algorithm>
+#include <iostream>
 
 std::string Tensor::Shape::to_string() const {
     std::ostringstream oss;
@@ -59,7 +60,7 @@ Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
     auto& first = tensors.front();
     first.throw_if_not_valid();
 
-    const int rank = first.ndim();
+    auto rank = first.ndim();
     dim = normalize_dim("cat()", dim, rank);
     
     auto ctx = first.ctx_;
@@ -123,7 +124,7 @@ Tensor Tensor::reshape(const Shape& shape) const {
         } else {
             if (dim < 0)
                 throw std::invalid_argument(
-                    "reshape(): dimensions must be >= 0 or -1");
+                    "reshape(): dimensions must be >= 0 or -1, not " + std::to_string(dim));
 
             if (dim != 0 &&
                 known_product > std::numeric_limits<int64_t>::max() / dim)
@@ -181,7 +182,7 @@ Tensor Tensor::permute(const Shape& order) const {
     throw_if_not_valid();
     throw_if_not_contiguous();
 
-    const int rank = ndim();
+    auto rank = ndim();
 
     if (order.rank() != static_cast<size_t>(rank)) {
         throw std::invalid_argument(
@@ -226,10 +227,10 @@ Tensor Tensor::permute(const Shape& order) const {
                   ggml_permute_args[2], ggml_permute_args[3]), out);
 }
 
-Tensor Tensor::squeeze(int dim) const {
+Tensor Tensor::squeeze(int64_t dim) const {
     throw_if_not_valid();
 
-    const int rank = ndim();
+    auto rank = ndim();
     dim = normalize_dim("squeeze()", dim, rank);
 
     if (shape_[dim] != 1)
@@ -248,15 +249,15 @@ Tensor Tensor::squeeze(int dim) const {
     return reshape(out);
 }
 
-Tensor Tensor::unsqueeze(int dim) const {
+Tensor Tensor::unsqueeze(int64_t dim) const {
     throw_if_not_valid();
 
-    const int rank = ndim();
+    auto rank = ndim();
     dim = normalize_dim("unsqueeze()", dim, rank, true);
 
     Shape out(rank + 1);
 
-    for (int src = 0, dst = 0; dst < rank + 1; ++dst) {
+    for (auto src = 0, dst = 0; dst < rank + 1; ++dst) {
         if (dst == dim) {
             out[dst] = 1;
         } else {
@@ -271,7 +272,7 @@ Tensor Tensor::flatten(int64_t start_dim, int64_t end_dim) const {
     throw_if_not_valid();
     throw_if_not_contiguous();
 
-    const int rank = ndim();
+    auto rank = ndim();
 
     start_dim = normalize_dim("flatten()", start_dim, rank);
     end_dim   = normalize_dim("flatten()", end_dim, rank);
@@ -307,22 +308,22 @@ Tensor Tensor::unflatten(int64_t dim, const Shape& new_shape) {
     throw_if_not_valid();
     throw_if_not_contiguous();
 
-    const int rank = ndim();
-    const int target_dim = normalize_dim("unflatten()", dim, rank);
+    auto rank = ndim();
+    auto target_dim = normalize_dim("unflatten()", dim, rank);
 
-    const int out_rank = rank - 1 + static_cast<int>(new_shape.rank());
+    auto out_rank = rank - 1 + new_shape.rank();
 
     if (out_rank > 4)
         throw std::invalid_argument("unflatten(): only at most 4 dimensions are supported");
 
     Shape out(out_rank);
 
-    int dst = 0;
+    int64_t dst = 0;
 
     for (int d = 0; d < target_dim; ++d)
         out[dst++] = shape_[d];
 
-    int infer_dim = -1;
+    int64_t infer_dim = -1;
     int64_t known_product = 1;
 
     for (size_t i = 0; i < new_shape.rank(); ++i) {
@@ -362,16 +363,16 @@ Tensor Tensor::unflatten(int64_t dim, const Shape& new_shape) {
             "unflatten(): replacement shape is incompatible with selected dimension");
     }
 
-    for (int d = target_dim + 1; d < rank; ++d)
+    for (int64_t d = target_dim + 1; d < rank; ++d)
         out[dst++] = shape_[d];
 
     return reshape(out);
 }
 
-Tensor Tensor::narrow(int dim, int64_t start, int64_t length) const {
+Tensor Tensor::narrow(int64_t dim, int64_t start, int64_t length) const {
     throw_if_not_valid();
 
-    const int rank = ndim();
+    auto rank = ndim();
     dim = normalize_dim("narrow()", dim, rank);
 
     const int64_t dim_size = shape_[dim];
@@ -392,22 +393,22 @@ Tensor Tensor::narrow(int dim, int64_t start, int64_t length) const {
 
     switch (rank) {
     case 1:
-        return Tensor(ctx_, ggml_view_1d(ctx_, *clone(), out[0], offset), out);
+        return Tensor(ctx_, ggml_view_1d(ctx_, *clone(), out.ne_[0], offset), out);
 
     case 2:
-        return Tensor(ctx_, ggml_view_2d(ctx_, *clone(), out[1], out[0], t_->nb[1], offset), out);
+        return Tensor(ctx_, ggml_view_2d(ctx_, *clone(), out.ne_[0], out.ne_[1], t_->nb[1], offset), out);
 
     case 3:
-        return Tensor(ctx_, ggml_view_3d(ctx_, *clone(), out[2], out[1], out[0], t_->nb[1], t_->nb[2], offset), out);
+        return Tensor(ctx_, ggml_view_3d(ctx_, *clone(), out.ne_[0], out.ne_[1], out.ne_[2], t_->nb[1], t_->nb[2], offset), out);
 
     case 4:
-        return Tensor(ctx_, ggml_view_4d(ctx_, *clone(), out[3], out[2], out[1], out[0], t_->nb[1], t_->nb[2], t_->nb[3], offset), out);
+        return Tensor(ctx_, ggml_view_4d(ctx_, *clone(), out.ne_[0], out.ne_[1], out.ne_[2], out.ne_[3], t_->nb[1], t_->nb[2], t_->nb[3], offset), out);
     }
 
     throw std::runtime_error("narrow(): invalid rank");
 }
 
-std::vector<Tensor> Tensor::chunk(int n, int dim) const {
+std::vector<Tensor> Tensor::chunk(int n, int64_t dim) const {
     throw_if_not_valid();
 
     if (n <= 0)
@@ -426,7 +427,7 @@ std::vector<Tensor> Tensor::chunk(int n, int dim) const {
     return split(split_size, dim);
 }
 
-std::vector<Tensor> Tensor::split(int64_t split_size, int dim) const {
+std::vector<Tensor> Tensor::split(int64_t split_size, int64_t dim) const {
     throw_if_not_valid();
 
     if (split_size <= 0)
@@ -448,7 +449,7 @@ std::vector<Tensor> Tensor::split(int64_t split_size, int dim) const {
     return result;
 }
 
-std::vector<Tensor> Tensor::split_with_sizes(const std::vector<int64_t>& split_sizes, int dim) const {
+std::vector<Tensor> Tensor::split_with_sizes(const std::vector<int64_t>& split_sizes, int64_t dim) const {
     throw_if_not_valid();
 
     if (split_sizes.empty())
@@ -532,7 +533,7 @@ Tensor Tensor::expand(const Shape& new_shape) const {
 Tensor Tensor::operator[](const std::vector<Slice>& indices) const {
     throw_if_not_valid();
 
-    const int input_rank = ndim();
+    auto input_rank = ndim();
 
     int ellipsis_count = 0;
     int explicitly_consumed_dims = 0;
@@ -562,7 +563,7 @@ Tensor Tensor::operator[](const std::vector<Slice>& indices) const {
         throw std::invalid_argument(
             "operator[]: too many indices for tensor");
 
-    const int implicit_all_dims = input_rank - explicitly_consumed_dims;
+    auto implicit_all_dims = input_rank - explicitly_consumed_dims;
 
     std::vector<Slice> expanded;
     expanded.reserve(indices.size() + implicit_all_dims);
@@ -664,9 +665,9 @@ Tensor Tensor::operator[](const std::vector<Slice>& indices) const {
     return result;
 }
 
-int Tensor::normalize_dim(const std::string& method, int dim, int rank, bool allow_end) {
-    const int upper = allow_end ? rank : rank - 1;
-    const int lower = allow_end ? -(rank + 1) : -rank;
+int Tensor::normalize_dim(const std::string& method, int64_t dim, int64_t rank, bool allow_end) {
+    const int64_t upper = allow_end ? rank : rank - 1;
+    const int64_t lower = allow_end ? -(rank + 1) : -rank;
 
     if (dim < lower || dim > upper)
         throw std::out_of_range(method + ": dimension out of range");

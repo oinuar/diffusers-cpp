@@ -163,7 +163,7 @@ if(DIFFUSERS_SYCL AND DEFINED SYCL_COMPILE_OPTIONS)
 endif()
 
 # ---------------------------------------------------------------------------
-# Unit tests
+# Tests
 # ---------------------------------------------------------------------------
 
 option(DIFFUSERS_BUILD_TESTS "diffusers: build test utilities" ON)
@@ -229,5 +229,5 @@ if(DIFFUSERS_BUILD_TESTS)
         )
     endforeach()
 
-    message(STATUS "diffusers: unit tests enabled")
+    message(STATUS "diffusers: tests enabled")
 endif()

@@ -54,9 +54,9 @@ Enable GPU backends via `DIFFUSERS_*` CMake flags at configure time.
 | `-DDIFFUSERS_SYCL=ON` | Intel oneAPI SYCL *(experimental)* | Linux, Windows *(requires Intel compiler or DPC++)* |
 | `-DDIFFUSERS_MUSA=ON` | MOFUSE MUSA (Moore Threads GPU) | Linux *(requires MUSA toolkit)* |
 
-### Running Unit Tests
+### Running Tests
 
-The project ships with unit tests:
+The project ships with tests:
 
 ```bash
 # After building, run tests via CTest:

@@ -211,7 +211,7 @@ if(DIFFUSERS_BUILD_TESTS)
         )
         set_tests_properties(tensor-${TEST_NAME} PROPERTIES
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test
-            ENVIRONMENT CLI=$<TARGET_FILE:tensor-cli>
+            ENVIRONMENT "CLI=$<TARGET_FILE:tensor-cli>;PYTHONDONTWRITEBYTECODE=1"
         )
     endforeach()
 
@@ -225,7 +225,7 @@ if(DIFFUSERS_BUILD_TESTS)
         )
         set_tests_properties(nn-${TEST_NAME} PROPERTIES
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test
-            ENVIRONMENT CLI=$<TARGET_FILE:nn-cli>
+            ENVIRONMENT "CLI=$<TARGET_FILE:nn-cli>;PYTHONDONTWRITEBYTECODE=1"
         )
     endforeach()
 

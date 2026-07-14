@@ -44,6 +44,7 @@ public:
         x = linear_in->forward(ctx, x);
         x = act_fn->forward(ctx, x);
         x = linear_out->forward(ctx, x);
+
         return x;
     }
 };

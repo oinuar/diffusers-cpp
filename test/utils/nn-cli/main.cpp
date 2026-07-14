@@ -8,6 +8,11 @@
 #include "nn/AdaLayerNormContinuous.hpp"
 #include "nn/TimestepEmbedding.hpp"
 #include "nn/Timesteps.hpp"
+
+#include "models/diffusers/transformers/flux2/Flux2SwiGLU.hpp"
+#include "models/diffusers/transformers/flux2/Flux2FeedForward.hpp"
+#include "models/diffusers/transformers/flux2/Flux2Modulation.hpp"
+
 #include <numeric>
 
 class TestNnCLI : public TestCLI {
@@ -116,10 +121,50 @@ public:
             return model.forward(*ctx, timesteps);
         }
 
+        
+        if (args_.get(0) == "Flux2SwiGLU") {
+            auto x = args_.get_one<Tensor>("--x", {ctx, inputs_});
+
+            Flux2SwiGLU model;
+
+            return model.forward(*ctx, x);
+        }
+
+        if (args_.get(0) == "Flux2FeedForward") {
+            auto dim = args_.get_one<int64_t>("--dim");
+            auto dim_out = args_.get_optional<int64_t>("--dim_out");
+            auto mult = args_.get_optional<float>("--mult").value_or(3.0);
+            auto inner_dim = args_.get_optional<int64_t>("--inner_dim");
+            auto bias = args_.get_optional<bool>("--bias").value_or(false);
+            auto x = args_.get_one<Tensor>("--x", {ctx, inputs_});
+
+            Flux2FeedForward model(dim, dim_out, mult, inner_dim, bias);
+
+            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            model.accept(visitor);
+
+            return model.forward(*ctx, x);
+        }
+
+        if (args_.get(0) == "Flux2Modulation") {
+            auto dim = args_.get_one<int64_t>("--dim");
+            auto mod_param_sets = args_.get_optional<int64_t>("--mod_param_sets").value_or(2);
+            auto bias = args_.get_optional<bool>("--bias").value_or(false);
+            auto temb = args_.get_one<Tensor>("--temb", {ctx, inputs_});
+
+            Flux2Modulation model(dim, mod_param_sets, bias);
+
+            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            model.accept(visitor);
+
+            return model.forward(*ctx, temb);
+        }
+
+
         throw std::runtime_error("Uknown command: " + args_.get(0));
     }
 
-private:
+protected:
     class CreateParametersVisitor : public Visitor {
     public:
         CreateParametersVisitor(Context& ctx, std::vector<std::pair<Tensor, std::vector<float>>>& inputs, ArgumentParser& args)

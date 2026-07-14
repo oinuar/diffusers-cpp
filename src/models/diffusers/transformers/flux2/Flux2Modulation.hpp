@@ -6,7 +6,7 @@
 
 class Flux2Modulation : public Module {
 public:
-    Flux2Modulation(int64_t dim, int64_t mod_param_sets, bool bias = false) {
+    Flux2Modulation(int64_t dim, int64_t mod_param_sets = 2, bool bias = false) {
         modules["linear"] = std::make_shared<Linear>(dim, dim * 3 * mod_param_sets, bias);
         modules["act_fn"] = std::make_shared<SiLU>();
     }

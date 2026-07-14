@@ -40,9 +40,7 @@ public:
         else if (norm_type_ == "rms_norm")
             hidden_states = std::static_pointer_cast<RMSNorm>(modules["norm"])->forward(ctx, hidden_states);
 
-        // TODO: remove hidden_states[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}] 
-        // and make broadcasting (*) work to match PyTorch
-        hidden_states = hidden_states[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}] * (1 + scale)[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}] + shift[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}];
+        hidden_states = hidden_states * (1 + scale)[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}] + shift[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}];
 
         return hidden_states;
     }

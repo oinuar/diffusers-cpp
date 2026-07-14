@@ -76,13 +76,7 @@ public:
         /** @brief Converts the shape to a human-readable string representation. */
         std::string to_string() const;
 
-        bool operator==(const Shape& other) const {
-            return rank_ == other.rank_ && ne_ == other.ne_;
-        }
-
-        bool operator!=(const Shape& other) const {
-            return !(*this == other);
-        }
+        static Shape broadcast(const Shape& lhs, const Shape& rhs);
     private:
         std::array<int64_t, 4> ne_;
         int rank_;
@@ -342,26 +336,38 @@ public:
     }
 
     Tensor operator+(Tensor rhs) const {
-        auto lhs = *this;
-        align_shapes(lhs, rhs);
+        auto target = Shape::broadcast(shape_, rhs.shape_);
+
+        auto lhs = expand(target);
+        rhs = rhs.expand(target);
+
         return Tensor(lhs.ctx_, ggml_add(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_);
     }
 
     Tensor operator-(Tensor rhs) const {
-        auto lhs = *this;
-        align_shapes(lhs, rhs);
+        auto target = Shape::broadcast(shape_, rhs.shape_);
+
+        auto lhs = expand(target);
+        rhs = rhs.expand(target);
+
         return Tensor(lhs.ctx_, ggml_sub(ctx_, lhs.t_, rhs.t_), lhs.shape_);
     }
 
     Tensor operator*(Tensor rhs) const {
-        auto lhs = *this;
-        align_shapes(lhs, rhs);
+        auto target = Shape::broadcast(shape_, rhs.shape_);
+
+        auto lhs = expand(target);
+        rhs = rhs.expand(target);
+
         return Tensor(lhs.ctx_, ggml_mul(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_);
     }
 
     Tensor operator/(Tensor rhs) const {
-        auto lhs = *this;
-        align_shapes(lhs, rhs);
+        auto target = Shape::broadcast(shape_, rhs.shape_);
+
+        auto lhs = expand(target);
+        rhs = rhs.expand(target);
+
         return Tensor(lhs.ctx_, ggml_div(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_);
     }
 
@@ -418,8 +424,6 @@ private:
     friend Tensor cos(const Tensor& tensor);
 
     static int normalize_dim(const std::string& method, int dim, int rank, bool allow_end = false);
-
-    static void align_shapes(Tensor& lhs, Tensor& rhs);
 
     void throw_if_not_valid() const;
     void throw_if_not_contiguous() const;

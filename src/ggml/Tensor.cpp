@@ -17,6 +17,41 @@ std::string Tensor::Shape::to_string() const {
     return oss.str();
 }
 
+Tensor::Shape Tensor::Shape::broadcast(const Tensor::Shape& lhs, const Tensor::Shape& rhs) {
+    const size_t rank = std::max(lhs.rank(), rhs.rank());
+
+    if (rank == 0)
+        return Tensor::Shape();
+
+    if (lhs.rank() == 0)
+        return rhs;
+
+    if (rhs.rank() == 0)
+        return lhs;
+
+    Shape result(rank);
+
+    for (size_t i = 0; i < rank; ++i) {
+        const int64_t dl = (i < lhs.rank()) ? lhs.ne_[i] : 1;
+        const int64_t dr = (i < rhs.rank()) ? rhs.ne_[i] : 1;
+
+        if (dl == dr) {
+            result.ne_[i] = dl;
+        } else if (dl == 1) {
+            result.ne_[i] = dr;
+        } else if (dr == 1) {
+            result.ne_[i] = dl;
+        } else {
+            throw std::invalid_argument(
+                "Shapes " + lhs.to_string() + " and " +
+                rhs.to_string() + " are not broadcastable.");
+        }
+    }
+
+    return result;
+}
+
+
 Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
     if (tensors.empty())
         throw std::invalid_argument("cat(): expected a non-empty list of tensors");
@@ -112,23 +147,31 @@ Tensor Tensor::reshape(const Shape& shape) const {
     }
 
     switch (out.rank()) {
-        case 0:
-            return Tensor(ctx_, ggml_reshape_1d(ctx_, *clone(), 1), out);
+    case 0:
+        // GGML scalar == 1D tensor with one element.
+        return Tensor(ctx_,
+            ggml_reshape_1d(ctx_, *clone(), 1),
+            out);
 
-        case 1:
-            return Tensor(ctx_, ggml_reshape_1d(ctx_, *clone(), out[0]), out);
+    case 1:
+        return Tensor(ctx_,
+            ggml_reshape_1d(ctx_, *clone(), out.ne_[0]),
+            out);
 
-        case 2:
-            return Tensor(ctx_, ggml_reshape_2d(ctx_, *clone(), out[0], out[1]), out);
+    case 2:
+        return Tensor(ctx_,
+            ggml_reshape_2d(ctx_, *clone(), out.ne_[0], out.ne_[1]),
+            out);
 
-        case 3:
-            return Tensor(ctx_, ggml_reshape_3d(ctx_, *clone(), out[0], out[1], out[2]), out);
+    case 3:
+        return Tensor(ctx_,
+            ggml_reshape_3d(ctx_, *clone(), out.ne_[0], out.ne_[1], out.ne_[2]),
+            out);
 
-        case 4:
-            return Tensor(ctx_, ggml_reshape_4d(ctx_, *clone(), out[0], out[1], out[2], out[3]), out);
-
-        default:
-            break;
+    case 4:
+        return Tensor(ctx_,
+            ggml_reshape_4d(ctx_, *clone(), out.ne_[0], out.ne_[1], out.ne_[2], out.ne_[3]),
+            out);
     }
 
     throw std::invalid_argument("Unsupported shape: " + shape.to_string());
@@ -441,40 +484,49 @@ std::vector<Tensor> Tensor::split_with_sizes(const std::vector<int64_t>& split_s
     return result;
 }
 
-Tensor Tensor::expand(const Tensor::Shape& new_shape) const {
+Tensor Tensor::expand(const Shape& new_shape) const {
     throw_if_not_valid();
     throw_if_not_contiguous();
 
-    auto current_shape = shape();
-    const int current_rank = current_shape.rank();
-    const int new_rank = new_shape.rank();
-    
-    if (new_rank > 4)
-        throw std::runtime_error("expand(): rank cannot exceed 4");
-    
-    // Validate dimensions
-    for (int pt_dim = 0; pt_dim < new_rank; ++pt_dim) {
-        int current_pt_dim = pt_dim - (new_rank - current_rank);
-        int64_t new_size = new_shape[pt_dim];
-        
-        if (current_pt_dim >= 0) {
-            int64_t current_size = current_shape[current_pt_dim];
-            if (current_size != new_size && current_size != 1) {
-                throw std::runtime_error("expand(): cannot expand dimension " + 
-                                       std::to_string(pt_dim) + " from size " + 
-                                       std::to_string(current_size) + " to " + 
-                                       std::to_string(new_size));
-            }
+    // Expanding to a scalar is a no-op.
+    if (new_shape.rank() == 0) {
+        if (shape().rank() != 0) {
+            throw std::runtime_error(
+                "expand(): cannot expand a non-scalar to a scalar");
+        }
+
+        return *this;
+    }
+
+    auto src = *this;
+
+    // Pad rank with leading PyTorch singleton dimensions
+    while (src.shape().rank() < new_shape.rank())
+        src = src.unsqueeze(0);
+
+    // Validate
+    for (int i = 0; i < new_shape.rank(); ++i) {
+        auto cur = src.shape()[i];
+        auto dst = new_shape[i];
+
+        if (cur != dst && cur != 1) {
+            throw std::runtime_error(
+                "expand(): incompatible dimension");
         }
     }
-    
-    // Create destination tensor with new shape
-    auto dst = ggml_new_tensor(ctx_, t_->type, new_rank, new_shape.data());
-    
-    // Use ggml_repeat for broadcasting
-    auto repeated = ggml_repeat(ctx_, t_, dst);
 
-    return Tensor(ctx_, repeated, new_shape);
+    // Create a dummy tensor with the target shape to use as the repeat target.
+    // GGML's ggml_repeat only reads the 'ne' array of the target tensor, 
+    // so the type (GGML_TYPE_F32) and lack of a data buffer are perfectly safe.
+    auto target =
+        ggml_new_tensor(ctx_, src.t_->type,
+                        new_shape.rank(),
+                        new_shape.data());
+
+    return Tensor(
+        ctx_,
+        ggml_repeat(ctx_, src.t_, target),
+        new_shape);
 }
 
 Tensor Tensor::operator[](const std::vector<Slice>& indices) const {
@@ -623,60 +675,6 @@ int Tensor::normalize_dim(const std::string& method, int dim, int rank, bool all
         dim += rank + (allow_end ? 1 : 0);
 
     return dim;
-}
-
-void Tensor::align_shapes(Tensor& lhs, Tensor& rhs) {
-    size_t n_dims = std::max(lhs.shape_.rank(), rhs.shape_.rank());
-    if (n_dims == 0) {
-        return; // Both are scalars, no alignment needed
-    }
-
-    // 1. Compute the target broadcasted shape.
-    // Shape::data() returns the internal GGML-ordered ne_ array, so we can 
-    // evaluate dimensions directly in GGML's native order.
-    int64_t target_ne[4] = {1, 1, 1, 1};
-    for (size_t i = 0; i < n_dims; ++i) {
-        int64_t dim_lhs = (i < lhs.shape_.rank()) ? lhs.shape_.data()[i] : 1;
-        int64_t dim_rhs = (i < rhs.shape_.rank()) ? rhs.shape_.data()[i] : 1;
-        target_ne[i] = std::max(dim_lhs, dim_rhs);
-    }
-
-    // 2. Check which tensors actually need expansion
-    bool lhs_needs_expand = false;
-    bool rhs_needs_expand = false;
-
-    for (size_t i = 0; i < n_dims; ++i) {
-        int64_t dim_lhs = (i < lhs.shape_.rank()) ? lhs.shape_.data()[i] : 1;
-        int64_t dim_rhs = (i < rhs.shape_.rank()) ? rhs.shape_.data()[i] : 1;
-        if (dim_lhs != target_ne[i]) lhs_needs_expand = true;
-        if (dim_rhs != target_ne[i]) rhs_needs_expand = true;
-    }
-
-    // 3. Perform expansions if necessary
-    if (lhs_needs_expand || rhs_needs_expand) {
-        // Create a dummy tensor with the target shape to use as the repeat target.
-        // GGML's ggml_repeat only reads the 'ne' array of the target tensor, 
-        // so the type (GGML_TYPE_F32) and lack of a data buffer are perfectly safe.
-        struct ggml_tensor* target = ggml_new_tensor(lhs.ctx_, GGML_TYPE_F32, n_dims, target_ne);
-        
-        // Construct the target shape for the Tensor wrapper.
-        // This is allowed because Tensor is a friend of Shape.
-        Shape target_shape(n_dims);
-        for (size_t i = 0; i < n_dims; ++i) {
-            target_shape.ne_[i] = target_ne[i];
-        }
-
-        if (lhs_needs_expand && rhs_needs_expand) {
-            // Expand lhs to the target shape first
-            lhs = Tensor(lhs.ctx_, ggml_repeat(lhs.ctx_, lhs.t_, target), target_shape);
-            // Now lhs has the target shape, so we can safely use lhs.t_ as the target for rhs!
-            rhs = Tensor(rhs.ctx_, ggml_repeat(rhs.ctx_, rhs.t_, lhs.t_), target_shape);
-        } else if (lhs_needs_expand) {
-            lhs = Tensor(lhs.ctx_, ggml_repeat(lhs.ctx_, lhs.t_, rhs.t_), target_shape);
-        } else if (rhs_needs_expand) {
-            rhs = Tensor(rhs.ctx_, ggml_repeat(rhs.ctx_, rhs.t_, lhs.t_), target_shape);
-        }
-    }
 }
 
 void Tensor::throw_if_not_valid() const {

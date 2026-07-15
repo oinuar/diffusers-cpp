@@ -612,7 +612,7 @@ Tensor Tensor::operator[](const std::vector<Slice>& indices) const {
                 if (normalized_index < 0 || normalized_index >= dim_size)
                     throw std::out_of_range("operator[]: index out of range");
 
-                result = result.narrow(output_dim, normalized_index, 1);
+                result = result.narrow(output_dim, normalized_index, 1).contiguous();
                 result = result.squeeze(output_dim);
                 cloned = true;
                 // Do not increment output_dim: integer indexing removed it.

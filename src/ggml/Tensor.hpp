@@ -47,6 +47,8 @@ public:
      */
     class Shape {
     public:
+        static Shape broadcast(const Shape& lhs, const Shape& rhs);
+
         /** @brief Default-constructs a zero-shape with specified rank. */
         Shape(int64_t rank = 0) : ne_({0, 0, 0, 0}), rank_(rank) {}
 
@@ -75,11 +77,19 @@ public:
 
         /** @brief Converts the shape to a human-readable string representation. */
         std::string to_string() const;
-
-        static Shape broadcast(const Shape& lhs, const Shape& rhs);
     private:
         std::array<int64_t, 4> ne_;
         int64_t rank_;
+
+        /*int64_t normalize_index(int64_t index) const {
+            if (index < 0)
+                index += rank_;
+
+            if (index < 0 || index >= rank_)
+                throw std::out_of_range("Shape index out of range");
+
+            return index;
+        }*/
 
         friend class Tensor;
     };
@@ -389,11 +399,6 @@ public:
         return *this / scalar(ctx_, rhs);
     }
 
-    Tensor pow(float exponent) const {
-        // exp(exponent * log(x))  — works for arbitrary real exponents
-        return exp(log(*this) * exponent);
-    }
-
     Tensor clip(float a, float b) const {
         return Tensor(ctx_, ggml_clamp(ctx_, t_, a, b), shape_);
     }
@@ -424,6 +429,9 @@ private:
     friend Tensor log(const Tensor& tensor);
     friend Tensor sin(const Tensor& tensor);
     friend Tensor cos(const Tensor& tensor);
+    friend Tensor pow(const Tensor& base, const Tensor& exponent);
+    friend Tensor pow(const Tensor& base, float exponent);
+    friend Tensor pow(float base, const Tensor& exponent);
 
     static int normalize_dim(const std::string& method, int64_t dim, int64_t rank, bool allow_end = false);
 
@@ -469,6 +477,19 @@ inline Tensor sin(const Tensor& tensor) {
 
 inline Tensor cos(const Tensor& tensor) {
     return Tensor(tensor.ctx_, ggml_cos(tensor.ctx_, tensor.t_), tensor.shape_);
+}
+
+inline Tensor pow(const Tensor& base, const Tensor& exponent) {
+    // exp(exponent * log(x))  — works for arbitrary real exponents
+    return exp(log(base) * exponent);
+}
+
+inline Tensor pow(const Tensor& base, float exponent) {
+    return pow(base, Tensor::scalar(base.ctx_, exponent));
+}
+
+inline Tensor pow(float base, const Tensor& exponent) {
+    return pow(Tensor::scalar(exponent.ctx_, base), exponent);
 }
 
 inline Tensor rsqrt(const Tensor& tensor) {

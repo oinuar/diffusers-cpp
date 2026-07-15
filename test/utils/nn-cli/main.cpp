@@ -13,6 +13,7 @@
 #include "models/diffusers/transformers/flux2/Flux2FeedForward.hpp"
 #include "models/diffusers/transformers/flux2/Flux2Modulation.hpp"
 #include "models/diffusers/transformers/flux2/Flux2TimestepGuidanceEmbeddings.hpp"
+#include "models/diffusers/transformers/flux2/Flux2PosEmbed.hpp"
 
 #include <numeric>
 
@@ -175,6 +176,21 @@ public:
             model.accept(visitor);
 
             return model.forward(*ctx, timestep, guidance);
+        }
+
+        if (args_.get(0) == "Flux2PosEmbed") {
+            auto theta = args_.get_one<int64_t>("--theta");
+            auto axes_dim = args_.get_many<int64_t>("--axes_dim");
+            auto ids = args_.get_one<Tensor>("--ids", {ctx, inputs_});
+
+            Flux2PosEmbed model(theta, axes_dim);
+
+            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            model.accept(visitor);
+
+            auto result = model.forward(*ctx, ids);
+
+            return {{result.first, result.second}};
         }
 
 

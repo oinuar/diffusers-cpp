@@ -231,11 +231,18 @@ public:
             return lhs / rhs;
         }
 
-        if (args_.get(0) == "pow") {
-            auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
+        if (args_.get(0) == "pow_scalar") {
+            auto base = args_.get_one<Tensor>("--base", {ctx, inputs_});
             auto exponent = args_.get_one<float>("--exponent");
 
-            return self.pow(exponent);
+            return pow(base, exponent);
+        }
+
+        if (args_.get(0) == "scalar_pow") {
+            auto base = args_.get_one<float>("--base");
+            auto exponent = args_.get_one<Tensor>("--exponent", {ctx, inputs_});
+
+            return pow(base, exponent);
         }
 
         

@@ -1,8 +1,8 @@
 #pragma once
 
 #include "nn/Module.hpp"
-#include "models/embeddings/Timesteps.hpp"
-#include "models/embeddings/TimestepEmbedding.hpp"
+#include "nn/Timesteps.hpp"
+#include "nn/TimestepEmbedding.hpp"
 
 class Flux2TimestepGuidanceEmbeddings : public Module {
 public:
@@ -13,10 +13,10 @@ public:
         bool guidance_embeds = true
     ) : guidance_embeds_(guidance_embeds) {
         modules["time_proj"] = std::make_shared<Timesteps>(in_channels, true, 0.0f);
-        modules["timestep_embedder"] = std::make_shared<TimestepEmbedding<>>(in_channels, embedding_dim, bias);
+        modules["timestep_embedder"] = std::make_shared<TimestepEmbedding<>>(in_channels, embedding_dim, std::nullopt, std::nullopt, bias);
 
         if (guidance_embeds)
-            modules["guidance_embedder"] = std::make_shared<TimestepEmbedding<>>(in_channels, embedding_dim, bias);
+            modules["guidance_embedder"] = std::make_shared<TimestepEmbedding<>>(in_channels, embedding_dim, std::nullopt, std::nullopt, bias);
     }
 
     Tensor forward(ggml_context* ctx, Tensor timestep, std::optional<Tensor> guidance = std::nullopt) {

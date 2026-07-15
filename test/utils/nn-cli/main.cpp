@@ -12,6 +12,7 @@
 #include "models/diffusers/transformers/flux2/Flux2SwiGLU.hpp"
 #include "models/diffusers/transformers/flux2/Flux2FeedForward.hpp"
 #include "models/diffusers/transformers/flux2/Flux2Modulation.hpp"
+#include "models/diffusers/transformers/flux2/Flux2TimestepGuidanceEmbeddings.hpp"
 
 #include <numeric>
 
@@ -158,6 +159,22 @@ public:
             model.accept(visitor);
 
             return model.forward(*ctx, temb);
+        }
+
+        if (args_.get(0) == "Flux2TimestepGuidanceEmbeddings") {
+            auto in_channels = args_.get_one<int64_t>("--in_channels");
+            auto embedding_dim = args_.get_one<int64_t>("--embedding_dim");
+            auto bias = args_.get_optional<bool>("--bias").value_or(false);
+            auto guidance_embeds = args_.get_optional<bool>("--guidance_embeds").value_or(true);
+            auto timestep = args_.get_one<Tensor>("--timestep", {ctx, inputs_});
+            auto guidance = args_.get_optional<Tensor>("--guidance", {ctx, inputs_});
+
+            Flux2TimestepGuidanceEmbeddings model(in_channels, embedding_dim, bias, guidance_embeds);
+
+            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            model.accept(visitor);
+
+            return model.forward(*ctx, timestep, guidance);
         }
 
 

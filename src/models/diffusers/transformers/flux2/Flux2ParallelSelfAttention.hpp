@@ -63,9 +63,9 @@ public:
 
         // Handle the attention logic
         auto chunks = qkv.chunk(3, -1);
-        auto query = chunks.at(0).contiguous();
-        auto key = chunks.at(1).contiguous();
-        auto value = chunks.at(2).contiguous();
+        auto query = chunks.at(0);
+        auto key = chunks.at(1);
+        auto value = chunks.at(2);
 
         query = query.unflatten(-1, {heads_, -1});
         key = key.unflatten(-1, {heads_, -1});
@@ -94,7 +94,6 @@ public:
             attention_mask
         );
 
-        hidden_states = hidden_states.contiguous();
         hidden_states = hidden_states.flatten(2, 3);
         hidden_states = hidden_states.to(query.dtype());
 

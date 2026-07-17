@@ -19,12 +19,12 @@ Tensor LayerNorm::forward(ggml_context* ctx, Tensor x) {
         auto weight = std::static_pointer_cast<Parameter>(modules["weight"]);
 
         x = x * weight->forward();
-    }
 
-    if (bias_) {
-        auto bias = std::static_pointer_cast<Parameter>(modules["bias"]);
+        if (bias_) {
+            auto bias = std::static_pointer_cast<Parameter>(modules["bias"]);
 
-        x = x + bias->forward();
+            x = x + bias->forward();
+        }
     }
 
     return x;

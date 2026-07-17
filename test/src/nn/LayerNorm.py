@@ -18,3 +18,18 @@ class TestNNNormalizationLayerNorm(TestCase):
         )
 
         self.assertTensors(actual, [expected])
+
+    def test_no_elementwise_affine(self):
+        model = nn.modules.normalization.LayerNorm(3, elementwise_affine=False)
+        x = torch.randn(2, 2, 3)
+
+        expected = model.forward(x)
+
+        actual = self.cli(
+            'LayerNorm',
+            '--dim', '3',
+            '--elementwise_affine', 'false',
+            '--x', str(x.tolist()),
+        )
+
+        self.assertTensors(actual, [expected])

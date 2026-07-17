@@ -25,7 +25,7 @@ public:
         if (mod.ndim() == 2)
             mod = mod.unsqueeze(1);
 
-        auto mod_params = mod.chunk(3 * mod_param_sets);
+        auto mod_params = mod.chunk(3 * mod_param_sets, -1);
         std::vector<std::array<Tensor, 3>> result;
 
         // Return vector of 3-array of modulation params shift/scale/gate

@@ -33,7 +33,7 @@ public:
         );
     }
 
-    std::tuple<Tensor, Tensor> forward(
+    std::tuple<Tensor, std::optional<Tensor>> forward(
         ggml_context* ctx,
         Tensor hidden_states,
         std::optional<Tensor> encoder_hidden_states,
@@ -42,19 +42,18 @@ public:
         bool split_hidden_states = false,
         std::optional<int64_t> text_seq_len = std::nullopt
     ) {
-        auto norm = std::static_pointer_cast<LayerNorm>(modules["norm"]);
-        auto attn = std::static_pointer_cast<Flux2ParallelSelfAttention>(modules["attn"]);
-
         if (encoder_hidden_states) {
-            text_seq_len = encoder_hidden_states.value().shape()[1];
-            hidden_states = Tensor::cat({encoder_hidden_states.value(), hidden_states}, 1);
+            text_seq_len = encoder_hidden_states->shape()[1];
+            hidden_states = Tensor::cat({*encoder_hidden_states, hidden_states}, 1);
         }
 
         auto [mod_shift, mod_scale, mod_gate] = Flux2Modulation::split(temb_mod, 1)[0];
 
+        auto norm = std::static_pointer_cast<LayerNorm>(modules["norm"]);
         auto norm_hidden_states = norm->forward(ctx, hidden_states);
         norm_hidden_states = (1.0f + mod_scale) * norm_hidden_states + mod_shift;
 
+        auto attn = std::static_pointer_cast<Flux2ParallelSelfAttention<AttnOp>>(modules["attn"]);
         auto attn_output = attn->forward(ctx, norm_hidden_states, std::nullopt, image_rotary_emb);
         hidden_states = hidden_states + mod_gate * attn_output;
 
@@ -65,12 +64,10 @@ public:
             if (text_seq_len) {
                 encoder_hidden_states = hidden_states[{Tensor::Slice::all(), Tensor::Slice::range(std::nullopt, text_seq_len)}];
                 hidden_states = hidden_states[{Tensor::Slice::all(), Tensor::Slice::range(text_seq_len, std::nullopt)}];
-                return {encoder_hidden_states.value(), hidden_states};
+                return {*encoder_hidden_states, hidden_states};
             }
-
-            return {hidden_states, hidden_states};
         }
 
-        return {hidden_states, Tensor()};
+        return {hidden_states, std::nullopt};
     }
 };

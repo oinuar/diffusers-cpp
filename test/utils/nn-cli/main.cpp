@@ -15,6 +15,7 @@
 #include "models/diffusers/transformers/flux2/Flux2TimestepGuidanceEmbeddings.hpp"
 #include "models/diffusers/transformers/flux2/Flux2PosEmbed.hpp"
 #include "models/diffusers/transformers/flux2/Flux2Attention.hpp"
+#include "models/attention/ScaledDotProductAttention.hpp"
 #include "models/attention/FlashAttentionOp.hpp"
 
 
@@ -219,7 +220,7 @@ public:
                 image_rotary_emb_1.value()
             )) : std::nullopt;
 
-            Flux2Attention<FlashAttentionOp> model(
+            Flux2Attention<ScaledDotProductAttention<FlashAttentionOp>> model(
                 query_dim,
                 heads,
                 dim_head,

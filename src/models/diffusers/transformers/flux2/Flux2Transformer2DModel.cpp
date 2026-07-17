@@ -7,7 +7,8 @@
 #include "models/diffusers/transformers/flux2/Flux2SingleTransformerBlock.hpp"
 #include "nn/AdaLayerNormContinuous.hpp"
 #include "ggml/GGUFLoaderVisitor.hpp"
-#include "models/attention/SoftmaxAttnOp.hpp"
+#include "models/attention/ScaledDotProductAttention.hpp"
+#include "models/attention/FlashAttentionOp.hpp"
 
 Flux2Transformer2DModel Flux2Transformer2DModel::from_pretrained(Backend& loader_backend, const std::string& path) {
     Flux2Transformer2DModel model(
@@ -73,31 +74,36 @@ Flux2Transformer2DModel::Flux2Transformer2DModel(
     modules["x_embedder"] = std::make_shared<Linear>(in_channels, inner_dim, false);
     modules["context_embedder"] = std::make_shared<Linear>(joint_attention_dim, inner_dim, false);
 
-    // TODO: use ModuleList
     // 5. Double Stream Transformer Blocks
-    for (auto i = 0; i < num_layers; ++i) {
-        modules["transformer_blocks." + std::to_string(i)] = std::make_shared<Flux2TransformerBlock<SoftmaxAttnOp>>(
-            inner_dim,
-            num_attention_heads,
-            attention_head_dim,
-            mlp_ratio,
-            eps,
-            false
-        );
-    }
+    auto transformer_blocks = std::make_shared<ModuleList>(num_layers);
+    modules["transformer_blocks"] = transformer_blocks;
 
-    // TODO: use ModuleList
+    for (auto i = 0; i < transformer_blocks->size(); ++i)
+        (*transformer_blocks)[i] =
+            std::make_shared<Flux2TransformerBlock<ScaledDotProductAttention<FlashAttentionOp>>>(
+                inner_dim,
+                num_attention_heads,
+                attention_head_dim,
+                mlp_ratio,
+                eps,
+                false
+            );
+
+
     // 6. Single Stream Transformer Blocks
-    for (auto i = 0; i < num_single_layers; ++i) {
-        modules["single_transformer_blocks." + std::to_string(i)] = std::make_shared<Flux2SingleTransformerBlock<SoftmaxAttnOp>>(
-            inner_dim,
-            num_attention_heads,
-            attention_head_dim,
-            mlp_ratio,
-            eps,
-            false
-        );
-    }
+    auto single_transformer_blocks = std::make_shared<ModuleList>(num_single_layers);
+    modules["single_transformer_blocks"] = transformer_blocks;
+
+    for (auto i = 0; i < single_transformer_blocks->size(); ++i)
+        (*single_transformer_blocks)[i] =
+            std::make_shared<Flux2SingleTransformerBlock<ScaledDotProductAttention<FlashAttentionOp>>>(
+                inner_dim,
+                num_attention_heads,
+                attention_head_dim,
+                mlp_ratio,
+                eps,
+                false
+            );
 
     // 7. Output layers
     modules["norm_out"] = std::make_shared<AdaLayerNormContinuous<>>(inner_dim, inner_dim, false, eps, false);
@@ -167,9 +173,12 @@ Tensor Flux2Transformer2DModel::forward(
     // TODO: 4. Build joint_attention_kwargs with KV cache info
 
     // 5. Double Stream Transformer Blocks
-    // TODO: use ModuleList
-    for (auto i = 0; i < num_layers_; ++i) {
-        auto block = std::static_pointer_cast<Flux2TransformerBlock<SoftmaxAttnOp>>(modules["transformer_blocks." + std::to_string(i)]);
+    auto transformer_blocks = std::static_pointer_cast<ModuleList>(modules["transformer_blocks"]);
+    
+    for (auto i = 0; i < transformer_blocks->size(); ++i) {
+        auto block = std::static_pointer_cast<Flux2TransformerBlock<ScaledDotProductAttention<FlashAttentionOp>>>(
+            (*transformer_blocks)[i]
+        );
 
         auto [fwd_encoder_hidden_states, fwd_hidden_states] = block->forward(
             ctx,
@@ -178,7 +187,6 @@ Tensor Flux2Transformer2DModel::forward(
             double_stream_mod_img,
             double_stream_mod_txt,
             concat_rotary_emb
-            //joint_attention_kwargs=kv_attn_kwargs,
         );
 
         encoder_hidden_states = fwd_encoder_hidden_states;
@@ -192,9 +200,12 @@ Tensor Flux2Transformer2DModel::forward(
     // TOOD: Build single-block KV kwargs (single blocks need num_txt_tokens)
 
     // 6. Single Stream Transformer Blocks
-    // TODO: use ModuleList
-    for (auto i = 0; i < num_single_layers_; ++i) {
-        auto block = std::static_pointer_cast<Flux2SingleTransformerBlock<SoftmaxAttnOp>>(modules["single_transformer_blocks." + std::to_string(i)]);
+    auto single_transformer_blocks = std::static_pointer_cast<ModuleList>(modules["single_transformer_blocks"]);
+
+    for (auto i = 0; i < single_transformer_blocks->size(); ++i) {
+        auto block = std::static_pointer_cast<Flux2SingleTransformerBlock<ScaledDotProductAttention<FlashAttentionOp>>>(
+            (*single_transformer_blocks)[i]
+        );
 
         auto [fwd_hidden_states, _] = block->forward(
             ctx,
@@ -202,7 +213,6 @@ Tensor Flux2Transformer2DModel::forward(
             std::nullopt,
             single_stream_mod,
             concat_rotary_emb
-            //joint_attention_kwargs=kv_attn_kwargs_single,
         );
 
         hidden_states = fwd_hidden_states;

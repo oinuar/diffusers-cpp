@@ -49,7 +49,6 @@ public:
         Tensor temb_mod_img,
         Tensor temb_mod_txt,
         std::optional<std::tuple<Tensor, Tensor>> image_rotary_emb = std::nullopt
-        //Tensor joint_attention_kwargs: dict[str, Any] | None = None,
     ) {
         // Modulation parameters shape: [1, 1, self.dim]
         auto split = Flux2Modulation::split(temb_mod_img, 2);
@@ -73,7 +72,7 @@ public:
         norm_encoder_hidden_states = (1.0f + c_scale_msa) * norm_encoder_hidden_states + c_shift_msa;
       
         // Attention on concatenated img + txt stream
-        auto attn = std::static_pointer_cast<Flux2Attention>(modules["attn"]);
+        auto attn = std::static_pointer_cast<Flux2Attention<AttnOp>>(modules["attn"]);
 
         auto [attn_output, context_attn_output] = attn->forward(
             ctx,

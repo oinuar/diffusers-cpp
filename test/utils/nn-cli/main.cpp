@@ -17,6 +17,7 @@
 #include "models/diffusers/transformers/flux2/Flux2Attention.hpp"
 #include "models/diffusers/transformers/flux2/Flux2ParallelSelfAttention.hpp"
 #include "models/diffusers/transformers/flux2/Flux2SingleTransformerBlock.hpp"
+#include "models/diffusers/transformers/flux2/Flux2TransformerBlock.hpp"
 
 #include "models/attention/ScaledDotProductAttention.hpp"
 #include "models/attention/FlashAttentionOp.hpp"
@@ -341,6 +342,48 @@ public:
                 results.push_back(*y2);
 
             return results;
+        }
+
+        if (args_.get(0) == "Flux2TransformerBlock") {
+            auto dim = args_.get_one<int64_t>("--dim");
+            auto num_attention_heads = args_.get_one<int64_t>("--num_attention_heads");
+            auto attention_head_dim = args_.get_one<int64_t>("--attention_head_dim");
+            auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(3.0);
+            auto eps = args_.get_optional<float>("--eps").value_or(1e-6);
+            auto bias = args_.get_optional<bool>("--bias").value_or(false);
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
+            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {ctx, inputs_});
+            auto temb_mod_img = args_.get_one<Tensor>("--temb_mod_img", {ctx, inputs_});
+            auto temb_mod_txt = args_.get_one<Tensor>("--temb_mod_txt", {ctx, inputs_});
+            auto image_rotary_emb_0 = args_.get_optional<Tensor>("--image_rotary_emb-0", {ctx, inputs_});
+            auto image_rotary_emb_1 = args_.get_optional<Tensor>("--image_rotary_emb-1", {ctx, inputs_});
+            auto image_rotary_emb = image_rotary_emb_0 && image_rotary_emb_1 ? std::make_optional(std::make_tuple(
+                image_rotary_emb_0.value(),
+                image_rotary_emb_1.value()
+            )) : std::nullopt;
+
+            Flux2TransformerBlock<ScaledDotProductAttention<FlashAttentionOp>> model(
+                dim,
+                num_attention_heads,
+                attention_head_dim,
+                mlp_ratio,
+                eps,
+                bias
+            );
+
+            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            model.accept(visitor);
+
+            auto [y1, y2] = model.forward(
+                *ctx,
+                hidden_states,
+                encoder_hidden_states,
+                temb_mod_img,
+                temb_mod_txt,
+                image_rotary_emb
+            );
+
+            return {{y1, y2}};
         }
 
         if (args_.get(0) == "FlashAttention") {

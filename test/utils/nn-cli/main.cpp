@@ -14,6 +14,9 @@
 #include "models/diffusers/transformers/flux2/Flux2Modulation.hpp"
 #include "models/diffusers/transformers/flux2/Flux2TimestepGuidanceEmbeddings.hpp"
 #include "models/diffusers/transformers/flux2/Flux2PosEmbed.hpp"
+#include "models/diffusers/transformers/flux2/Flux2Attention.hpp"
+#include "models/attention/FlashAttentionOp.hpp"
+
 
 #include <numeric>
 
@@ -193,6 +196,67 @@ public:
             return {{result.first, result.second}};
         }
 
+
+        if (args_.get(0) == "Flux2Attention") {
+            auto query_dim = args_.get_one<int64_t>("--query_dim");
+            auto heads = args_.get_optional<int64_t>("--heads").value_or(8);
+            auto dim_head = args_.get_optional<int64_t>("--dim_head").value_or(64);
+            auto dropout = args_.get_optional<float>("--dropout").value_or(0.0);
+            auto bias = args_.get_optional<bool>("--bias").value_or(false);
+            auto added_kv_proj_dim = args_.get_optional<int64_t>("--added_kv_proj_dim");
+            auto added_proj_bias = args_.get_optional<bool>("--added_proj_bias").value_or(true);
+            auto out_bias = args_.get_optional<bool>("--out_bias").value_or(true);
+            auto eps = args_.get_optional<float>("--eps").value_or(1e-5);
+            auto out_dim = args_.get_optional<int64_t>("--out_dim");
+            auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
+            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {ctx, inputs_});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {ctx, inputs_});
+            auto image_rotary_emb_0 = args_.get_optional<Tensor>("--image_rotary_emb-0", {ctx, inputs_});
+            auto image_rotary_emb_1 = args_.get_optional<Tensor>("--image_rotary_emb-1", {ctx, inputs_});
+            auto image_rotary_emb = image_rotary_emb_0 && image_rotary_emb_1 ? std::make_optional(std::make_tuple(
+                image_rotary_emb_0.value(),
+                image_rotary_emb_1.value()
+            )) : std::nullopt;
+
+            Flux2Attention<FlashAttentionOp> model(
+                query_dim,
+                heads,
+                dim_head,
+                dropout,
+                bias,
+                added_kv_proj_dim,
+                added_proj_bias,
+                out_bias,
+                eps,
+                out_dim,
+                elementwise_affine
+            );
+
+            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            model.accept(visitor);
+
+            auto [y1, y2] = model.forward(*ctx, hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb);
+            std::vector<Tensor> results;
+
+            results.push_back(y1);
+
+            if (y2)
+                results.push_back(y2.value());
+
+            return results;
+        }
+
+        if (args_.get(0) == "FlashAttention") {
+            auto q = args_.get_one<Tensor>("--q", {ctx, inputs_});
+            auto k = args_.get_one<Tensor>("--k", {ctx, inputs_});
+            auto v = args_.get_one<Tensor>("--v", {ctx, inputs_});
+            auto mask = args_.get_optional<Tensor>("--mask", {ctx, inputs_});
+
+            FlashAttentionOp attention;
+
+            return attention(*ctx, q, k, v, mask);
+        }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));
     }

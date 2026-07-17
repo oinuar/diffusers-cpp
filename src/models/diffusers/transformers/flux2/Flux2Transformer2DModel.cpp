@@ -5,8 +5,9 @@
 #include "models/diffusers/transformers/flux2/Flux2Modulation.hpp"
 #include "models/diffusers/transformers/flux2/Flux2TransformerBlock.hpp"
 #include "models/diffusers/transformers/flux2/Flux2SingleTransformerBlock.hpp"
-#include "models/normalization/AdaLayerNormContinuous.hpp"
+#include "nn/AdaLayerNormContinuous.hpp"
 #include "ggml/GGUFLoaderVisitor.hpp"
+#include "models/attention/SoftmaxAttnOp.hpp"
 
 Flux2Transformer2DModel Flux2Transformer2DModel::from_pretrained(Backend& loader_backend, const std::string& path) {
     Flux2Transformer2DModel model(
@@ -72,9 +73,10 @@ Flux2Transformer2DModel::Flux2Transformer2DModel(
     modules["x_embedder"] = std::make_shared<Linear>(in_channels, inner_dim, false);
     modules["context_embedder"] = std::make_shared<Linear>(joint_attention_dim, inner_dim, false);
 
+    // TODO: use ModuleList
     // 5. Double Stream Transformer Blocks
     for (auto i = 0; i < num_layers; ++i) {
-        modules["transformer_blocks." + std::to_string(i)] = std::make_shared<Flux2TransformerBlock>(
+        modules["transformer_blocks." + std::to_string(i)] = std::make_shared<Flux2TransformerBlock<SoftmaxAttnOp>>(
             inner_dim,
             num_attention_heads,
             attention_head_dim,
@@ -84,9 +86,10 @@ Flux2Transformer2DModel::Flux2Transformer2DModel(
         );
     }
 
+    // TODO: use ModuleList
     // 6. Single Stream Transformer Blocks
     for (auto i = 0; i < num_single_layers; ++i) {
-        modules["single_transformer_blocks." + std::to_string(i)] = std::make_shared<Flux2SingleTransformerBlock>(
+        modules["single_transformer_blocks." + std::to_string(i)] = std::make_shared<Flux2SingleTransformerBlock<SoftmaxAttnOp>>(
             inner_dim,
             num_attention_heads,
             attention_head_dim,
@@ -97,7 +100,7 @@ Flux2Transformer2DModel::Flux2Transformer2DModel(
     }
 
     // 7. Output layers
-    modules["norm_out"] = std::make_shared<AdaLayerNormContinuous>(inner_dim, inner_dim, false, eps, false);
+    modules["norm_out"] = std::make_shared<AdaLayerNormContinuous<>>(inner_dim, inner_dim, false, eps, false);
     modules["proj_out"] = std::make_shared<Linear>(inner_dim, patch_size * patch_size * out_channels.value_or(in_channels), false);
 }
 
@@ -164,8 +167,9 @@ Tensor Flux2Transformer2DModel::forward(
     // TODO: 4. Build joint_attention_kwargs with KV cache info
 
     // 5. Double Stream Transformer Blocks
+    // TODO: use ModuleList
     for (auto i = 0; i < num_layers_; ++i) {
-        auto block = std::static_pointer_cast<Flux2TransformerBlock>(modules["transformer_blocks." + std::to_string(i)]);
+        auto block = std::static_pointer_cast<Flux2TransformerBlock<SoftmaxAttnOp>>(modules["transformer_blocks." + std::to_string(i)]);
 
         auto [fwd_encoder_hidden_states, fwd_hidden_states] = block->forward(
             ctx,
@@ -188,8 +192,9 @@ Tensor Flux2Transformer2DModel::forward(
     // TOOD: Build single-block KV kwargs (single blocks need num_txt_tokens)
 
     // 6. Single Stream Transformer Blocks
+    // TODO: use ModuleList
     for (auto i = 0; i < num_single_layers_; ++i) {
-        auto block = std::static_pointer_cast<Flux2SingleTransformerBlock>(modules["single_transformer_blocks." + std::to_string(i)]);
+        auto block = std::static_pointer_cast<Flux2SingleTransformerBlock<SoftmaxAttnOp>>(modules["single_transformer_blocks." + std::to_string(i)]);
 
         auto [fwd_hidden_states, _] = block->forward(
             ctx,
@@ -208,7 +213,7 @@ Tensor Flux2Transformer2DModel::forward(
     hidden_states = hidden_states.narrow(1, num_txt_tokens, hidden_states.shape()[1] - num_txt_tokens); // Python: hidden_states[:, num_txt_tokens:, ...]
 
     // 7. Output layers
-    auto norm_out = std::static_pointer_cast<AdaLayerNormContinuous>(modules["norm_out"]);
+    auto norm_out = std::static_pointer_cast<AdaLayerNormContinuous<>>(modules["norm_out"]);
     auto proj_out = std::static_pointer_cast<Linear>(modules["proj_out"]);
 
     hidden_states = norm_out->forward(ctx, hidden_states, temb);

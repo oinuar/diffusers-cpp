@@ -1,12 +1,12 @@
 #pragma once
 
 #include "nn/Module.hpp"
-#include "models/normalization/LayerNorm.hpp"
-#include "models/diffusers/transformers/flux2/Flux2AttnProcessor.hpp"
+#include "nn/LayerNorm.hpp"
+#include "models/diffusers/transformers/flux2/Flux2Attention.hpp"
 #include "models/diffusers/transformers/flux2/Flux2FeedForward.hpp"
 #include "models/diffusers/transformers/flux2/Flux2Modulation.hpp"
-#include "models/attention/SoftmaxAttnOp.hpp"
 
+template <class AttnOp>
 class Flux2TransformerBlock : public Module {
 public:
     Flux2TransformerBlock(
@@ -22,7 +22,7 @@ public:
         modules["norm1"] = std::make_shared<LayerNorm>(dim, eps, false);
         modules["norm1_context"] = std::make_shared<LayerNorm>(dim, eps, false);
 
-        modules["attn"] = std::make_shared<Flux2AttnProcessor<SoftmaxAttnOp>>(
+        modules["attn"] = std::make_shared<Flux2Attention<AttnOp>>(
             dim,
             num_attention_heads,
             attention_head_dim,

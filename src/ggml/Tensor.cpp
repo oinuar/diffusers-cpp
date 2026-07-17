@@ -227,6 +227,27 @@ Tensor Tensor::permute(const Shape& order) const {
                   ggml_permute_args[2], ggml_permute_args[3]), out);
 }
 
+Tensor Tensor::transpose(int64_t dim0, int64_t dim1) const {
+    throw_if_not_valid();
+
+    auto rank = ndim();
+
+    dim0 = normalize_dim("transpose", dim0, rank);
+    dim1 = normalize_dim("transpose", dim1, rank);
+
+    if (dim0 == dim1)
+        return *this;
+
+    Shape order(rank);
+
+    for (int i = 0; i < rank; ++i)
+        order[i] = i;
+
+    std::swap(order[dim0], order[dim1]);
+
+    return permute(order);
+}
+
 Tensor Tensor::squeeze(int64_t dim) const {
     throw_if_not_valid();
 

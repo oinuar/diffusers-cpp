@@ -2,11 +2,11 @@
 
 #include "nn/Module.hpp"
 #include "nn/Linear.hpp"
-#include "models/normalization/LayerNorm.hpp"
-#include "models/diffusers/transformers/flux2/Flux2ParallelSelfAttnProcessor.hpp"
+#include "nn/LayerNorm.hpp"
+#include "models/diffusers/transformers/flux2/Flux2ParallelSelfAttention.hpp"
 #include "models/diffusers/transformers/flux2/Flux2Modulation.hpp"
-#include "models/attention/SoftmaxAttnOp.hpp"
 
+template <class AttnOp>
 class Flux2SingleTransformerBlock : public Module {
 public:
     Flux2SingleTransformerBlock(
@@ -18,7 +18,7 @@ public:
         bool bias = false
     ) {
         modules["norm"] = std::make_shared<LayerNorm>(dim, eps, false);
-        modules["attn"] = std::make_shared<Flux2ParallelSelfAttnProcessor<SoftmaxAttnOp>>(
+        modules["attn"] = std::make_shared<Flux2ParallelSelfAttention<AttnOp>>(
             dim,
             num_attention_heads,
             attention_head_dim,

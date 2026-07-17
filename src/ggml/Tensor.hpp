@@ -64,10 +64,10 @@ public:
         }
 
         /** @brief Accesses the dimension at the given index. */
-        const int64_t& operator [](const size_t& index) const { return ne_[rank_ - 1 - index]; }
+        const int64_t& operator [](const int64_t& index) const { return ne_[rank_ - 1 - normalize_index(index)]; }
 
         /** @brief Mutable access to the dimension at the given index. */
-        int64_t& operator [](const size_t& index) { return ne_[rank_ - 1 - index]; }
+        int64_t& operator [](const int64_t& index) { return ne_[rank_ - 1 - normalize_index(index)]; }
 
         /** @brief Returns the logical number of dimensions (0–4). */
         const int64_t& rank() const { return rank_; }
@@ -81,7 +81,7 @@ public:
         std::array<int64_t, 4> ne_;
         int64_t rank_;
 
-        /*int64_t normalize_index(int64_t index) const {
+        int64_t normalize_index(int64_t index) const {
             if (index < 0)
                 index += rank_;
 
@@ -89,7 +89,7 @@ public:
                 throw std::out_of_range("Shape index out of range");
 
             return index;
-        }*/
+        }
 
         friend class Tensor;
     };
@@ -308,6 +308,9 @@ public:
      * dimension in the order (e.g., -1 refers to the last dimension). Dimensions beyond ndim() are clamped.
      */
     Tensor permute(const Shape& dims) const;
+
+    /** @brief Swaps two dimensions, producing a view tensor. */
+    Tensor transpose(int64_t dim0, int64_t dim1) const;
 
     /** @brief Removes a single dimension at the given index `dim` (must have size 1). */
     Tensor squeeze(int64_t dim) const;

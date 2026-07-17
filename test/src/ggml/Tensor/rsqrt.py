@@ -24,5 +24,5 @@ class TestTensorRsqrt(TestCase):
         data = 9.0
         pt = torch.tensor(data)
         expected = torch.rsqrt(pt)
-        actual = self.cli('rsqrt', '--this', '[' + str(pt.tolist()) + ']')
+        actual = self.cli('rsqrt', '--this', str(pt.tolist()))
         self.assertTensors(actual, [expected])

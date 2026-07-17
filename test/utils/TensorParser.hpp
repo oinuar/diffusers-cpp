@@ -43,12 +43,22 @@ private:
         std::pair<Tensor::Shape, std::vector<float>> parse() {
             skip_ws();
 
-            Node result = parse_array();
+            Node result;
+
+            if (peek() == '[')
+                result = parse_array();
+            else
+                result = parse_number();
 
             skip_ws();
 
             if (i_ != s_.size())
                 throw std::runtime_error("Unexpected trailing characters in tensor literal");
+
+            if (result.scalar) {
+                result.shape = Tensor::Shape{};   // rank-0 tensor
+                result.scalar = false;
+            }
 
             return {result.shape, std::move(result.values)};
         }

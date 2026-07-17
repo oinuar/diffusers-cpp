@@ -231,6 +231,15 @@ public:
     Tensor clone() const {
         return Tensor(ctx_, ggml_dup(ctx_, t_), shape_);
     }
+    
+    /** @brief Returns a contiguous copy of this tensor. */
+    Tensor clone_as_contiguous() const {
+        if (!is_contiguous())
+            return contiguous();
+
+        return clone();
+    }
+
 
     /** @brief Creates an uninitialized tensor with the given shape and type. */
     static Tensor empty(
@@ -439,7 +448,6 @@ private:
     static int normalize_dim(const std::string& method, int64_t dim, int64_t rank, bool allow_end = false);
 
     void throw_if_not_valid() const;
-    void throw_if_not_contiguous() const;
 };
 
 inline Tensor operator+(float value, const Tensor& tensor) {

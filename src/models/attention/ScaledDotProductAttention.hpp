@@ -32,8 +32,8 @@ public:
         // Back to Diffusers layout:
         // [B, H, S, D] -> [B, S, H, D]
 
-        hidden_states = hidden_states.contiguous().transpose(1, 2);
+        hidden_states = hidden_states.transpose(1, 2);
 
-        return hidden_states.contiguous();
+        return hidden_states;
     }
 };

@@ -105,7 +105,6 @@ Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
 
 Tensor Tensor::reshape(const Shape& shape) const {
     throw_if_not_valid();
-    throw_if_not_contiguous();
 
     Shape out(shape);
 
@@ -147,31 +146,33 @@ Tensor Tensor::reshape(const Shape& shape) const {
             "reshape(): shape is incompatible with tensor size");
     }
 
+    auto src = clone_as_contiguous();
+
     switch (out.rank()) {
     case 0:
         // GGML scalar == 1D tensor with one element.
-        return Tensor(ctx_,
-            ggml_reshape_1d(ctx_, *clone(), 1),
+        return Tensor(ctx_, 
+            ggml_reshape_1d(ctx_, *src, 1),
             out);
 
     case 1:
         return Tensor(ctx_,
-            ggml_reshape_1d(ctx_, *clone(), out.ne_[0]),
+            ggml_reshape_1d(ctx_, *src, out.ne_[0]),
             out);
 
     case 2:
         return Tensor(ctx_,
-            ggml_reshape_2d(ctx_, *clone(), out.ne_[0], out.ne_[1]),
+            ggml_reshape_2d(ctx_, *src, out.ne_[0], out.ne_[1]),
             out);
 
     case 3:
         return Tensor(ctx_,
-            ggml_reshape_3d(ctx_, *clone(), out.ne_[0], out.ne_[1], out.ne_[2]),
+            ggml_reshape_3d(ctx_, *src, out.ne_[0], out.ne_[1], out.ne_[2]),
             out);
 
     case 4:
         return Tensor(ctx_,
-            ggml_reshape_4d(ctx_, *clone(), out.ne_[0], out.ne_[1], out.ne_[2], out.ne_[3]),
+            ggml_reshape_4d(ctx_, *src, out.ne_[0], out.ne_[1], out.ne_[2], out.ne_[3]),
             out);
     }
 
@@ -180,7 +181,6 @@ Tensor Tensor::reshape(const Shape& shape) const {
 
 Tensor Tensor::permute(const Shape& order) const {
     throw_if_not_valid();
-    throw_if_not_contiguous();
 
     auto rank = ndim();
 
@@ -222,7 +222,9 @@ Tensor Tensor::permute(const Shape& order) const {
         ggml_permute_args[old_ggml_axis] = new_ggml_pos;
     }
     
-    return Tensor(ctx_, ggml_permute(ctx_, *clone(), 
+    auto src = clone_as_contiguous();
+
+    return Tensor(ctx_, ggml_permute(ctx_, *src, 
                   ggml_permute_args[0], ggml_permute_args[1], 
                   ggml_permute_args[2], ggml_permute_args[3]), out);
 }
@@ -291,7 +293,6 @@ Tensor Tensor::unsqueeze(int64_t dim) const {
 
 Tensor Tensor::flatten(int64_t start_dim, int64_t end_dim) const {
     throw_if_not_valid();
-    throw_if_not_contiguous();
 
     auto rank = ndim();
 
@@ -327,7 +328,6 @@ Tensor Tensor::flatten(int64_t start_dim, int64_t end_dim) const {
 
 Tensor Tensor::unflatten(int64_t dim, const Shape& new_shape) {
     throw_if_not_valid();
-    throw_if_not_contiguous();
 
     auto rank = ndim();
     auto target_dim = normalize_dim("unflatten()", dim, rank);
@@ -410,20 +410,21 @@ Tensor Tensor::narrow(int64_t dim, int64_t start, int64_t length) const {
     Shape out = shape_;
     out[dim] = length;
 
-    const size_t offset = static_cast<size_t>(start) * t_->nb[rank - 1 - dim];
+    auto src = clone_as_contiguous();
+    const size_t offset = static_cast<size_t>(start) * src.t_->nb[rank - 1 - dim];
 
     switch (rank) {
     case 1:
-        return Tensor(ctx_, ggml_view_1d(ctx_, *clone(), out.ne_[0], offset), out);
+        return Tensor(ctx_, ggml_view_1d(ctx_, *src, out.ne_[0], offset), out);
 
     case 2:
-        return Tensor(ctx_, ggml_view_2d(ctx_, *clone(), out.ne_[0], out.ne_[1], t_->nb[1], offset), out);
+        return Tensor(ctx_, ggml_view_2d(ctx_, *src, out.ne_[0], out.ne_[1], src.t_->nb[1], offset), out);
 
     case 3:
-        return Tensor(ctx_, ggml_view_3d(ctx_, *clone(), out.ne_[0], out.ne_[1], out.ne_[2], t_->nb[1], t_->nb[2], offset), out);
+        return Tensor(ctx_, ggml_view_3d(ctx_, *src, out.ne_[0], out.ne_[1], out.ne_[2], src.t_->nb[1], src.t_->nb[2], offset), out);
 
     case 4:
-        return Tensor(ctx_, ggml_view_4d(ctx_, *clone(), out.ne_[0], out.ne_[1], out.ne_[2], out.ne_[3], t_->nb[1], t_->nb[2], t_->nb[3], offset), out);
+        return Tensor(ctx_, ggml_view_4d(ctx_, *src, out.ne_[0], out.ne_[1], out.ne_[2], out.ne_[3], src.t_->nb[1], src.t_->nb[2], src.t_->nb[3], offset), out);
     }
 
     throw std::runtime_error("narrow(): invalid rank");
@@ -508,7 +509,6 @@ std::vector<Tensor> Tensor::split_with_sizes(const std::vector<int64_t>& split_s
 
 Tensor Tensor::expand(const Shape& new_shape) const {
     throw_if_not_valid();
-    throw_if_not_contiguous();
 
     // Expanding to a scalar is a no-op.
     if (new_shape.rank() == 0) {
@@ -633,7 +633,7 @@ Tensor Tensor::operator[](const std::vector<Slice>& indices) const {
                 if (normalized_index < 0 || normalized_index >= dim_size)
                     throw std::out_of_range("operator[]: index out of range");
 
-                result = result.narrow(output_dim, normalized_index, 1).contiguous();
+                result = result.narrow(output_dim, normalized_index, 1);
                 result = result.squeeze(output_dim);
                 cloned = true;
                 // Do not increment output_dim: integer indexing removed it.
@@ -702,10 +702,4 @@ int Tensor::normalize_dim(const std::string& method, int64_t dim, int64_t rank, 
 void Tensor::throw_if_not_valid() const {
     if (!ctx_ || !t_)
         throw std::runtime_error("undefined Tensor");
-}
-
-void Tensor::throw_if_not_contiguous() const {
-    if (!is_contiguous())
-        throw std::runtime_error(
-            "a contiguous tensor is required; call contiguous() first");
 }

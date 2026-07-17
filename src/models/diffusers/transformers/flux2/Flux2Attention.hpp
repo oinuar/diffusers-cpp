@@ -131,7 +131,6 @@ public:
             attention_mask
         );
 
-        hidden_states = hidden_states.contiguous();
         hidden_states = hidden_states.flatten(2, 3);
         hidden_states = hidden_states.to(query.dtype());
 

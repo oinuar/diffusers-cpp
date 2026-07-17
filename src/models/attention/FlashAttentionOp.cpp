@@ -83,7 +83,7 @@ Tensor FlashAttentionOp::operator ()(
             *q,
             *k,
             *v,
-            ggml_mask ? ggml_mask : nullptr,
+            ggml_mask,
             scale,
             0.0f,
             0.0f),

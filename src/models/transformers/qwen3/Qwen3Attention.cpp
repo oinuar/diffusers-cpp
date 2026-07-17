@@ -105,7 +105,7 @@ std::pair<Tensor, std::optional<Tensor>> Qwen3Attention::forward(
 
     auto o_proj = std::static_pointer_cast<Linear>(modules["o_proj"]);
 
-    attn_output = attn_output.reshape(attn_output_shape).contiguous();
+    attn_output = attn_output.reshape(attn_output_shape);
     attn_output = o_proj->forward(ctx, attn_output);
 
     return {attn_output, std::nullopt};

@@ -7,31 +7,6 @@
 
 template <class AttnOp>
 class Flux2ParallelSelfAttention : public Module {
-private:
-    Flux2ParallelSelfAttention(
-        int64_t dim_head,
-        int64_t out_dim,
-        int64_t query_dim,
-        int64_t inner_dim,
-        int64_t mlp_hidden_dim,
-        int64_t mlp_mult_factor,
-        float eps,
-        bool elementwise_affine,
-        bool bias,
-        bool out_bias
-    ) : inner_dim_(inner_dim), mlp_hidden_dim_(mlp_hidden_dim) {
-        // Fused QKV projections + MLP input projection
-        modules["to_qkv_mlp_proj"] = std::make_shared<Linear>(query_dim, inner_dim * 3 + mlp_hidden_dim * mlp_mult_factor, bias);
-        modules["mlp_act_fn"] = std::make_shared<Flux2SwiGLU>();
-        
-        // QK Norm
-        modules["norm_q"] = std::make_shared<RMSNorm>(dim_head, eps, elementwise_affine);
-        modules["norm_k"] = std::make_shared<RMSNorm>(dim_head, eps, elementwise_affine);
-
-        // Fused attention output projection + MLP output projection
-        modules["to_out"] = std::make_shared<Linear>(inner_dim + mlp_hidden_dim, out_dim, out_bias);
-    }
-
 public:
     Flux2ParallelSelfAttention(
         int64_t query_dim,
@@ -44,20 +19,31 @@ public:
         std::optional<int64_t> out_dim = std::nullopt,
         bool elementwise_affine = true,
         float mlp_ratio = 4.0,
-        int64_t mlp_mult_factor = 2
-    ) : Flux2ParallelSelfAttention(
-            dim_head,
-            out_dim.value_or(query_dim),
-            query_dim,
-            out_dim.value_or(dim_head * heads),
-            query_dim * mlp_ratio,
-            mlp_mult_factor,
-            eps,
-            elementwise_affine,
-            bias,
-            out_bias
-        )
+        int64_t mlp_mult_factor = 2)
     {
+        head_dim_ = dim_head;
+        inner_dim_ = out_dim.value_or(dim_head * heads);
+        query_dim_ = query_dim;
+        out_dim_ = out_dim.value_or(query_dim);
+        heads_ = out_dim ? *out_dim / dim_head : heads;
+
+        use_bias_ = bias;
+        dropout_ = dropout;
+
+        mlp_ratio_ = mlp_ratio;
+        mlp_hidden_dim_ = int(query_dim * mlp_ratio_);
+        mlp_mult_factor_ = mlp_mult_factor;
+
+        // Fused QKV projections + MLP input projection
+        modules["to_qkv_mlp_proj"] = std::make_shared<Linear>(query_dim_, inner_dim_ * 3 + mlp_hidden_dim_ * mlp_mult_factor, bias);
+        modules["mlp_act_fn"] = std::make_shared<Flux2SwiGLU>();
+        
+        // QK Norm
+        modules["norm_q"] = std::make_shared<RMSNorm>(dim_head, eps, elementwise_affine);
+        modules["norm_k"] = std::make_shared<RMSNorm>(dim_head, eps, elementwise_affine);
+
+        // Fused attention output projection + MLP output projection
+        modules["to_out"] = std::make_shared<Linear>(inner_dim_ + mlp_hidden_dim_, out_dim_, out_bias);
     }
 
     virtual Tensor forward(
@@ -77,9 +63,9 @@ public:
 
         // Handle the attention logic
         auto chunks = qkv.chunk(3, -1);
-        auto query = chunks.at(0);
-        auto key = chunks.at(1);
-        auto value = chunks.at(2);
+        auto query = chunks.at(0).contiguous();
+        auto key = chunks.at(1).contiguous();
+        auto value = chunks.at(2).contiguous();
 
         query = query.unflatten(-1, {heads_, -1});
         key = key.unflatten(-1, {heads_, -1});
@@ -94,22 +80,21 @@ public:
         if (image_rotary_emb) {
             auto [cos, sin] = image_rotary_emb.value();
 
-            query = apply_rotary_emb(ctx, query, cos, sin, 1);
-            key = apply_rotary_emb(ctx, key, cos, sin, 1);
+            query = apply_rotary_emb(ctx, query, cos, sin);
+            key = apply_rotary_emb(ctx, key, cos, sin);
         }
 
         AttnOp dispatch_attention_fn;
 
-        /*hidden_states = dispatch_attention_fn(
-            ctx, 
-            *query,
-            *key,
-            *value,
-            // ???
+        hidden_states = dispatch_attention_fn(
+            ctx,
+            query,
+            key,
+            value,
             attention_mask
-            //backend=self._attention_backend,
-            //parallel_config=self._parallel_config,
-        );*/
+        );
+
+        hidden_states = hidden_states.contiguous();
         hidden_states = hidden_states.flatten(2, 3);
         hidden_states = hidden_states.to(query.dtype());
 
@@ -128,5 +113,43 @@ public:
     }
 
 protected:
-    int64_t inner_dim_, mlp_hidden_dim_;
+    int64_t head_dim_;
+    int64_t inner_dim_;
+    int64_t query_dim_;
+    int64_t out_dim_;
+    int64_t heads_;
+
+    bool use_bias_;
+    float dropout_;
+
+    float mlp_ratio_;
+    int64_t mlp_hidden_dim_;
+    int64_t mlp_mult_factor_;
+
+    static Tensor apply_rotary_emb(
+        ggml_context* ctx,
+        Tensor x,
+        const Tensor& cos,
+        const Tensor& sin
+    ) {
+        const auto head_dim = x.shape()[-1];
+
+        // (..., D) -> (..., D/2, 2)
+        auto t = x.unflatten(-1, {head_dim / 2, 2});
+
+        // Extract real/imag parts of each pair.
+        auto real = t[{Tensor::Slice::ellipsis(), Tensor::Slice::index(0)}];
+        auto imag = t[{Tensor::Slice::ellipsis(), Tensor::Slice::index(1)}];
+
+        // Rotate: (a, b) -> (-b, a)
+        auto rotated = Tensor::cat({
+            (-imag).unsqueeze(-1),
+            real.unsqueeze(-1),
+        }, -1);
+
+        // (..., D/2, 2) -> (..., D)
+        rotated = rotated.flatten(-2, -1);
+
+        return x * cos + rotated * sin;
+    }
 };

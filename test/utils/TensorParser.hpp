@@ -21,14 +21,18 @@ struct ArgumentParser::parser<Tensor> {
     Tensor operator ()(const std::string& option, const std::string& value) const {
         TensorParser parser(value);
 
-        auto [shape, data] = parser.parse();
-        auto tensor = Tensor::empty(*ctx_, shape, GGML_TYPE_F32);
+        try {
+            auto [shape, data] = parser.parse();
+            auto tensor = Tensor::empty(*ctx_, shape, GGML_TYPE_F32);
 
-        inputs_.push_back(std::make_pair(tensor, data));
+            inputs_.push_back(std::make_pair(tensor, data));
 
-        std::cerr << "inferred shape for " << option << ": " << shape.to_string() << std::endl;
+            std::cerr << "inferred shape for " << option << ": " << shape.to_string() << std::endl;
 
-        return tensor;
+            return tensor;
+        } catch (const std::runtime_error& error) {
+            throw std::runtime_error("invalid argument " + option + ": " + error.what());
+        }
     }
 
 private:
@@ -117,40 +121,15 @@ private:
         Node parse_number() {
             skip_ws();
 
-            bool neg = false;
+            const char* begin = s_.data() + i_;
+            char* end = nullptr;
 
-            if (peek() == '-') {
-                neg = true;
-                consume();
-            }
+            float value = std::strtof(begin, &end);
 
-            float value = 0.0f;
-            bool found = false;
-
-            while (std::isdigit(static_cast<unsigned char>(peek()))) {
-                found = true;
-                value = value * 10.0f + (peek() - '0');
-                consume();
-            }
-
-            if (peek() == '.') {
-                consume();
-
-                float frac = 0.1f;
-
-                while (std::isdigit(static_cast<unsigned char>(peek()))) {
-                    found = true;
-                    value += (peek() - '0') * frac;
-                    frac *= 0.1f;
-                    consume();
-                }
-            }
-
-            if (!found)
+            if (begin == end)
                 throw std::runtime_error("Invalid number in tensor literal");
 
-            if (neg)
-                value = -value;
+            i_ += end - begin;
 
             Node out;
             out.values.push_back(value);

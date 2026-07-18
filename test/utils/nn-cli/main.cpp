@@ -304,7 +304,7 @@ public:
             auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {ctx, inputs_});
             auto temb_mod = args_.get_one<Tensor>("--temb_mod", {ctx, inputs_});
             auto split_hidden_states = args_.get_optional<bool>("--split_hidden_states").value_or(false);
-            auto text_seq_len = args_.get_optional<int64_t>("--split_hidden_states");
+            auto text_seq_len = args_.get_optional<int64_t>("--text_seq_len");
             auto image_rotary_emb_0 = args_.get_optional<Tensor>("--image_rotary_emb-0", {ctx, inputs_});
             auto image_rotary_emb_1 = args_.get_optional<Tensor>("--image_rotary_emb-1", {ctx, inputs_});
             auto image_rotary_emb = image_rotary_emb_0 && image_rotary_emb_1 ? std::make_optional(std::make_tuple(

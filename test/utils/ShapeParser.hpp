@@ -10,10 +10,14 @@
 
 template <>
 struct ArgumentParser::parser<Tensor::Shape> {
-    Tensor::Shape operator ()(const std::string&, const std::string& value) const {
+    Tensor::Shape operator ()(const std::string& option, const std::string& value) const {
         ShapeParser parser(value);
 
-        return parser.parse();
+        try {
+            return parser.parse();
+        } catch (const std::runtime_error& error) {
+            throw std::runtime_error("invalid argument " + option + ": " + error.what());
+        }
     }
 private:
     class ShapeParser {

@@ -49,7 +49,7 @@ Flux2Transformer2DModel::Flux2Transformer2DModel(
     int64_t rope_theta,
     float eps,
     bool guidance_embeds
-) : num_layers_(num_layers), num_single_layers_(num_single_layers) {
+) {
     auto inner_dim = num_attention_heads * attention_head_dim;
 
     // 1. Sinusoidal positional embedding for RoPE on image and text tokens
@@ -129,10 +129,10 @@ Tensor Flux2Transformer2DModel::forward(
     auto num_txt_tokens = encoder_hidden_states.shape()[1];
 
     // 1. Calculate timestep embedding and modulation parameters
-    timestep = timestep * 1000;
+    timestep = timestep.to(hidden_states.dtype()) * 1000;
 
     if (guidance)
-        guidance = guidance.value().to(hidden_states.dtype()) * 1000;
+        guidance = guidance->to(hidden_states.dtype()) * 1000;
 
     auto time_guidance_embed = std::static_pointer_cast<Flux2TimestepGuidanceEmbeddings>(modules["time_guidance_embed"]);
 
@@ -220,7 +220,7 @@ Tensor Flux2Transformer2DModel::forward(
 
     // TODO: Remove text tokens (and ref tokens in extract mode) from concatenated stream
 
-    hidden_states = hidden_states.narrow(1, num_txt_tokens, hidden_states.shape()[1] - num_txt_tokens); // Python: hidden_states[:, num_txt_tokens:, ...]
+    hidden_states = hidden_states[{Tensor::Slice::all(), Tensor::Slice::range(num_txt_tokens, std::nullopt), Tensor::Slice::ellipsis()}];
 
     // 7. Output layers
     auto norm_out = std::static_pointer_cast<AdaLayerNormContinuous<>>(modules["norm_out"]);

@@ -10,10 +10,14 @@
 
 template <>
 struct ArgumentParser::parser<std::vector<Tensor::Slice>> {
-    std::vector<Tensor::Slice> operator ()(const std::string&, const std::string& value) const {
+    std::vector<Tensor::Slice> operator ()(const std::string& option, const std::string& value) const {
         SliceParser parser(value);
 
-        return parser.parse();
+        try {
+            return parser.parse();
+        } catch (const std::runtime_error& error) {
+            throw std::runtime_error("invalid argument " + option + ": " + error.what());
+        }
     }
 
 private:

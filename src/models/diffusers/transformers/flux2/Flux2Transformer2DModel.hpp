@@ -41,6 +41,4 @@ public:
         int64_t num_ref_tokens = 0,
         float ref_fixed_timestep = 0.0
     );
-private:
-    int64_t num_layers_, num_single_layers_;
 };

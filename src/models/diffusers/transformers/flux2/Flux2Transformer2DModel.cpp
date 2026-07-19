@@ -161,11 +161,13 @@ Tensor Flux2Transformer2DModel::forward(
     if (txt_ids.ndim() == 3)
         txt_ids = txt_ids[0];
 
-    // [Nt, 4] + [Ni, 4] -> [Nt + Ni, 4]
-    auto position_ids = Tensor::cat({txt_ids, img_ids}, 0).flatten().to(GGML_TYPE_I32);
+    // This is different from Python implementation because we'll compute RoPE directly using position IDs,
+    // so embeddings setup is like this:
     auto concat_rotary_emb = std::make_pair(
         std::static_pointer_cast<Flux2PosEmbed>(modules["pos_embed"]),
-        position_ids
+
+        // [Nt, 4] + [Ni, 4] -> [Nt + Ni, 4]
+        Tensor::cat({txt_ids, img_ids}, 0)
     );
 
     // TODO: 4. Build joint_attention_kwargs with KV cache info

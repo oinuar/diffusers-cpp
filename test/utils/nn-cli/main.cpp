@@ -18,6 +18,7 @@
 #include "models/diffusers/transformers/flux2/Flux2ParallelSelfAttention.hpp"
 #include "models/diffusers/transformers/flux2/Flux2SingleTransformerBlock.hpp"
 #include "models/diffusers/transformers/flux2/Flux2TransformerBlock.hpp"
+#include "models/diffusers/transformers/flux2/Flux2Transformer2DModel.hpp"
 
 #include "models/attention/ScaledDotProductAttention.hpp"
 #include "models/attention/FlashAttentionOp.hpp"
@@ -41,6 +42,7 @@ public:
 
             CreateParametersVisitor visitor(ctx, inputs_, args_);
             model.accept(visitor);
+            visitor.rethrow();
 
             return model.forward(*ctx, x);
         }
@@ -63,6 +65,7 @@ public:
 
             CreateParametersVisitor visitor(ctx, inputs_, args_);
             model.accept(visitor);
+            visitor.rethrow();
 
             return model.forward(*ctx, x);
         }
@@ -78,6 +81,7 @@ public:
 
             CreateParametersVisitor visitor(ctx, inputs_, args_);
             model.accept(visitor);
+            visitor.rethrow();
 
             return model.forward(*ctx, x);
         }
@@ -95,6 +99,7 @@ public:
 
             CreateParametersVisitor visitor(ctx, inputs_, args_);
             model.accept(visitor);
+            visitor.rethrow();
 
             return model.forward(*ctx, hidden_states, conditioning_embedding);
         }
@@ -112,6 +117,7 @@ public:
 
             CreateParametersVisitor visitor(ctx, inputs_, args_);
             model.accept(visitor);
+            visitor.rethrow();
 
             return model.forward(*ctx, sample, condition);
         }
@@ -127,6 +133,7 @@ public:
 
             CreateParametersVisitor visitor(ctx, inputs_, args_);
             model.accept(visitor);
+            visitor.rethrow();
 
             return model.forward(*ctx, timesteps);
         }
@@ -152,6 +159,7 @@ public:
 
             CreateParametersVisitor visitor(ctx, inputs_, args_);
             model.accept(visitor);
+            visitor.rethrow();
 
             return model.forward(*ctx, x);
         }
@@ -166,6 +174,7 @@ public:
 
             CreateParametersVisitor visitor(ctx, inputs_, args_);
             model.accept(visitor);
+            visitor.rethrow();
 
             return model.forward(*ctx, temb);
         }
@@ -182,23 +191,27 @@ public:
 
             CreateParametersVisitor visitor(ctx, inputs_, args_);
             model.accept(visitor);
+            visitor.rethrow();
 
             return model.forward(*ctx, timestep, guidance);
         }
 
         if (args_.get(0) == "Flux2PosEmbed") {
             auto theta = args_.get_one<int64_t>("--theta");
-            auto axes_dim = args_.get_many<int64_t>("--axes_dim");
-            auto ids = args_.get_one<Tensor>("--ids", {ctx, inputs_});
+            auto axes_dims = args_.get_many<int64_t>("--axes_dim");
+            auto x = args_.get_one<Tensor>("--x", {ctx, inputs_});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {ctx, inputs_});
+
+            std::array<int64_t, 4> axes_dim;
+            std::copy_n(std::make_move_iterator(axes_dims.begin()), axes_dims.size(), axes_dim.begin());
 
             Flux2PosEmbed model(theta, axes_dim);
 
             CreateParametersVisitor visitor(ctx, inputs_, args_);
             model.accept(visitor);
+            visitor.rethrow();
 
-            auto result = model.forward(*ctx, ids);
-
-            return {{result.first, result.second}};
+            return model.forward(*ctx, x, position_ids);
         }
 
 
@@ -217,11 +230,16 @@ public:
             auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
             auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {ctx, inputs_});
             auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {ctx, inputs_});
-            auto image_rotary_emb_0 = args_.get_optional<Tensor>("--image_rotary_emb-0", {ctx, inputs_});
-            auto image_rotary_emb_1 = args_.get_optional<Tensor>("--image_rotary_emb-1", {ctx, inputs_});
-            auto image_rotary_emb = image_rotary_emb_0 && image_rotary_emb_1 ? std::make_optional(std::make_tuple(
-                image_rotary_emb_0.value(),
-                image_rotary_emb_1.value()
+            auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
+            auto axes_dims = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {ctx, inputs_});
+
+            std::array<int64_t, 4> axes_dim;
+            std::copy_n(std::make_move_iterator(axes_dims.begin()), axes_dims.size(), axes_dim.begin());
+
+            auto image_rotary_emb = theta && position_ids && !axes_dims.empty() ? std::make_optional(std::make_pair(
+                std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
+                *position_ids
             )) : std::nullopt;
 
             Flux2Attention<ScaledDotProductAttention<FlashAttentionOp>> model(
@@ -240,6 +258,7 @@ public:
 
             CreateParametersVisitor visitor(ctx, inputs_, args_);
             model.accept(visitor);
+            visitor.rethrow();
 
             auto [y1, y2] = model.forward(*ctx, hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb);
             std::vector<Tensor> results;
@@ -266,11 +285,16 @@ public:
             auto mlp_mult_factor = args_.get_optional<int64_t>("--mlp_mult_factor").value_or(2);
             auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
             auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {ctx, inputs_});
-            auto image_rotary_emb_0 = args_.get_optional<Tensor>("--image_rotary_emb-0", {ctx, inputs_});
-            auto image_rotary_emb_1 = args_.get_optional<Tensor>("--image_rotary_emb-1", {ctx, inputs_});
-            auto image_rotary_emb = image_rotary_emb_0 && image_rotary_emb_1 ? std::make_optional(std::make_tuple(
-                image_rotary_emb_0.value(),
-                image_rotary_emb_1.value()
+            auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
+            auto axes_dims = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {ctx, inputs_});
+
+            std::array<int64_t, 4> axes_dim;
+            std::copy_n(std::make_move_iterator(axes_dims.begin()), axes_dims.size(), axes_dim.begin());
+
+            auto image_rotary_emb = theta && position_ids && !axes_dims.empty() ? std::make_optional(std::make_pair(
+                std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
+                *position_ids
             )) : std::nullopt;
 
             Flux2ParallelSelfAttention<ScaledDotProductAttention<FlashAttentionOp>> model(
@@ -289,6 +313,7 @@ public:
 
             CreateParametersVisitor visitor(ctx, inputs_, args_);
             model.accept(visitor);
+            visitor.rethrow();
 
             return model.forward(*ctx, hidden_states, attention_mask, image_rotary_emb);
         }
@@ -305,11 +330,16 @@ public:
             auto temb_mod = args_.get_one<Tensor>("--temb_mod", {ctx, inputs_});
             auto split_hidden_states = args_.get_optional<bool>("--split_hidden_states").value_or(false);
             auto text_seq_len = args_.get_optional<int64_t>("--text_seq_len");
-            auto image_rotary_emb_0 = args_.get_optional<Tensor>("--image_rotary_emb-0", {ctx, inputs_});
-            auto image_rotary_emb_1 = args_.get_optional<Tensor>("--image_rotary_emb-1", {ctx, inputs_});
-            auto image_rotary_emb = image_rotary_emb_0 && image_rotary_emb_1 ? std::make_optional(std::make_tuple(
-                image_rotary_emb_0.value(),
-                image_rotary_emb_1.value()
+            auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
+            auto axes_dims = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {ctx, inputs_});
+
+            std::array<int64_t, 4> axes_dim;
+            std::copy_n(std::make_move_iterator(axes_dims.begin()), axes_dims.size(), axes_dim.begin());
+
+            auto image_rotary_emb = theta && position_ids && !axes_dims.empty() ? std::make_optional(std::make_pair(
+                std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
+                *position_ids
             )) : std::nullopt;
 
             Flux2SingleTransformerBlock<ScaledDotProductAttention<FlashAttentionOp>> model(
@@ -323,6 +353,7 @@ public:
 
             CreateParametersVisitor visitor(ctx, inputs_, args_);
             model.accept(visitor);
+            visitor.rethrow();
 
             auto [y1, y2] = model.forward(
                 *ctx,
@@ -355,11 +386,16 @@ public:
             auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {ctx, inputs_});
             auto temb_mod_img = args_.get_one<Tensor>("--temb_mod_img", {ctx, inputs_});
             auto temb_mod_txt = args_.get_one<Tensor>("--temb_mod_txt", {ctx, inputs_});
-            auto image_rotary_emb_0 = args_.get_optional<Tensor>("--image_rotary_emb-0", {ctx, inputs_});
-            auto image_rotary_emb_1 = args_.get_optional<Tensor>("--image_rotary_emb-1", {ctx, inputs_});
-            auto image_rotary_emb = image_rotary_emb_0 && image_rotary_emb_1 ? std::make_optional(std::make_tuple(
-                image_rotary_emb_0.value(),
-                image_rotary_emb_1.value()
+            auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
+            auto axes_dims = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {ctx, inputs_});
+
+            std::array<int64_t, 4> axes_dim;
+            std::copy_n(std::make_move_iterator(axes_dims.begin()), axes_dims.size(), axes_dim.begin());
+
+            auto image_rotary_emb = theta && position_ids && !axes_dims.empty() ? std::make_optional(std::make_pair(
+                std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
+                *position_ids
             )) : std::nullopt;
 
             Flux2TransformerBlock<ScaledDotProductAttention<FlashAttentionOp>> model(
@@ -373,6 +409,7 @@ public:
 
             CreateParametersVisitor visitor(ctx, inputs_, args_);
             model.accept(visitor);
+            visitor.rethrow();
 
             auto [y1, y2] = model.forward(
                 *ctx,
@@ -384,6 +421,74 @@ public:
             );
 
             return {{y1, y2}};
+        }
+
+        if (args_.get(0) == "Flux2Transformer2DModel") {
+            auto patch_size = args_.get_optional<int64_t>("--patch_size").value_or(1);
+            auto in_channels = args_.get_optional<int64_t>("--in_channels").value_or(128);
+            auto out_channels = args_.get_optional<int64_t>("--out_channels");
+            auto num_layers = args_.get_optional<int64_t>("--num_layers").value_or(8);
+            auto num_single_layers = args_.get_optional<int64_t>("--num_single_layers").value_or(48);
+            auto attention_head_dim = args_.get_optional<int64_t>("--attention_head_dim").value_or(128);
+            auto num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(48);
+            auto joint_attention_dim = args_.get_optional<int64_t>("--joint_attention_dim").value_or(15360);
+            auto timestep_guidance_channels = args_.get_optional<int64_t>("--timestep_guidance_channels").value_or(256);
+            auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(3.0f);
+            auto axes_dims_rope = args_.get_many<int64_t>("--axes_dims_rope");
+            auto rope_theta = args_.get_optional<int64_t>("--rope_theta").value_or(2000);
+            auto eps = args_.get_optional<float>("--eps").value_or(1e-6f);
+            auto guidance_embeds = args_.get_optional<bool>("--guidance_embeds").value_or(true);
+
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
+            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {ctx, inputs_});
+            auto timestep = args_.get_one<Tensor>("--timestep", {ctx, inputs_});
+            auto img_ids = args_.get_one<Tensor>("--img_ids", {ctx, inputs_});
+            auto txt_ids = args_.get_one<Tensor>("--txt_ids", {ctx, inputs_});
+            auto guidance = args_.get_optional<Tensor>("--guidance", {ctx, inputs_});
+            auto num_ref_tokens = args_.get_optional<int64_t>("--num_ref_tokens").value_or(0);
+            auto ref_fixed_timestep = args_.get_optional<float>("--ref_fixed_timestep").value_or(0.0f);
+
+            std::array<int64_t, 4> axes_dim;
+
+            if (axes_dims_rope.empty())
+                axes_dim = std::array<int64_t, 4>{32, 32, 32, 32};
+            else
+                std::copy_n(std::make_move_iterator(axes_dims_rope.begin()), axes_dims_rope.size(), axes_dim.begin());
+
+            Flux2Transformer2DModel model(
+                patch_size,
+                in_channels,
+                out_channels,
+                num_layers,
+                num_single_layers,
+                attention_head_dim,
+                num_attention_heads,
+                joint_attention_dim,
+                timestep_guidance_channels,
+                mlp_ratio,
+                axes_dim,
+                rope_theta,
+                eps,
+                guidance_embeds
+            );
+
+            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(
+                *ctx,
+                hidden_states,
+                encoder_hidden_states,
+                timestep,
+                img_ids,
+                txt_ids,
+                guidance,
+                //std::nullopt,   // kv_cache
+                //std::nullopt,   // kv_cache_mode
+                num_ref_tokens,
+                ref_fixed_timestep
+            );
         }
 
         if (args_.get(0) == "FlashAttention") {
@@ -409,15 +514,26 @@ protected:
 
         virtual void visit(Parameter& parameter, std::vector<std::string> path) {
             auto joined_path = join_path(path);
-            auto tensor = args_.get_one<Tensor>(joined_path, {ctx_, inputs_});
 
-            parameter.set(tensor);
+            try {
+                auto tensor = args_.get_one<Tensor>(joined_path, {ctx_, inputs_});
+                parameter.set(tensor);
+            } catch (const std::runtime_error& error) {
+                errors_ += "\n  - ";
+                errors_ += error.what();
+            }
+        }
+
+        void rethrow() {
+            if (!errors_.empty())
+                throw std::runtime_error("There were following errors while creating parameters: " + errors_);
         }
 
     private:
         Context& ctx_;
         std::vector<std::pair<Tensor, std::vector<float>>>& inputs_;
         ArgumentParser& args_;
+        std::string errors_;
         
         static std::string join_path(const std::vector<std::string>& path) {
             return std::accumulate(std::begin(path), std::end(path), std::string("--param"), [](const std::string& acc, const std::string& x) {

@@ -48,7 +48,7 @@ public:
         Tensor encoder_hidden_states,
         Tensor temb_mod_img,
         Tensor temb_mod_txt,
-        std::optional<std::tuple<Tensor, Tensor>> image_rotary_emb = std::nullopt
+        std::optional<std::pair<std::shared_ptr<Flux2PosEmbed>, Tensor>> image_rotary_emb = std::nullopt
     ) {
         // Modulation parameters shape: [1, 1, self.dim]
         auto split = Flux2Modulation::split(temb_mod_img, 2);

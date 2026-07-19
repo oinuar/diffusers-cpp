@@ -38,7 +38,7 @@ public:
         Tensor hidden_states,
         std::optional<Tensor> encoder_hidden_states,
         Tensor temb_mod,
-        std::optional<std::tuple<Tensor, Tensor>> image_rotary_emb = std::nullopt,
+        std::optional<std::pair<std::shared_ptr<Flux2PosEmbed>, Tensor>> image_rotary_emb = std::nullopt,
         bool split_hidden_states = false,
         std::optional<int64_t> text_seq_len = std::nullopt
     ) {

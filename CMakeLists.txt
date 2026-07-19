@@ -136,6 +136,7 @@ file(GLOB DIFFUSERS_SOURCES CONFIGURE_DEPENDS
     "src/nn/*.cpp"
     "src/models/attention/*.cpp"
     "src/models/diffusers/**/*.cpp"
+    "src/models/diffusers/transformers/**/*.cpp"
     "src/models/embeddings/*.cpp"
     #"src/models/transformers/**/*.cpp"
 )

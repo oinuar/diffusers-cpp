@@ -45,7 +45,7 @@ Flux2Transformer2DModel::Flux2Transformer2DModel(
     int64_t joint_attention_dim,
     int64_t timestep_guidance_channels,
     float mlp_ratio,
-    const std::vector<int64_t>& axes_dims_rope,
+    const std::array<int64_t, 4>& axes_dims_rope,
     int64_t rope_theta,
     float eps,
     bool guidance_embeds
@@ -92,7 +92,7 @@ Flux2Transformer2DModel::Flux2Transformer2DModel(
 
     // 6. Single Stream Transformer Blocks
     auto single_transformer_blocks = std::make_shared<ModuleList>(num_single_layers);
-    modules["single_transformer_blocks"] = transformer_blocks;
+    modules["single_transformer_blocks"] = single_transformer_blocks;
 
     for (auto i = 0; i < single_transformer_blocks->size(); ++i)
         (*single_transformer_blocks)[i] =
@@ -161,13 +161,11 @@ Tensor Flux2Transformer2DModel::forward(
     if (txt_ids.ndim() == 3)
         txt_ids = txt_ids[0];
 
-    auto pos_embed = std::static_pointer_cast<Flux2PosEmbed>(modules["pos_embed"]);
-
-    auto image_rotary_emb = pos_embed->forward(ctx, img_ids);
-    auto text_rotary_emb = pos_embed->forward(ctx, txt_ids);
-    auto concat_rotary_emb = std::make_tuple(
-        Tensor::cat({text_rotary_emb.first, image_rotary_emb.first}, 0),
-        Tensor::cat({text_rotary_emb.second, image_rotary_emb.second}, 0)
+    // [Nt, 4] + [Ni, 4] -> [Nt + Ni, 4]
+    auto position_ids = Tensor::cat({txt_ids, img_ids}, 0).flatten().to(GGML_TYPE_I32);
+    auto concat_rotary_emb = std::make_pair(
+        std::static_pointer_cast<Flux2PosEmbed>(modules["pos_embed"]),
+        position_ids
     );
 
     // TODO: 4. Build joint_attention_kwargs with KV cache info

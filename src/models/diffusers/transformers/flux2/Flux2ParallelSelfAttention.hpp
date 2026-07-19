@@ -4,6 +4,7 @@
 #include "nn/Linear.hpp"
 #include "nn/RMSNorm.hpp"
 #include "models/diffusers/transformers/flux2/Flux2SwiGLU.hpp"
+#include "models/diffusers/transformers/flux2/Flux2PosEmbed.hpp"
 
 template <class AttnOp>
 class Flux2ParallelSelfAttention : public Module {
@@ -50,7 +51,7 @@ public:
         ggml_context* ctx,
         Tensor hidden_states,
         std::optional<Tensor> attention_mask = std::nullopt,
-        std::optional<std::tuple<Tensor, Tensor>> image_rotary_emb = std::nullopt
+        std::optional<std::pair<std::shared_ptr<Flux2PosEmbed>, Tensor>> image_rotary_emb = std::nullopt
     ) {
         // Parallel in (QKV + MLP in) projection
         auto to_qkv_mlp_proj = std::static_pointer_cast<Linear>(modules["to_qkv_mlp_proj"]);
@@ -78,10 +79,8 @@ public:
         key = norm_k->forward(ctx, key);
 
         if (image_rotary_emb) {
-            auto [cos, sin] = image_rotary_emb.value();
-
-            query = apply_rotary_emb(ctx, query, cos, sin);
-            key = apply_rotary_emb(ctx, key, cos, sin);
+            query = image_rotary_emb->first->forward(ctx, query, image_rotary_emb->second);
+            key = image_rotary_emb->first->forward(ctx, key, image_rotary_emb->second);
         }
 
         AttnOp dispatch_attention_fn;

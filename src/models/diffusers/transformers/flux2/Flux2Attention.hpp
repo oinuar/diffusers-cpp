@@ -5,6 +5,8 @@
 #include "nn/Linear.hpp"
 #include "nn/Dropout.hpp"
 #include "nn/LayerNorm.hpp"
+#include "nn/RMSNorm.hpp"
+#include "models/diffusers/transformers/flux2/Flux2PosEmbed.hpp"
 
 template <class AttnOp>
 class Flux2Attention : public Module {
@@ -64,7 +66,7 @@ public:
         Tensor hidden_states,
         std::optional<Tensor> encoder_hidden_states,
         std::optional<Tensor> attention_mask = std::nullopt,
-        std::optional<std::tuple<Tensor, Tensor>> image_rotary_emb = std::nullopt
+        std::optional<std::pair<std::shared_ptr<Flux2PosEmbed>, Tensor>> image_rotary_emb = std::nullopt
     ) {
         // _get_qkv_projections(...) when use_fused_projections=false
         auto to_q = std::static_pointer_cast<Linear>(modules["to_q"]);
@@ -115,10 +117,8 @@ public:
         }
 
         if (image_rotary_emb) {
-            auto [cos, sin] = image_rotary_emb.value();
-
-            query = apply_rotary_emb(ctx, query, cos, sin);
-            key = apply_rotary_emb(ctx, key, cos, sin);
+            query = image_rotary_emb->first->forward(ctx, query, image_rotary_emb->second);
+            key = image_rotary_emb->first->forward(ctx, key, image_rotary_emb->second);
         }
 
         AttnOp dispatch_attention_fn;
@@ -171,31 +171,4 @@ private:
 
     std::optional<int64_t> added_kv_proj_dim_;
     bool added_proj_bias_;
-
-    static Tensor apply_rotary_emb(
-        ggml_context* ctx,
-        Tensor x,
-        const Tensor& cos,
-        const Tensor& sin
-    ) {
-        const auto head_dim = x.shape()[-1];
-
-        // (..., D) -> (..., D/2, 2)
-        auto t = x.unflatten(-1, {head_dim / 2, 2});
-
-        // Extract real/imag parts of each pair.
-        auto real = t[{Tensor::Slice::ellipsis(), Tensor::Slice::index(0)}];
-        auto imag = t[{Tensor::Slice::ellipsis(), Tensor::Slice::index(1)}];
-
-        // Rotate: (a, b) -> (-b, a)
-        auto rotated = Tensor::cat({
-            (-imag).unsqueeze(-1),
-            real.unsqueeze(-1),
-        }, -1);
-
-        // (..., D/2, 2) -> (..., D)
-        rotated = rotated.flatten(-2, -1);
-
-        return x * cos + rotated * sin;
-    }
 };

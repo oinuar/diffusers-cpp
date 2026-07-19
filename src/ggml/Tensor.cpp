@@ -335,7 +335,7 @@ Tensor Tensor::unflatten(int64_t dim, const Shape& new_shape) {
     auto out_rank = rank - 1 + new_shape.rank();
 
     if (out_rank > 4)
-        throw std::invalid_argument("unflatten(): only at most 4 dimensions are supported");
+        throw std::invalid_argument("unflatten(): only at most 4 dimensions are supported, not " + std::to_string(out_rank));
 
     Shape out(out_rank);
 

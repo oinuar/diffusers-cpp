@@ -19,7 +19,7 @@ public:
         int64_t joint_attention_dim = 15360,
         int64_t timestep_guidance_channels = 256,
         float mlp_ratio = 3.0,
-        const std::array<int64_t, 4>& axes_dims_rope = {32, 32, 32, 32},
+        const std::vector<int64_t>& axes_dims_rope = {32, 32, 32, 32},
         int64_t rope_theta = 2000,
         float eps = 1e-6,
         bool guidance_embeds = true

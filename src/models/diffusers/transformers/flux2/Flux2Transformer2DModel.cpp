@@ -45,7 +45,7 @@ Flux2Transformer2DModel::Flux2Transformer2DModel(
     int64_t joint_attention_dim,
     int64_t timestep_guidance_channels,
     float mlp_ratio,
-    const std::array<int64_t, 4>& axes_dims_rope,
+    const std::vector<int64_t>& axes_dims_rope,
     int64_t rope_theta,
     float eps,
     bool guidance_embeds

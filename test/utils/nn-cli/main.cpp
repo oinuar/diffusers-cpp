@@ -198,12 +198,9 @@ public:
 
         if (args_.get(0) == "Flux2PosEmbed") {
             auto theta = args_.get_one<int64_t>("--theta");
-            auto axes_dims = args_.get_many<int64_t>("--axes_dim");
+            auto axes_dim = args_.get_many<int64_t>("--axes_dim");
             auto x = args_.get_one<Tensor>("--x", {ctx, inputs_});
             auto position_ids = args_.get_one<Tensor>("--position_ids", {ctx, inputs_});
-
-            std::array<int64_t, 4> axes_dim;
-            std::copy_n(std::make_move_iterator(axes_dims.begin()), axes_dims.size(), axes_dim.begin());
 
             Flux2PosEmbed model(theta, axes_dim);
 
@@ -231,13 +228,10 @@ public:
             auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {ctx, inputs_});
             auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {ctx, inputs_});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
-            auto axes_dims = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
+            auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
             auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {ctx, inputs_});
 
-            std::array<int64_t, 4> axes_dim;
-            std::copy_n(std::make_move_iterator(axes_dims.begin()), axes_dims.size(), axes_dim.begin());
-
-            auto image_rotary_emb = theta && position_ids && !axes_dims.empty() ? std::make_optional(std::make_pair(
+            auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
                 *position_ids
             )) : std::nullopt;
@@ -286,13 +280,10 @@ public:
             auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
             auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {ctx, inputs_});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
-            auto axes_dims = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
+            auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
             auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {ctx, inputs_});
 
-            std::array<int64_t, 4> axes_dim;
-            std::copy_n(std::make_move_iterator(axes_dims.begin()), axes_dims.size(), axes_dim.begin());
-
-            auto image_rotary_emb = theta && position_ids && !axes_dims.empty() ? std::make_optional(std::make_pair(
+            auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
                 *position_ids
             )) : std::nullopt;
@@ -331,13 +322,10 @@ public:
             auto split_hidden_states = args_.get_optional<bool>("--split_hidden_states").value_or(false);
             auto text_seq_len = args_.get_optional<int64_t>("--text_seq_len");
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
-            auto axes_dims = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
+            auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
             auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {ctx, inputs_});
 
-            std::array<int64_t, 4> axes_dim;
-            std::copy_n(std::make_move_iterator(axes_dims.begin()), axes_dims.size(), axes_dim.begin());
-
-            auto image_rotary_emb = theta && position_ids && !axes_dims.empty() ? std::make_optional(std::make_pair(
+            auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
                 *position_ids
             )) : std::nullopt;
@@ -387,13 +375,10 @@ public:
             auto temb_mod_img = args_.get_one<Tensor>("--temb_mod_img", {ctx, inputs_});
             auto temb_mod_txt = args_.get_one<Tensor>("--temb_mod_txt", {ctx, inputs_});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
-            auto axes_dims = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
+            auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
             auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {ctx, inputs_});
 
-            std::array<int64_t, 4> axes_dim;
-            std::copy_n(std::make_move_iterator(axes_dims.begin()), axes_dims.size(), axes_dim.begin());
-
-            auto image_rotary_emb = theta && position_ids && !axes_dims.empty() ? std::make_optional(std::make_pair(
+            auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
                 *position_ids
             )) : std::nullopt;
@@ -448,12 +433,8 @@ public:
             auto num_ref_tokens = args_.get_optional<int64_t>("--num_ref_tokens").value_or(0);
             auto ref_fixed_timestep = args_.get_optional<float>("--ref_fixed_timestep").value_or(0.0f);
 
-            std::array<int64_t, 4> axes_dim;
-
             if (axes_dims_rope.empty())
-                axes_dim = std::array<int64_t, 4>{32, 32, 32, 32};
-            else
-                std::copy_n(std::make_move_iterator(axes_dims_rope.begin()), axes_dims_rope.size(), axes_dim.begin());
+                axes_dims_rope = std::vector<int64_t>{32, 32, 32, 32};
 
             Flux2Transformer2DModel model(
                 patch_size,
@@ -466,7 +447,7 @@ public:
                 joint_attention_dim,
                 timestep_guidance_channels,
                 mlp_ratio,
-                axes_dim,
+                axes_dims_rope,
                 rope_theta,
                 eps,
                 guidance_embeds

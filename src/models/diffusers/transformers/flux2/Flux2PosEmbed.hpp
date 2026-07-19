@@ -9,7 +9,7 @@ class Flux2PosEmbed : public Module {
 public:
     Flux2PosEmbed(
         int64_t theta,
-        const std::array<int64_t, 4>& axes_dim)
+        const std::vector<int64_t>& axes_dim)
         : theta_(theta), axes_dim_(axes_dim)
     {
     }
@@ -112,5 +112,5 @@ public:
 
 private:
     int64_t theta_;
-    std::array<int64_t, 4> axes_dim_;
+    std::vector<int64_t> axes_dim_;
 };

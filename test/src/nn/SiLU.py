@@ -1,10 +1,10 @@
 from utils import TestCase
 import torch
-import torch.nn as nn
+from torch.nn import SiLU
 
 class TestNNSiLU(TestCase):
     def test_1d(self):
-        model = nn.SiLU()
+        model = SiLU()
         x = torch.randn(2)
 
         expected = model.forward(x)

@@ -134,11 +134,10 @@ file(GLOB DIFFUSERS_SOURCES CONFIGURE_DEPENDS
     "src/*.cpp"
     "src/ggml/*.cpp"
     "src/nn/*.cpp"
-    "src/models/attention/*.cpp"
-    "src/models/diffusers/**/*.cpp"
-    "src/models/diffusers/transformers/**/*.cpp"
-    "src/models/embeddings/*.cpp"
-    #"src/models/transformers/**/*.cpp"
+    "src/nn/attention/*.cpp"
+    "src/nn/modules/**/*.cpp"
+    "src/diffusers/models/**/*.cpp"
+    "src/diffusers/models/transformers/**/*.cpp"
 )
 
 add_library(diffusers STATIC ${DIFFUSERS_SOURCES})
@@ -188,45 +187,108 @@ if(DIFFUSERS_BUILD_TESTS)
         DEPENDS ${UV_ENV_STAMP}
     )
 
-    add_executable(tensor-cli
+    add_executable(test-tensor-cli
         test/utils/tensor-cli/main.cpp
     )
 
-    target_include_directories(tensor-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(tensor-cli PRIVATE diffusers)
+    target_include_directories(test-tensor-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(test-tensor-cli PRIVATE diffusers)
 
-    add_executable(nn-cli
+    add_executable(test-nn-cli
         test/utils/nn-cli/main.cpp
     )
 
-    target_include_directories(nn-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(nn-cli PRIVATE diffusers)
+    target_include_directories(test-nn-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(test-nn-cli PRIVATE diffusers)
+
+    add_executable(test-diffusers-cli
+        test/utils/diffusers-cli/main.cpp
+    )
+
+    target_include_directories(test-diffusers-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(test-diffusers-cli PRIVATE diffusers)
 
     # Generate an individual ctest entry for each Tensor test
-    file(GLOB TEST_FILES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/src/ggml/Tensor/*.py)
-    foreach(TEST_FILE ${TEST_FILES})
-        get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
+    file(
+        GLOB_RECURSE TEST_FILES
+        CONFIGURE_DEPENDS
+        RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/test
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/src/ggml/Tensor/*.py
+    )
+    list(FILTER TEST_FILES EXCLUDE REGEX "(/|^)__init__\\.py$")
+
+    foreach(TEST_FILE IN LISTS TEST_FILES)
+        get_filename_component(TEST_NAME "${TEST_FILE}" NAME_WE)
+
+        # Create a unique test name from the relative path
+        string(REPLACE "/" "-" TEST_ID "${TEST_FILE}")
+        string(REPLACE "\\" "-" TEST_ID "${TEST_ID}")
+        string(REGEX REPLACE "\\.py$" "" TEST_ID "${TEST_ID}")
+
         add_test(
-            NAME tensor-${TEST_NAME}
-            COMMAND ${UV_EXECUTABLE} run python -m unittest src/ggml/Tensor/${TEST_NAME}.py -v
+            NAME "${TEST_ID}"
+            COMMAND ${UV_EXECUTABLE} run python -m unittest "${TEST_FILE}" -v
         )
-        set_tests_properties(tensor-${TEST_NAME} PROPERTIES
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test
-            ENVIRONMENT "CLI=$<TARGET_FILE:tensor-cli>;PYTHONDONTWRITEBYTECODE=1"
+
+        set_tests_properties("${TEST_ID}" PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/test"
+            ENVIRONMENT "CLI=$<TARGET_FILE:test-tensor-cli>;PYTHONDONTWRITEBYTECODE=1"
         )
     endforeach()
 
-    # Generate an individual ctest entry for each NN test
-    file(GLOB TEST_FILES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/test/src/nn/*.py)
-    foreach(TEST_FILE ${TEST_FILES})
-        get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
+    # Generate an individual ctest entry for each nn test
+    file(
+        GLOB_RECURSE TEST_FILES
+        CONFIGURE_DEPENDS
+        RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/test
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/src/nn/*.py
+    )
+    list(FILTER TEST_FILES EXCLUDE REGEX "(/|^)__init__\\.py$")
+
+    foreach(TEST_FILE IN LISTS TEST_FILES)
+        get_filename_component(TEST_NAME "${TEST_FILE}" NAME_WE)
+
+        # Create a unique test name from the relative path
+        string(REPLACE "/" "-" TEST_ID "${TEST_FILE}")
+        string(REPLACE "\\" "-" TEST_ID "${TEST_ID}")
+        string(REGEX REPLACE "\\.py$" "" TEST_ID "${TEST_ID}")
+
         add_test(
-            NAME nn-${TEST_NAME}
-            COMMAND ${UV_EXECUTABLE} run python -m unittest src/nn/${TEST_NAME}.py -v
+            NAME "${TEST_ID}"
+            COMMAND ${UV_EXECUTABLE} run python -m unittest "${TEST_FILE}" -v
         )
-        set_tests_properties(nn-${TEST_NAME} PROPERTIES
-            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test
-            ENVIRONMENT "CLI=$<TARGET_FILE:nn-cli>;PYTHONDONTWRITEBYTECODE=1"
+
+        set_tests_properties("${TEST_ID}" PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/test"
+            ENVIRONMENT "CLI=$<TARGET_FILE:test-nn-cli>;PYTHONDONTWRITEBYTECODE=1"
+        )
+    endforeach()
+
+    # Generate an individual ctest entry for each Diffusers test
+    file(
+        GLOB_RECURSE TEST_FILES
+        CONFIGURE_DEPENDS
+        RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/test
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/src/diffusers/*.py
+    )
+    list(FILTER TEST_FILES EXCLUDE REGEX "(/|^)__init__\\.py$")
+
+    foreach(TEST_FILE IN LISTS TEST_FILES)
+        get_filename_component(TEST_NAME "${TEST_FILE}" NAME_WE)
+
+        # Create a unique test name from the relative path
+        string(REPLACE "/" "-" TEST_ID "${TEST_FILE}")
+        string(REPLACE "\\" "-" TEST_ID "${TEST_ID}")
+        string(REGEX REPLACE "\\.py$" "" TEST_ID "${TEST_ID}")
+
+        add_test(
+            NAME "${TEST_ID}"
+            COMMAND ${UV_EXECUTABLE} run python -m unittest "${TEST_FILE}" -v
+        )
+
+        set_tests_properties("${TEST_ID}" PROPERTIES
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/test"
+            ENVIRONMENT "CLI=$<TARGET_FILE:test-diffusers-cli>;PYTHONDONTWRITEBYTECODE=1"
         )
     endforeach()
 

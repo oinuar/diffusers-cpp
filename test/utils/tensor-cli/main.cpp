@@ -1,4 +1,5 @@
 #include "../TestCLI.hpp"
+#include "ggml/Tensor.hpp"
 
 class TestTensorCLI : public TestCLI {
 public:

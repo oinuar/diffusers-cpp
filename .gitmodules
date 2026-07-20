@@ -1,3 +1,6 @@
 [submodule "ggml"]
 	path = ggml
 	url = https://github.com/ggml-org/ggml
+[submodule "stb"]
+	path = stb
+	url = https://github.com/nothings/stb.git

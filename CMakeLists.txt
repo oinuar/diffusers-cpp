@@ -127,11 +127,27 @@ if(NOT TARGET ggml)
 endif()
 
 # ---------------------------------------------------------------------------
+# stb dependency
+# ---------------------------------------------------------------------------
+add_library(stb INTERFACE)
+
+target_include_directories(stb INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/stb
+)
+
+add_library(stb-impl STATIC
+    "src/stb.cpp"
+)
+
+target_link_libraries(stb-impl PUBLIC stb)
+
+# ---------------------------------------------------------------------------
 # diffusers library
 # ---------------------------------------------------------------------------
 
 file(GLOB DIFFUSERS_SOURCES CONFIGURE_DEPENDS
-    "src/*.cpp"
+    "src/main.cpp"
+    "src/Image.cpp"
     "src/ggml/*.cpp"
     "src/nn/*.cpp"
     "src/nn/attention/*.cpp"
@@ -150,7 +166,7 @@ target_include_directories(diffusers PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/test
 )
 
-target_link_libraries(diffusers PUBLIC ggml)
+target_link_libraries(diffusers PUBLIC ggml stb-impl)
 
 target_compile_features(diffusers PUBLIC c_std_11 cxx_std_17)
 

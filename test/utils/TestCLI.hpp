@@ -30,15 +30,43 @@ public:
         Computation computation(graph);
 
         for (auto& [tensor, data] : inputs_)
-            computation.load(tensor, reinterpret_cast<std::byte*>(data.data()));
+            computation.load(tensor, data);
 
         computation.execute();
 
-        auto result = computation.read<float>();
+        for (auto& tensor : computation.results()) {
+            switch (tensor.dtype()) {
+            case ggml_type_of<float>::value:
+            {
+                auto data = computation.read<float>(tensor);
+                print_tensor(data, tensor.shape());
+                break;
+            }
 
-        for (auto& [shape, data] : result) {
-            std::cerr << "output shape: " << shape.to_string() << std::endl;
-            print_tensor(data, shape);
+            case ggml_type_of<int8_t>::value:
+            {
+                auto data = computation.read<int8_t>(tensor);
+                print_tensor(data, tensor.shape());
+                break;
+            }
+
+            case ggml_type_of<int16_t>::value:
+            {
+                auto data = computation.read<int16_t>(tensor);
+                print_tensor(data, tensor.shape());
+                break;
+            }
+
+            case ggml_type_of<int32_t>::value:
+            {
+                auto data = computation.read<int32_t>(tensor);
+                print_tensor(data, tensor.shape());
+                break;
+            }
+
+            default:
+                throw std::runtime_error("Unsupported tensor type: " + std::string(ggml_type_name(tensor.dtype())));
+            }
         }
     }
 
@@ -57,6 +85,8 @@ private:
 
         if (expected != data.size())
             throw std::runtime_error("tensor data size does not match shape");
+
+        std::cerr << "output shape: " << shape.to_string() << std::endl;
 
         size_t index = 0;
         print_tensor_recursively(data, shape, 0, index);

@@ -208,14 +208,15 @@ if(DIFFUSERS_BUILD_TESTS)
     target_include_directories(test-diffusers-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(test-diffusers-cli PRIVATE diffusers)
 
-    # Generate an individual ctest entry for each Tensor test
+    # Generate an individual ctest entry for each test
     file(
         GLOB_RECURSE TEST_FILES
         CONFIGURE_DEPENDS
         RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/test
-        ${CMAKE_CURRENT_SOURCE_DIR}/test/src/ggml/Tensor/*.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/src/*.py
     )
     list(FILTER TEST_FILES EXCLUDE REGEX "(/|^)__init__\\.py$")
+    list(SORT TEST_FILES)
 
     foreach(TEST_FILE IN LISTS TEST_FILES)
         get_filename_component(TEST_NAME "${TEST_FILE}" NAME_WE)
@@ -230,65 +231,19 @@ if(DIFFUSERS_BUILD_TESTS)
             COMMAND ${UV_EXECUTABLE} run python -m unittest "${TEST_FILE}" -v
         )
 
-        set_tests_properties("${TEST_ID}" PROPERTIES
-            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/test"
-            ENVIRONMENT "CLI=$<TARGET_FILE:test-tensor-cli>;PYTHONDONTWRITEBYTECODE=1"
-        )
-    endforeach()
-
-    # Generate an individual ctest entry for each nn test
-    file(
-        GLOB_RECURSE TEST_FILES
-        CONFIGURE_DEPENDS
-        RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/test
-        ${CMAKE_CURRENT_SOURCE_DIR}/test/src/nn/*.py
-    )
-    list(FILTER TEST_FILES EXCLUDE REGEX "(/|^)__init__\\.py$")
-
-    foreach(TEST_FILE IN LISTS TEST_FILES)
-        get_filename_component(TEST_NAME "${TEST_FILE}" NAME_WE)
-
-        # Create a unique test name from the relative path
-        string(REPLACE "/" "-" TEST_ID "${TEST_FILE}")
-        string(REPLACE "\\" "-" TEST_ID "${TEST_ID}")
-        string(REGEX REPLACE "\\.py$" "" TEST_ID "${TEST_ID}")
-
-        add_test(
-            NAME "${TEST_ID}"
-            COMMAND ${UV_EXECUTABLE} run python -m unittest "${TEST_FILE}" -v
-        )
+        if(TEST_FILE MATCHES "^src/ggml/Tensor/")
+            set(CLI_TARGET test-tensor-cli)
+        elseif(TEST_FILE MATCHES "^src/nn/")
+            set(CLI_TARGET test-nn-cli)
+        elseif(TEST_FILE MATCHES "^src/diffusers/")
+            set(CLI_TARGET test-diffusers-cli)
+        else()
+            message(FATAL_ERROR "No CLI target for ${TEST_FILE}")
+        endif()
 
         set_tests_properties("${TEST_ID}" PROPERTIES
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/test"
-            ENVIRONMENT "CLI=$<TARGET_FILE:test-nn-cli>;PYTHONDONTWRITEBYTECODE=1"
-        )
-    endforeach()
-
-    # Generate an individual ctest entry for each Diffusers test
-    file(
-        GLOB_RECURSE TEST_FILES
-        CONFIGURE_DEPENDS
-        RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/test
-        ${CMAKE_CURRENT_SOURCE_DIR}/test/src/diffusers/*.py
-    )
-    list(FILTER TEST_FILES EXCLUDE REGEX "(/|^)__init__\\.py$")
-
-    foreach(TEST_FILE IN LISTS TEST_FILES)
-        get_filename_component(TEST_NAME "${TEST_FILE}" NAME_WE)
-
-        # Create a unique test name from the relative path
-        string(REPLACE "/" "-" TEST_ID "${TEST_FILE}")
-        string(REPLACE "\\" "-" TEST_ID "${TEST_ID}")
-        string(REGEX REPLACE "\\.py$" "" TEST_ID "${TEST_ID}")
-
-        add_test(
-            NAME "${TEST_ID}"
-            COMMAND ${UV_EXECUTABLE} run python -m unittest "${TEST_FILE}" -v
-        )
-
-        set_tests_properties("${TEST_ID}" PROPERTIES
-            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/test"
-            ENVIRONMENT "CLI=$<TARGET_FILE:test-diffusers-cli>;PYTHONDONTWRITEBYTECODE=1"
+            ENVIRONMENT "CLI=$<TARGET_FILE:${CLI_TARGET}>;PYTHONDONTWRITEBYTECODE=1"
         )
     endforeach()
 

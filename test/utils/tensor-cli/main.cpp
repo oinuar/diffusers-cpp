@@ -257,14 +257,18 @@ public:
 
         if (args_.get(0) == "sum") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
+            auto dim = args_.get_optional<int64_t>("--dim").value_or(-1);
+            auto keepdim = args_.get_optional<bool>("--keepdim").value_or(false);
 
-            return self.sum();
+            return self.sum(dim, keepdim);
         }
 
         if (args_.get(0) == "mean") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
+            auto dim = args_.get_optional<int64_t>("--dim").value_or(-1);
+            auto keepdim = args_.get_optional<bool>("--keepdim").value_or(false);
 
-            return self.mean();
+            return self.mean(dim, keepdim);
         }
 
 

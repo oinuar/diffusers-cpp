@@ -551,6 +551,56 @@ Tensor Tensor::expand(const Shape& new_shape) const {
         new_shape);
 }
 
+Tensor Tensor::sum(int64_t dim, bool keepdim) const {
+    throw_if_not_valid();
+
+    const int64_t rank = ndim();
+    dim = normalize_dim("sum()", dim, rank, false);
+
+    // Move reduction dimension to the last axis.
+    Shape order(rank);
+
+    int64_t dst = 0;
+
+    for (auto src = 0; src < rank; ++src) {
+        if (src != dim)
+            order[dst++] = src;
+    }
+
+    order[dst] = dim;
+
+    Tensor x;
+
+    if (dim != rank - 1)
+        x = permute(order).contiguous();
+    else
+        x = clone();
+
+    Shape out(rank - 1);
+
+    for (int64_t src = 0, dst = 0; src < rank; ++src) {
+        if (src != dim)
+            out[dst++] = shape_[src];
+    }
+
+    // GGML sum_rows reduces ne0 (fastest dimension).
+    auto y = Tensor(x.ctx_, ggml_sum_rows(x.ctx_, *x), out);
+
+    if (keepdim)
+        y = y.unsqueeze(dim);
+
+    return y;
+}
+
+Tensor Tensor::mean(int64_t dim, bool keepdim) const {
+    const int64_t size = shape_[dim];
+    auto t = sum(dim, keepdim);
+
+    std::cerr << "shape: " << t.shape().to_string() << ", " << shape_[dim] << std::endl;
+
+    return t / static_cast<float>(size);
+}
+
 Tensor Tensor::operator[](const std::vector<Slice>& indices) const {
     throw_if_not_valid();
 

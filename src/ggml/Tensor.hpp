@@ -408,20 +408,24 @@ public:
     }
 
     Tensor operator/(float rhs) const {
-        return *this / scalar(ctx_, rhs);
+        return Tensor(ctx_, ggml_scale(ctx_, t_, 1.0f / rhs), shape_);
     }
 
     Tensor clip(float a, float b) const {
         return Tensor(ctx_, ggml_clamp(ctx_, t_, a, b), shape_);
     }
 
-    Tensor sum() const {
+    /*Tensor sum() const {
         return Tensor(ctx_, ggml_sum(ctx_, t_), {});
     }
 
     Tensor mean() const {
         return sum() / numel();
-    }
+    }*/
+
+    Tensor sum(int64_t dim, bool keepdim = false) const;
+
+    Tensor mean(int64_t dim, bool keepdim = false) const;
 
     Tensor operator[](const size_t& index) const {
         return narrow(0, index, 1).squeeze(0);

@@ -1,0 +1,79 @@
+#include "diffusers/models/upsampling/Upsample2D.hpp"
+
+#include "nn/modules/conv/Conv2d.hpp"
+
+
+Upsample2D::Upsample2D(
+    int64_t channels,
+    bool use_conv
+)
+    : use_conv_(use_conv)
+{
+    if (use_conv_) {
+        /*
+            Diffusers:
+
+            Conv2d(
+                channels,
+                channels,
+                kernel_size=3,
+                padding=1
+            )
+        */
+
+        modules["conv"] =
+            std::make_shared<Conv2d>(
+                channels,
+                channels,
+                3,
+                1,
+                1
+            );
+    }
+}
+
+Tensor Upsample2D::forward(
+    ggml_context* ctx,
+    Tensor hidden_states
+)
+{
+    auto shape = hidden_states.shape();
+
+    const int64_t batch = shape[0];
+    const int64_t channels = shape[1];
+    const int64_t height = shape[2];
+    const int64_t width = shape[3];
+
+    // ne0 = width
+    // ne1 = height
+    // ne2 = channels
+    // ne3 = batch
+    // Result: [B,C,H,W] -> [B,C,2H,2W]
+    hidden_states = Tensor(
+        ctx,
+        ggml_upscale(
+            ctx,
+            *hidden_states,
+            2,
+            GGML_SCALE_MODE_NEAREST
+        ),
+        Tensor::Shape({
+            batch,
+            channels,
+            height * 2,
+            width * 2
+        })
+    );
+
+    if (use_conv_) {
+        hidden_states =
+            std::static_pointer_cast<Conv2d>(
+                modules["conv"])
+            ->forward(
+                ctx,
+                hidden_states
+            );
+    }
+
+    return hidden_states;
+}

@@ -145,15 +145,11 @@ target_link_libraries(stb-impl PUBLIC stb)
 # diffusers library
 # ---------------------------------------------------------------------------
 
-file(GLOB DIFFUSERS_SOURCES CONFIGURE_DEPENDS
-    "src/main.cpp"
-    "src/Image.cpp"
-    "src/ggml/*.cpp"
-    "src/nn/*.cpp"
-    "src/nn/attention/*.cpp"
-    "src/nn/modules/**/*.cpp"
-    "src/diffusers/models/**/*.cpp"
-    "src/diffusers/models/transformers/**/*.cpp"
+file(GLOB_RECURSE DIFFUSERS_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/diffusers/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/ggml/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/nn/*.cpp"
+    #"${CMAKE_CURRENT_SOURCE_DIR}/src/transformers/*.cpp"
 )
 
 add_library(diffusers STATIC ${DIFFUSERS_SOURCES})

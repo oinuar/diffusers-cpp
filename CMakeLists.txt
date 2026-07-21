@@ -129,17 +129,17 @@ endif()
 # ---------------------------------------------------------------------------
 # stb dependency
 # ---------------------------------------------------------------------------
-add_library(stb INTERFACE)
+add_library(stbi INTERFACE)
 
-target_include_directories(stb INTERFACE
+target_include_directories(stbi INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/stb
 )
 
-add_library(stb-impl STATIC
+add_library(stb STATIC
     "src/stb.cpp"
 )
 
-target_link_libraries(stb-impl PUBLIC stb)
+target_link_libraries(stb PUBLIC stbi)
 
 # ---------------------------------------------------------------------------
 # diffusers library
@@ -162,7 +162,7 @@ target_include_directories(diffusers PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/test
 )
 
-target_link_libraries(diffusers PUBLIC ggml stb-impl)
+target_link_libraries(diffusers PUBLIC ggml stb)
 
 target_compile_features(diffusers PUBLIC c_std_11 cxx_std_17)
 

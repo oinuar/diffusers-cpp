@@ -1,7 +1,7 @@
 #include "diffusers/models/unets/unet2d/DownEncoderBlock2D.hpp"
 
 #include "diffusers/models/resnet/ResnetBlock2D.hpp"
-#include "diffusers/models/upsampling/Downsample2D.hpp"
+#include "diffusers/models/downsampling/Downsample2D.hpp"
 
 
 DownEncoderBlock2D::DownEncoderBlock2D(

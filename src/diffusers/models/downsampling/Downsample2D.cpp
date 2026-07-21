@@ -1,4 +1,4 @@
-#include "diffusers/models/upsampling/Downsample2D.hpp"
+#include "diffusers/models/downsampling/Downsample2D.hpp"
 
 #include "nn/modules/conv/Conv2d.hpp"
 

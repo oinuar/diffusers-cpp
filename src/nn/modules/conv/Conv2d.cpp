@@ -32,7 +32,6 @@ Conv2d::Conv2d(
     }
 }
 
-
 Tensor Conv2d::forward(
     ggml_context* ctx,
     Tensor x
@@ -42,21 +41,8 @@ Tensor Conv2d::forward(
             modules["weight"])
         ->forward();
 
-    /*
-     * ggml_conv_2d expects:
-     *
-     * src0: weight
-     * src1: input
-     *
-     * Weight:
-     *   [kernel_w, kernel_h, in_channels, out_channels]
-     *
-     * Input:
-     *   [width, height, channels, batch]
-     *
-     */
 
-    auto y = ggml_conv_2d(
+    auto conv = ggml_conv_2d(
         ctx,
         *weight,
         *x,
@@ -69,24 +55,8 @@ Tensor Conv2d::forward(
     );
 
 
-    if (bias_) {
-        auto bias =
-            std::static_pointer_cast<Parameter>(
-                modules["bias"])
-            ->forward();
-
-        y = ggml_add(ctx, y, *bias);
-    }
-
-
     auto shape = x.shape();
 
-    /*
-     * PyTorch:
-     * NCHW -> N, Cout, Hout, Wout
-     *
-     * Shape stores PyTorch logical order.
-     */
     shape[1] = weight.shape()[0];
 
     shape[2] =
@@ -98,5 +68,46 @@ Tensor Conv2d::forward(
         stride_ + 1;
 
 
-    return Tensor(ctx, y, shape);
+    Tensor y(
+        ctx,
+        conv,
+        shape
+    );
+
+
+    if (bias_) {
+        auto bias =
+            std::static_pointer_cast<Parameter>(
+                modules["bias"])
+            ->forward();
+
+
+        /*
+         * PyTorch bias:
+         *
+         * [C]
+         *
+         * Broadcast as:
+         *
+         * [N,C,H,W]
+         *
+         * GGML logical order:
+         *
+         * [W,H,C,N]
+         */
+        auto bias_4d = bias.reshape(
+            Tensor::Shape({
+                1,
+                bias.shape()[0],
+                1,
+                1
+            })
+        );
+
+
+        y = y + bias_4d;
+    }
+
+
+    return y;
 }

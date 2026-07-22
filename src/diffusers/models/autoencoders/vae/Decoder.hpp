@@ -8,7 +8,7 @@
 #include "nn/SiLU.hpp"
 #include "nn/modules/conv/Conv2d.hpp"
 #include "nn/modules/normalization/GroupNorm.hpp"
-#include "nn/modules/normalization/SpatialNorm.hpp"
+#include "diffusers/models/normalization/SpatialNorm.hpp"
 #include "diffusers/models/unets/unet2d/UNetMidBlock2D.hpp"
 #include "diffusers/models/unets/unet2d/UpDecoderBlock2D.hpp"
 

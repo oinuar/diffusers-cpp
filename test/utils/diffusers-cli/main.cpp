@@ -6,6 +6,7 @@
 #include "nn/attention/FlashAttentionOp.hpp"
 
 #include "diffusers/models/normalization/AdaLayerNormContinuous.hpp"
+#include "diffusers/models/normalization/SpatialNorm.hpp"
 #include "diffusers/models/embeddings/TimestepEmbedding.hpp"
 #include "diffusers/models/embeddings/Timesteps.hpp"
 
@@ -45,6 +46,22 @@ public:
             visitor.rethrow();
 
             return model.forward(*ctx, hidden_states, conditioning_embedding);
+        }
+
+        if (args_.get(0) == "SpatialNorm") {
+            auto f_channels = args_.get_one<int64_t>("--f_channels");
+            auto zq_channels = args_.get_one<int64_t>("--zq_channels");
+            auto f = args_.get_one<Tensor>("--f", {ctx, inputs_});
+            auto zq = args_.get_one<Tensor>("--zq", {ctx, inputs_});
+
+            SpatialNorm model(f_channels, zq_channels);
+
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(*ctx, f, zq);
         }
 
         if (args_.get(0) == "TimestepEmbedding") {

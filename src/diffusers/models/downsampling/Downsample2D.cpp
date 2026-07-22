@@ -31,7 +31,6 @@ Tensor Downsample2D::forward(
 )
 {
     if (use_conv_) {
-
         hidden_states =
             std::static_pointer_cast<Conv2d>(
                 modules["conv"])
@@ -39,6 +38,21 @@ Tensor Downsample2D::forward(
                 ctx,
                 hidden_states
             );
+    } else {
+        auto y = ggml_pool_2d(
+            ctx,
+            *hidden_states,
+            GGML_OP_POOL_AVG,
+            2, 2,
+            2, 2,
+            0.0f, 0.0f
+        );
+
+        auto shape = hidden_states.shape();
+        shape[2] /= 2;
+        shape[3] /= 2;
+
+        hidden_states = Tensor(ctx, y, shape);
     }
 
     return hidden_states;

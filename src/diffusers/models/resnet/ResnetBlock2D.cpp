@@ -26,70 +26,106 @@ ResnetBlock2D::ResnetBlock2D(
 )
     : output_scale_factor_(output_scale_factor.value_or(1.0f))
 {
-    const int64_t out_channels_ = out_channels.value_or(in_channels);
-    const int64_t groups_out_ = groups_out.value_or(groups);
+    const int64_t out_channels_ =
+        out_channels.value_or(in_channels);
+
+    const int64_t groups_out_ =
+        groups_out.value_or(groups);
+
     const int64_t conv_2d_out_channels_ =
-        conv_2d_out_channels == 0 ? out_channels_ : conv_2d_out_channels;
+        conv_2d_out_channels == 0
+            ? out_channels_
+            : conv_2d_out_channels;
 
-    use_temb_ = temb_channels.has_value();
 
-    use_shortcut_ = use_in_shortcut || (in_channels != conv_2d_out_channels_);
+    /*
+        Diffusers:
 
-    modules["norm1"] = std::make_shared<GroupNorm>(
-        groups,
-        in_channels,
-        eps
-    );
+        self.use_in_shortcut = self.in_channels != self.out_channels
+        self.use_shortcut = use_in_shortcut or self.use_in_shortcut
 
-    // TODO: support other activation functions.
-    modules["nonlinearity"] = std::make_shared<SiLU>();
+        In C++ we only need the effective flag because
+        conv_shortcut is created and used together.
+    */
+    use_in_shortcut_ =
+        use_in_shortcut ||
+        (in_channels != out_channels_);
 
-    modules["conv1"] = std::make_shared<Conv2d>(
-        in_channels,
-        out_channels_,
-        kernel,
-        1,
-        kernel / 2
-    );
+
+    use_temb_ =
+        temb_channels.has_value();
+
+
+    modules["norm1"] =
+        std::make_shared<GroupNorm>(
+            groups,
+            in_channels,
+            eps
+        );
+
+
+    modules["nonlinearity"] =
+        std::make_shared<SiLU>();
+
+
+    modules["conv1"] =
+        std::make_shared<Conv2d>(
+            in_channels,
+            out_channels_,
+            kernel,
+            1,
+            kernel / 2
+        );
+
 
     if (use_temb_) {
-        modules["time_emb_proj"] = std::make_shared<Linear>(
-            temb_channels.value(),
-            time_embedding_norm == "default"
-                ? out_channels_
-                : out_channels_ * 2
-        );
+
+        modules["time_emb_proj"] =
+            std::make_shared<Linear>(
+                temb_channels.value(),
+                time_embedding_norm == "default"
+                    ? out_channels_
+                    : out_channels_ * 2
+            );
     }
 
-    modules["norm2"] = std::make_shared<GroupNorm>(
-        groups_out_,
-        out_channels_,
-        eps
-    );
 
-    // TODO: Dropout module.
-    // modules["dropout"] = std::make_shared<Dropout>(dropout);
+    modules["norm2"] =
+        std::make_shared<GroupNorm>(
+            groups_out_,
+            out_channels_,
+            eps
+        );
 
-    modules["conv2"] = std::make_shared<Conv2d>(
-        out_channels_,
-        conv_2d_out_channels_,
-        kernel,
-        1,
-        kernel / 2
-    );
 
-    if (use_shortcut_) {
-        modules["conv_shortcut"] = std::make_shared<Conv2d>(
-            in_channels,
+    modules["conv2"] =
+        std::make_shared<Conv2d>(
+            out_channels_,
             conv_2d_out_channels_,
+            kernel,
             1,
-            1,
-            0,
-            conv_shortcut_bias
+            kernel / 2
         );
+
+
+    /*
+        Diffusers creates conv_shortcut when
+        input channels != output channels.
+    */
+    if (use_in_shortcut_) {
+
+        modules["conv_shortcut"] =
+            std::make_shared<Conv2d>(
+                in_channels,
+                conv_2d_out_channels_,
+                1,
+                1,
+                0,
+                conv_shortcut_bias
+            );
     }
 
-    // Not needed for AutoencoderKLFlux2 but keep API-compatible.
+
     if (up) {
         // TODO: Upsample2D
     }
@@ -99,18 +135,15 @@ ResnetBlock2D::ResnetBlock2D(
     }
 }
 
+
 Tensor ResnetBlock2D::forward(
     ggml_context* ctx,
-    Tensor hidden_states,
+    Tensor input_tensor,
     std::optional<Tensor> temb
 )
 {
-    auto residual = hidden_states;
+    Tensor hidden_states = input_tensor;
 
-
-    /*
-        hidden_states = norm1(hidden_states)
-    */
 
     hidden_states =
         std::static_pointer_cast<GroupNorm>(
@@ -123,7 +156,7 @@ Tensor ResnetBlock2D::forward(
 
     hidden_states =
         std::static_pointer_cast<SiLU>(
-            modules["act"])
+            modules["nonlinearity"])
         ->forward(
             ctx,
             hidden_states
@@ -139,39 +172,48 @@ Tensor ResnetBlock2D::forward(
         );
 
 
-    /*
-        temb conditioning
-
-        Diffusers:
-
-        temb = self.time_emb_proj(self.nonlinearity(temb))
-        hidden_states = hidden_states + temb[:, :, None, None]
-    */
-
     if (use_temb_ && temb) {
 
         auto t =
+            std::static_pointer_cast<SiLU>(
+                modules["nonlinearity"])
+            ->forward(
+                ctx,
+                *temb
+            );
+
+
+        t =
             std::static_pointer_cast<Linear>(
                 modules["time_emb_proj"])
             ->forward(
                 ctx,
-                std::static_pointer_cast<SiLU>(
-                    modules["act"])
-                ->forward(
-                    ctx,
-                    temb.value()
-                )
+                t
             );
+
+
+        /*
+            PyTorch:
+
+                temb[:, :, None, None]
+
+            C++:
+
+                [N,C] -> [N,C,1,1]
+        */
+        t =
+            t[{
+                Tensor::Slice::all(),
+                Tensor::Slice::all(),
+                Tensor::Slice::none(),
+                Tensor::Slice::none()
+            }];
 
 
         hidden_states =
             hidden_states + t;
     }
 
-
-    /*
-        norm2
-    */
 
     hidden_states =
         std::static_pointer_cast<GroupNorm>(
@@ -184,16 +226,12 @@ Tensor ResnetBlock2D::forward(
 
     hidden_states =
         std::static_pointer_cast<SiLU>(
-            modules["act"])
+            modules["nonlinearity"])
         ->forward(
             ctx,
             hidden_states
         );
 
-
-    /*
-        conv2
-    */
 
     hidden_states =
         std::static_pointer_cast<Conv2d>(
@@ -205,28 +243,26 @@ Tensor ResnetBlock2D::forward(
 
 
     /*
-        shortcut
+        Residual projection.
+
+        For channel projection:
+
+            input  [N,Cin,H,W]
+            output [N,Cout,H,W]
+
+        conv_shortcut performs Cin -> Cout.
     */
+    if (use_in_shortcut_) {
 
-    if (use_shortcut_) {
-
-        residual =
+        input_tensor =
             std::static_pointer_cast<Conv2d>(
                 modules["conv_shortcut"])
             ->forward(
                 ctx,
-                residual
+                input_tensor
             );
     }
 
 
-    hidden_states =
-        hidden_states + residual;
-
-
-    hidden_states =
-        hidden_states / output_scale_factor_;
-
-
-    return hidden_states;
+    return (input_tensor + hidden_states) / output_scale_factor_;
 }

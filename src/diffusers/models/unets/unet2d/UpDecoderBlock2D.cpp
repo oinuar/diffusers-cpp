@@ -1,7 +1,7 @@
 #include "diffusers/models/unets/unet2d/UpDecoderBlock2D.hpp"
 
 #include "diffusers/models/resnet/ResnetBlock2D.hpp"
-#include "diffusers/models/upsampling/Upsample2D.hpp"
+#include "diffusers/models/resnet/Upsample2D.hpp"
 
 UpDecoderBlock2D::UpDecoderBlock2D(
     int64_t num_layers,

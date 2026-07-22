@@ -7,6 +7,9 @@
 
 #include "diffusers/models/normalization/AdaLayerNormContinuous.hpp"
 #include "diffusers/models/normalization/SpatialNorm.hpp"
+#include "diffusers/models/resnet/Upsample2D.hpp"
+#include "diffusers/models/resnet/ResnetBlock2D.hpp"
+#include "diffusers/models/downsampling/Downsample2D.hpp"
 #include "diffusers/models/embeddings/TimestepEmbedding.hpp"
 #include "diffusers/models/embeddings/Timesteps.hpp"
 
@@ -62,6 +65,89 @@ public:
             visitor.rethrow();
 
             return model.forward(*ctx, f, zq);
+        }
+
+        if (args_.get(0) == "Upsample2D") {
+            auto channels = args_.get_one<int64_t>("--channels");
+            auto use_conv = args_.get_optional<bool>("--use_conv").value_or(false);
+            auto out_channels = args_.get_optional<int64_t>("--out_channels");
+            auto use_conv_transpose = args_.get_optional<bool>("--use_conv_transpose").value_or(false);
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
+
+            Upsample2D model(channels, use_conv, out_channels, use_conv_transpose);
+
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(*ctx, hidden_states);
+        }
+
+        if (args_.get(0) == "Downsample2D") {
+            auto channels = args_.get_one<int64_t>("--channels");
+            auto use_conv = args_.get_optional<bool>("--use_conv").value_or(false);
+            auto out_channels = args_.get_optional<int64_t>("--out_channels");
+            auto padding = args_.get_optional<int64_t>("--padding").value_or(1);
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
+
+            Downsample2D model(channels, use_conv, out_channels, padding);
+
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(*ctx, hidden_states);
+        }
+
+        if (args_.get(0) == "ResnetBlock2D") {
+            auto in_channels = args_.get_one<int64_t>("--in_channels");
+            auto out_channels = args_.get_optional<int64_t>("--out_channels");
+            auto conv_shortcut = args_.get_optional<int64_t>("--conv_shortcut");
+            auto dropout = args_.get_optional<float>("--dropout").value_or(0.0f);
+            auto temb_channels = args_.get_optional<int64_t>("--temb_channels");
+            auto groups = args_.get_optional<int64_t>("--groups").value_or(32);
+            auto groups_out = args_.get_optional<int64_t>("--groups_out");
+            auto eps = args_.get_optional<float>("--eps").value_or(1e-6f);
+            auto non_linearity = args_.get_optional<std::string>("--non_linearity").value_or("swish");
+            auto time_embedding_norm = args_.get_optional<std::string>("--time_embedding_norm").value_or("default");
+            auto kernel = args_.get_optional<int64_t>("--kernel").value_or(3);
+            auto output_scale_factor = args_.get_optional<int64_t>("--output_scale_factor").value_or(1);
+            auto use_in_shortcut = args_.get_optional<bool>("--use_in_shortcut").value_or(false);
+            auto up = args_.get_optional<bool>("--up").value_or(false);
+            auto down = args_.get_optional<bool>("--down").value_or(false);
+            auto conv_shortcut_bias = args_.get_optional<bool>("--conv_shortcut_bias").value_or(true);
+            auto conv_2d_out_channels = args_.get_optional<int64_t>("--conv_2d_out_channels").value_or(0);
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
+            auto temb = args_.get_optional<Tensor>("--temb", {ctx, inputs_});
+
+            ResnetBlock2D model(
+                in_channels,
+                out_channels,
+                conv_shortcut,
+                dropout,
+                temb_channels,
+                groups,
+                groups_out,
+                eps,
+                non_linearity,
+                time_embedding_norm,
+                kernel,
+                output_scale_factor,
+                use_in_shortcut,
+                up,
+                down,
+                conv_shortcut_bias,
+                conv_2d_out_channels
+            );
+
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(*ctx, hidden_states, temb);
         }
 
         if (args_.get(0) == "TimestepEmbedding") {

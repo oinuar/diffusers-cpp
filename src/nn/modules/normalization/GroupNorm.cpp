@@ -21,7 +21,10 @@ GroupNorm::GroupNorm(int64_t num_groups, int64_t num_channels, float eps, bool a
     }
 }
 
-Tensor GroupNorm::forward(ggml_context* ctx, Tensor input) {
+Tensor GroupNorm::forward(
+    ggml_context* ctx,
+    Tensor input
+) {
     auto shape = input.shape();
 
     const int64_t batch = shape[0];
@@ -29,31 +32,23 @@ Tensor GroupNorm::forward(ggml_context* ctx, Tensor input) {
     const int64_t height = shape[2];
     const int64_t width = shape[3];
 
-    const int64_t channels_per_group = channels / num_groups_;
-
-    const int64_t group_size = channels_per_group * height * width;
 
     /*
         PyTorch:
 
-        [N,C,H,W]
+        N,C,H,W
+          |
+          v
+        N,G,C/G*H*W
 
-        ->
-
-        [N,G,C/G*H*W]
-
-        ggml physical layout becomes:
-
-        [group_size,G,N]
-
-        ggml_norm() normalizes ne0 (= group_size),
-        which is exactly one GroupNorm group.
+        Let reshape infer the last dimension.
     */
     input = input.reshape({
         batch,
         num_groups_,
-        group_size
+        -1
     });
+
 
     input = Tensor(
         ctx,
@@ -65,6 +60,7 @@ Tensor GroupNorm::forward(ggml_context* ctx, Tensor input) {
         input.shape()
     );
 
+
     input = input.reshape({
         batch,
         channels,
@@ -72,8 +68,14 @@ Tensor GroupNorm::forward(ggml_context* ctx, Tensor input) {
         width
     });
 
+
     if (affine_) {
-        auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward();
+
+        auto weight =
+            std::static_pointer_cast<Parameter>(
+                modules["weight"])
+            ->forward();
+
 
         weight = weight.reshape({
             1,
@@ -82,34 +84,29 @@ Tensor GroupNorm::forward(ggml_context* ctx, Tensor input) {
             1
         });
 
+
         input = input * weight;
 
+
         if (bias_) {
-            auto bias = std::static_pointer_cast<Parameter>(modules["bias"])->forward();
-        
-            /*
-                PyTorch weight/bias:
+            auto bias =
+                std::static_pointer_cast<Parameter>(
+                    modules["bias"])
+                ->forward();
 
-                [C]
 
-                Need broadcast over:
-
-                [N,C,H,W]
-
-                Reshape to:
-
-                [1,C,1,1]
-            */
             bias = bias.reshape({
                 1,
                 channels,
                 1,
                 1
             });
-            
+
+
             input = input + bias;
         }
     }
+
 
     return input;
 }

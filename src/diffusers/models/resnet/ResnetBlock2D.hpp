@@ -36,6 +36,6 @@ public:
 
 private:
     float output_scale_factor_;
-    bool use_shortcut_;
+    bool use_in_shortcut_;
     bool use_temb_;
 };

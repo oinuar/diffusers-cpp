@@ -1,4 +1,4 @@
-#include "diffusers/models/upsampling/Upsample2D.hpp"
+#include "diffusers/models/resnet/Upsample2D.hpp"
 
 #include "nn/modules/conv/Conv2d.hpp"
 

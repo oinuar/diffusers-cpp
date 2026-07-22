@@ -5,111 +5,97 @@
 #include "nn/SiLU.hpp"
 #include "nn/Linear.hpp"
 
-
 ResnetBlock2D::ResnetBlock2D(
     int64_t in_channels,
-    int64_t out_channels,
+    std::optional<int64_t> out_channels,
+    std::optional<int64_t> conv_shortcut,
+    float dropout,
     std::optional<int64_t> temb_channels,
+    int64_t groups,
+    std::optional<int64_t> groups_out,
     float eps,
-    const std::string& act_fn,
-    float output_scale_factor,
-    const std::string& time_scale_shift,
-    int64_t groups
+    const std::string& non_linearity,
+    const std::string& time_embedding_norm,
+    int64_t kernel,
+    std::optional<int64_t> output_scale_factor,
+    bool use_in_shortcut,
+    bool up,
+    bool down,
+    bool conv_shortcut_bias,
+    int64_t conv_2d_out_channels
 )
-    : output_scale_factor_(output_scale_factor),
-      use_shortcut_(in_channels != out_channels),
-      use_temb_(temb_channels.has_value())
+    : output_scale_factor_(output_scale_factor.value_or(1.0f))
 {
-    /*
-        self.norm1 = GroupNorm(
-            groups,
-            in_channels,
-            eps
-        )
-    */
-    modules["norm1"] =
-        std::make_shared<GroupNorm>(
-            groups,
-            in_channels,
-            eps
-        );
+    const int64_t out_channels_ = out_channels.value_or(in_channels);
+    const int64_t groups_out_ = groups_out.value_or(groups);
+    const int64_t conv_2d_out_channels_ =
+        conv_2d_out_channels == 0 ? out_channels_ : conv_2d_out_channels;
 
+    use_temb_ = temb_channels.has_value();
 
-    modules["act"] =
-        std::make_shared<SiLU>();
+    use_shortcut_ = use_in_shortcut || (in_channels != conv_2d_out_channels_);
 
+    modules["norm1"] = std::make_shared<GroupNorm>(
+        groups,
+        in_channels,
+        eps
+    );
 
-    /*
-        self.conv1 = Conv2d(
-            in_channels,
-            out_channels,
-            3,
-            padding=1
-        )
-    */
-    modules["conv1"] =
-        std::make_shared<Conv2d>(
-            in_channels,
-            out_channels,
-            3,
-            1,
-            1
-        );
+    // TODO: support other activation functions.
+    modules["nonlinearity"] = std::make_shared<SiLU>();
 
-
-    /*
-        temb projection
-        only needed when temporal embedding exists
-    */
+    modules["conv1"] = std::make_shared<Conv2d>(
+        in_channels,
+        out_channels_,
+        kernel,
+        1,
+        kernel / 2
+    );
 
     if (use_temb_) {
-        modules["time_emb_proj"] =
-            std::make_shared<Linear>(
-                temb_channels.value(),
-                out_channels
-            );
+        modules["time_emb_proj"] = std::make_shared<Linear>(
+            temb_channels.value(),
+            time_embedding_norm == "default"
+                ? out_channels_
+                : out_channels_ * 2
+        );
     }
 
+    modules["norm2"] = std::make_shared<GroupNorm>(
+        groups_out_,
+        out_channels_,
+        eps
+    );
 
-    /*
-        norm2
-    */
+    // TODO: Dropout module.
+    // modules["dropout"] = std::make_shared<Dropout>(dropout);
 
-    modules["norm2"] =
-        std::make_shared<GroupNorm>(
-            groups,
-            out_channels,
-            eps
-        );
-
-
-    /*
-        conv2
-    */
-
-    modules["conv2"] =
-        std::make_shared<Conv2d>(
-            out_channels,
-            out_channels,
-            3,
-            1,
-            1
-        );
-
-
-    /*
-        shortcut
-    */
+    modules["conv2"] = std::make_shared<Conv2d>(
+        out_channels_,
+        conv_2d_out_channels_,
+        kernel,
+        1,
+        kernel / 2
+    );
 
     if (use_shortcut_) {
-        modules["conv_shortcut"] =
-            std::make_shared<Conv2d>(
-                in_channels,
-                out_channels,
-                1,
-                1,
-                0
-            );
+        modules["conv_shortcut"] = std::make_shared<Conv2d>(
+            in_channels,
+            conv_2d_out_channels_,
+            1,
+            1,
+            0,
+            conv_shortcut_bias
+        );
+    }
+
+    // Not needed for AutoencoderKLFlux2 but keep API-compatible.
+    if (up) {
+        // TODO: Upsample2D
+    }
+
+    if (down) {
+        // TODO: Downsample2D
     }
 }
 

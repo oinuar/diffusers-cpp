@@ -1,7 +1,11 @@
 #include "ggml/Backend.hpp"
 #include "ggml/Scheduler.hpp"
+#include "ggml/GGUFLoaderVisitor.hpp"
+#include "nn/RethrowVisitor.hpp"
 #include "diffusers/models/transformers/flux2/Flux2Transformer2DModel.hpp"
+#include "diffusers/models/autoencoders/AutoencoderKLFlux2.hpp"
 #include <iostream>
+#include <filesystem>
 
 int main() {
     ggml_time_init();
@@ -11,9 +15,14 @@ int main() {
 
     Backend cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
 
-    std::string path = "../examples/flux2-cli/utils/convert-model/flux2-klein-9b_q8_0.gguf";
+    std::filesystem::path path("../utils/convert-model/flux2-vae.gguf");
 
-    auto transformer = Flux2Transformer2DModel::from_pretrained(cpu, path);
+    AutoencoderKLFlux2 vae;
+
+    GGUFLoaderVisitor loader(cpu, path);
+    RethrowVisitor visitor(loader);
+    vae.accept(visitor);
+    visitor.rethrow();
 
     /*Scheduler scheduler({*cpu});
 

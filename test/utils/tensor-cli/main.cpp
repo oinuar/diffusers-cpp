@@ -247,12 +247,12 @@ public:
         }
 
         
-        if (args_.get(0) == "clip") {
+        if (args_.get(0) == "clamp") {
             auto self = args_.get_one<Tensor>("--this", {ctx, inputs_});
             auto min = args_.get_one<float>("--min");
             auto max = args_.get_one<float>("--max");
 
-            return self.clip(min, max);
+            return self.clamp(min, max);
         }
 
         if (args_.get(0) == "sum") {

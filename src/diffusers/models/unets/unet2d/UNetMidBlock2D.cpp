@@ -3,7 +3,6 @@
 #include "diffusers/models/resnet/ResnetBlock2D.hpp"
 #include "nn/attention/Attention.hpp"
 
-
 UNetMidBlock2D::UNetMidBlock2D(
     int64_t in_channels,
     float resnet_eps,
@@ -17,30 +16,29 @@ UNetMidBlock2D::UNetMidBlock2D(
 )
     : add_attention_(add_attention)
 {
-    /*
-        self.resnets = nn.ModuleList(
-            [
-                ResnetBlock2D(...),
-                ResnetBlock2D(...)
-            ]
-        )
-    */
-
     modules["resnets.0"] =
         std::make_shared<ResnetBlock2D>(
-            in_channels,
-            in_channels,
-            temb_channels,
-            resnet_eps,
-            resnet_act_fn,
-            output_scale_factor,
-            resnet_time_scale_shift,
-            resnet_groups
+            /* in_channels           */ in_channels,
+            /* out_channels          */ in_channels,
+            /* conv_shortcut         */ std::nullopt,
+            /* dropout               */ 0.0f,
+            /* temb_channels         */ temb_channels,
+            /* groups                */ resnet_groups,
+            /* groups_out            */ std::nullopt,
+            /* eps                   */ resnet_eps,
+            /* non_linearity         */ resnet_act_fn,
+            /* time_embedding_norm   */ resnet_time_scale_shift,
+            /* kernel                */ 3,
+            /* output_scale_factor   */ output_scale_factor,
+            /* use_in_shortcut       */ false,
+            /* up                    */ false,
+            /* down                  */ false,
+            /* conv_shortcut_bias    */ true,
+            /* conv_2d_out_channels  */ 0
         );
 
 
     if (add_attention) {
-
         modules["attentions.0"] =
             std::make_shared<Attention>(
                 in_channels,
@@ -51,17 +49,25 @@ UNetMidBlock2D::UNetMidBlock2D(
 
     modules["resnets.1"] =
         std::make_shared<ResnetBlock2D>(
-            in_channels,
-            in_channels,
-            temb_channels,
-            resnet_eps,
-            resnet_act_fn,
-            output_scale_factor,
-            resnet_time_scale_shift,
-            resnet_groups
+            /* in_channels           */ in_channels,
+            /* out_channels          */ in_channels,
+            /* conv_shortcut         */ std::nullopt,
+            /* dropout               */ 0.0f,
+            /* temb_channels         */ temb_channels,
+            /* groups                */ resnet_groups,
+            /* groups_out            */ std::nullopt,
+            /* eps                   */ resnet_eps,
+            /* non_linearity         */ resnet_act_fn,
+            /* time_embedding_norm   */ resnet_time_scale_shift,
+            /* kernel                */ 3,
+            /* output_scale_factor   */ output_scale_factor,
+            /* use_in_shortcut       */ false,
+            /* up                    */ false,
+            /* down                  */ false,
+            /* conv_shortcut_bias    */ true,
+            /* conv_2d_out_channels  */ 0
         );
 }
-
 
 
 Tensor UNetMidBlock2D::forward(

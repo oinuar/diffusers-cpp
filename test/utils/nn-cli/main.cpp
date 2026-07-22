@@ -1,11 +1,13 @@
 #include "../TestCLI.hpp"
 #include "nn/Parameter.hpp"
 #include "nn/Visitor.hpp"
+#include "nn/RethrowVisitor.hpp"
 
 #include "nn/Linear.hpp"
 #include "nn/SiLU.hpp"
 #include "nn/modules/normalization/RMSNorm.hpp"
 #include "nn/modules/normalization/LayerNorm.hpp"
+#include "nn/modules/normalization/GroupNorm.hpp"
 #include "nn/attention/ScaledDotProductAttention.hpp"
 #include "nn/attention/FlashAttentionOp.hpp"
 
@@ -25,7 +27,8 @@ public:
 
             Linear model(in_features, out_features, bias);
 
-            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
@@ -48,7 +51,8 @@ public:
 
             RMSNorm model(dim, eps, elementwise_affine);
 
-            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
@@ -64,11 +68,30 @@ public:
 
             LayerNorm model(dim, eps, elementwise_affine, bias);
 
-            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
             return model.forward(*ctx, x);
+        }
+
+        if (args_.get(0) == "GroupNorm") {
+            auto num_groups = args_.get_one<int64_t>("--num_groups");
+            auto num_channels = args_.get_one<int64_t>("--num_channels");
+            auto eps = args_.get_optional<float>("--eps").value_or(1e-5f);
+            auto affine = args_.get_optional<bool>("--affine").value_or(true);
+            auto bias = args_.get_optional<bool>("--bias").value_or(true);
+            auto input = args_.get_one<Tensor>("--input", {ctx, inputs_});
+
+            GroupNorm model(num_groups, num_channels, eps, affine, bias);
+
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(*ctx, input);
         }
 
         if (args_.get(0) == "FlashAttention") {
@@ -94,26 +117,14 @@ protected:
 
         virtual void visit(Parameter& parameter, std::vector<std::string> path) {
             auto joined_path = join_path(path);
-
-            try {
-                auto tensor = args_.get_one<Tensor>(joined_path, {ctx_, inputs_});
-                parameter.set(tensor);
-            } catch (const std::runtime_error& error) {
-                errors_ += "\n  - ";
-                errors_ += error.what();
-            }
-        }
-
-        void rethrow() {
-            if (!errors_.empty())
-                throw std::runtime_error("There were following errors while creating parameters: " + errors_);
+            auto tensor = args_.get_one<Tensor>(joined_path, {ctx_, inputs_});
+            parameter.set(tensor);
         }
 
     private:
         Context& ctx_;
         std::vector<std::pair<Tensor, std::vector<float>>>& inputs_;
         ArgumentParser& args_;
-        std::string errors_;
         
         static std::string join_path(const std::vector<std::string>& path) {
             return std::accumulate(std::begin(path), std::end(path), std::string("--param"), [](const std::string& acc, const std::string& x) {

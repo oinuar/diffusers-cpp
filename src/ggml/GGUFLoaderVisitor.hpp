@@ -8,12 +8,13 @@
 #include <unordered_map>
 #include <string>
 #include <fstream>
+#include <filesystem>
 
 class Backend;
 
 class GGUFLoaderVisitor : public Visitor {
 public:
-    GGUFLoaderVisitor(Backend& backend, const std::string& path);
+    GGUFLoaderVisitor(Backend& backend, const std::filesystem::path& path);
     ~GGUFLoaderVisitor();
 
     virtual void visit(Parameter& parameter, std::vector<std::string> path);

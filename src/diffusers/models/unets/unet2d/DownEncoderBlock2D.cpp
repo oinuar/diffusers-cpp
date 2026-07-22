@@ -3,7 +3,6 @@
 #include "diffusers/models/resnet/ResnetBlock2D.hpp"
 #include "diffusers/models/downsampling/Downsample2D.hpp"
 
-
 DownEncoderBlock2D::DownEncoderBlock2D(
     int64_t num_layers,
     int64_t in_channels,
@@ -18,31 +17,38 @@ DownEncoderBlock2D::DownEncoderBlock2D(
       add_downsample_(add_downsample)
 {
     for (int64_t i = 0; i < num_layers; ++i) {
-
-        int64_t block_in_channels =
+        const int64_t block_in_channels =
             i == 0 ? in_channels : out_channels;
 
         modules["resnets." + std::to_string(i)] =
             std::make_shared<ResnetBlock2D>(
-                block_in_channels,
-                out_channels,
-                temb_channels,
-                resnet_eps,
-                resnet_act_fn,
-                1.0f,
-                "default",
-                resnet_groups
+                /* in_channels            */ block_in_channels,
+                /* out_channels           */ out_channels,
+                /* conv_shortcut          */ std::nullopt,
+                /* dropout               */ 0.0f,
+                /* temb_channels         */ temb_channels,
+                /* groups                */ resnet_groups,
+                /* groups_out            */ std::nullopt,
+                /* eps                   */ resnet_eps,
+                /* non_linearity         */ resnet_act_fn,
+                /* time_embedding_norm   */ "default",
+                /* kernel                */ 3,
+                /* output_scale_factor   */ 1.0f,
+                /* use_in_shortcut       */ false,
+                /* up                    */ false,
+                /* down                  */ false,
+                /* conv_shortcut_bias    */ true,
+                /* conv_2d_out_channels  */ 0
             );
     }
-
 
     if (add_downsample_) {
         modules["downsamplers.0"] =
             std::make_shared<Downsample2D>(
                 out_channels,
-                3,
-                2,
-                0
+                true,   // use_conv
+                out_channels,
+                1
             );
     }
 }

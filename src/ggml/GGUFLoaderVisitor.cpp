@@ -18,7 +18,7 @@ static std::string join_path(const std::vector<std::string>& path) {
     });
 }
 
-GGUFLoaderVisitor::GGUFLoaderVisitor(Backend& backend, const std::string& path)
+GGUFLoaderVisitor::GGUFLoaderVisitor(Backend& backend, const std::filesystem::path& path)
     : ctx_(nullptr), gguf_ctx_(nullptr), buffer_(nullptr), file_(path, std::ifstream::in | std::ifstream::binary), lookup_()
 {
     gguf_ctx_ = gguf_init_from_file(path.c_str(), {
@@ -55,15 +55,13 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
 
     const std::streamoff offs = gguf_get_data_offset(gguf_ctx_) + gguf_get_tensor_offset(gguf_ctx_, tensor_id);
 
-    // Validate dimensions
-    if (ggml_n_dims(tensor) != parameter.shape().rank())
-        throw std::runtime_error("Error while loading Tensor '" + model_path + "': Parameter rank mismatch: expected " + std::to_string(parameter.shape().rank()) + ", got " + std::to_string(ggml_n_dims(tensor)));
+    Tensor::Shape expected_shape(ggml_n_dims(tensor));
 
-    // Validate shape
-    for (auto i = 0; i < ggml_n_dims(tensor); ++i) {
-        if (tensor->ne[i] != parameter.shape()[i])
-            throw std::runtime_error("Error while loading Tensor '" + model_path + "': Parameter shape mismatch: expected " + std::to_string(parameter.shape()[i]) + ", got " + std::to_string(tensor->ne[i]));
-    }
+    for (auto r = 0; r < expected_shape.rank(); ++r)
+        expected_shape[r] = tensor->ne[expected_shape.rank() - 1 - r];
+
+    if (parameter.shape() != expected_shape)
+        throw std::runtime_error("Error while loading Tensor '" + model_path + "': Parameter shape mismatch: expected " + parameter.shape().to_string() + ", got " + expected_shape.to_string());
 
     std::vector<std::byte> buf(ggml_nbytes(tensor));
 

@@ -13,8 +13,8 @@ public:
         int64_t in_channels = 3,
         int64_t out_channels = 3,
         std::vector<int64_t> block_out_channels = {64},
-        int layers_per_block = 2,
-        int norm_num_groups = 32,
+        int64_t layers_per_block = 2,
+        int64_t norm_num_groups = 32,
         bool double_z = true,
         bool mid_block_add_attention = true
     ) {
@@ -45,6 +45,7 @@ public:
                     output_channel,
                     add_downsample,
                     1e-6,
+                    "silu",
                     norm_num_groups
                 );
         }
@@ -53,7 +54,12 @@ public:
             std::make_shared<UNetMidBlock2D>(
                 block_out_channels.back(),
                 1e-6,
+                "silu",
+                1.0f,
+                "default",
+                1,
                 norm_num_groups,
+                std::nullopt,
                 mid_block_add_attention
             );
 

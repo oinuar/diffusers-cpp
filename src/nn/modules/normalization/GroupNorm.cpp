@@ -1,19 +1,11 @@
 #include "nn/modules/normalization/GroupNorm.hpp"
 #include "nn/Parameter.hpp"
 
-#include <cmath>
-
-
-GroupNorm::GroupNorm(
-    int64_t num_groups,
-    int64_t num_channels,
-    float eps,
-    bool affine
-)
+GroupNorm::GroupNorm(int64_t num_groups, int64_t num_channels, float eps, bool affine, bool bias)
     : num_groups_(num_groups),
-      num_channels_(num_channels),
       eps_(eps),
-      affine_(affine)
+      affine_(affine),
+      bias_(bias)
 {
     if (affine_) {
         modules["weight"] =
@@ -21,119 +13,103 @@ GroupNorm::GroupNorm(
                 Tensor::Shape({num_channels})
             );
 
-        modules["bias"] =
-            std::make_shared<Parameter>(
-                Tensor::Shape({num_channels})
-            );
+        if (bias_)
+            modules["bias"] =
+                std::make_shared<Parameter>(
+                    Tensor::Shape({num_channels})
+                );
     }
 }
 
-
-Tensor GroupNorm::forward(
-    ggml_context* ctx,
-    Tensor x
-) {
-    /*
-     x logical shape:
-       [N, C, H, W]
-
-     GGML layout:
-       [W, H, C, N]
-    */
-
-    const auto shape = x.shape();
+Tensor GroupNorm::forward(ggml_context* ctx, Tensor input) {
+    auto shape = input.shape();
 
     const int64_t batch = shape[0];
     const int64_t channels = shape[1];
     const int64_t height = shape[2];
     const int64_t width = shape[3];
 
+    const int64_t channels_per_group = channels / num_groups_;
 
-    const int64_t channels_per_group =
-        channels / num_groups_;
-
+    const int64_t group_size = channels_per_group * height * width;
 
     /*
-       Reshape:
+        PyTorch:
 
-       [N,C,H,W]
-           |
-       [N,G,C/G,H,W]
+        [N,C,H,W]
 
-       We cannot create a 5D GGML tensor, so flatten
-       the normalized dimensions:
+        ->
 
-       [N,G,C/G*H*W]
+        [N,G,C/G*H*W]
+
+        ggml physical layout becomes:
+
+        [group_size,G,N]
+
+        ggml_norm() normalizes ne0 (= group_size),
+        which is exactly one GroupNorm group.
     */
-
-    auto grouped = ggml_reshape_3d(
-        ctx,
-        *x,
-        width * height * channels_per_group,
+    input = input.reshape({
+        batch,
         num_groups_,
-        batch
+        group_size
+    });
+
+    input = Tensor(
+        ctx,
+        ggml_norm(
+            ctx,
+            *input,
+            eps_
+        ),
+        input.shape()
     );
 
-
-    /*
-       Normalize each [C/G*H*W] vector.
-
-       ggml_norm normalizes the first dimension.
-    */
-
-    auto normalized = ggml_norm(
-        ctx,
-        grouped,
-        eps_
-    );
-
-
-    auto y = ggml_reshape_4d(
-        ctx,
-        normalized,
-        width,
-        height,
+    input = input.reshape({
+        batch,
         channels,
-        batch
-    );
-
+        height,
+        width
+    });
 
     if (affine_) {
-        auto weight =
-            std::static_pointer_cast<Parameter>(
-                modules["weight"])
-            ->forward();
+        auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward();
 
-        auto bias =
-            std::static_pointer_cast<Parameter>(
-                modules["bias"])
-            ->forward();
+        weight = weight.reshape({
+            1,
+            channels,
+            1,
+            1
+        });
 
+        input = input * weight;
 
-        /*
-          weight/bias are [C]
+        if (bias_) {
+            auto bias = std::static_pointer_cast<Parameter>(modules["bias"])->forward();
+        
+            /*
+                PyTorch weight/bias:
 
-          Broadcast across:
-            W,H,N
-        */
+                [C]
 
-        y = ggml_mul(
-            ctx,
-            y,
-            *weight
-        );
+                Need broadcast over:
 
-        y = ggml_add(
-            ctx,
-            y,
-            *bias
-        );
+                [N,C,H,W]
+
+                Reshape to:
+
+                [1,C,1,1]
+            */
+            bias = bias.reshape({
+                1,
+                channels,
+                1,
+                1
+            });
+            
+            input = input + bias;
+        }
     }
 
-
-    return Tensor(
-        ctx,
-        y,
-        shape
-    );
+    return input;
 }

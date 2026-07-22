@@ -21,34 +21,38 @@ def map_tensor_name(name):
     return name
 
 
-def map_tensor_quantization(name, qtype):
-    """
-    Translate Diffusers tensor names into quantization.
-    """
-    if name in (
-        "context_embedder.weight",
-        "double_stream_modulation_img.linear.weight",
-        "double_stream_modulation_txt.linear.weight",
-        "norm_out.linear.weight",
-        "proj_out.weight",
-        "single_stream_modulation.linear.weight",
-        "time_guidance_embed"
-    ):
-        # TODO: passing tensor as-is (BF16) is not working (numpy limitation)
-        #return "BF16"
-        return "F32"
-
-    if ".attn.norm_" in name:
-        return "F32"
-
-    return qtype
+def map_tensor_quantization(name, dtype, qtype, dtype_to_qtype={
+    #torch.bfloat16: GGMLQuantizationType.BF16,
+    torch.bfloat16: GGMLQuantizationType.F32, # TODO: fix
+    torch.float64: GGMLQuantizationType.F64,
+    torch.float32: GGMLQuantizationType.F32,
+    torch.float16: GGMLQuantizationType.F16,
+    torch.int8: GGMLQuantizationType.I8,
+    torch.int16: GGMLQuantizationType.I16,
+    torch.int32: GGMLQuantizationType.I32,
+    torch.int64: GGMLQuantizationType.I64
+}):
+    if qtype:
+        return GGMLQuantizationType[qtype]
+    
+    return dtype_to_qtype[dtype]
 
 
 def normalize_tensor(tensor):
     """
     Normalizes torch tensor for GGUF writing.
     """
-    return tensor.detach().cpu().contiguous()
+    tensor = tensor.detach().cpu().contiguous()
+
+    # Numpy cannot represent BF16, convert to float32
+    # TODO: fix
+    if tensor.dtype == torch.bfloat16:
+        tensor = tensor.float()
+
+    # Convert to numpy
+    tensor = tensor.numpy()
+
+    return tensor
 
 
 def quantize_tensor(name, tensor, qtype):
@@ -56,23 +60,16 @@ def quantize_tensor(name, tensor, qtype):
     Force tensor quantization.
     """
 
-    # Numpy cannot represent BF16, convert to float32
-    if tensor.dtype == torch.bfloat16:
-        tensor = tensor.float()
-
-    # Convert to numpy
-    tensor = tensor.numpy()
-
-    # Use non-quantizied tensor as-is
-    if GGMLQuantizationType[qtype] in (GGMLQuantizationType.BF16, GGMLQuantizationType.F32):
+    # Use tensor as-is
+    if qtype in (GGMLQuantizationType.F64, GGMLQuantizationType.F32, GGMLQuantizationType.I64):
         return tensor
 
     # Downcast to float16
-    if GGMLQuantizationType[qtype] == GGMLQuantizationType.F16:
+    if qtype == GGMLQuantizationType.F16:
         return tensor.astype(np.float16)
 
     # Everything below MUST be quantized manually
-    return quantize(tensor, GGMLQuantizationType[qtype])
+    return quantize(tensor, qtype)
 
 
 def add_diffusion_metadata(writer, quant_type):
@@ -86,7 +83,18 @@ def add_diffusion_metadata(writer, quant_type):
     writer.add_string("general.source.layout", "diffusers")
 
 
-def load_diffusers_folder(path):
+def load_safetensors_model(path, tensor_names=None):
+    print(f"LOAD {path}")
+
+    with safe_open(str(path), framework="pt", device="cpu") as f:
+        tensor_names = tensor_names if tensor_names else f.keys()
+
+        for name in tensor_names:
+            tensor = f.get_tensor(name)
+            yield (name, tensor)
+
+
+def load_hf_model(path):
     """
     Loads ALL tensors from a Diffusers sharded checkpoint using index file.
     """
@@ -111,13 +119,14 @@ def load_diffusers_folder(path):
 
     for shard_file, tensor_names in shard_map.items():
         shard_path = path / shard_file
+        yield from load_safetensors(shard_path, tensor_names)
 
-        print(f"LOAD {shard_file}")
 
-        with safe_open(str(shard_path), framework="pt", device="cpu") as f:
-            for name in tensor_names:
-                tensor = f.get_tensor(name)
-                yield (name, tensor)
+def load_model(path):
+    if path.is_dir():
+        yield from load_hf_model(path)
+    else:
+        yield from load_safetensors_model(path)
 
 
 def convert(input_path: Path, output_path: Path, architecture: str, quant_type: str) -> None:
@@ -131,28 +140,28 @@ def convert(input_path: Path, output_path: Path, architecture: str, quant_type: 
     converted = 0
     skipped = 0
 
-    for name, tensor in load_diffusers_folder(input_path):
+    for name, tensor in load_model(input_path):
         target_name = map_tensor_name(name)
 
         if target_name is None:
             skipped += 1
             continue
 
-        dest_type = map_tensor_quantization(target_name, quant_type)
+        source_type = tensor.dtype
+        dest_type = map_tensor_quantization(target_name, source_type, quant_type)
 
         tensor = normalize_tensor(tensor)
-        source_type = tensor.dtype
         tensor = quantize_tensor(target_name, tensor, dest_type)
 
         writer.add_tensor(
             name=target_name,
             tensor=tensor,
-            raw_dtype=GGMLQuantizationType[dest_type],
+            raw_dtype=dest_type,
         )
 
         converted += 1
 
-        print(f"WRITE {name} ({source_type}) -> {target_name} ({dest_type}) {tensor.shape}")
+        print(f"WRITE {name} ({source_type}) -> {target_name} ({dest_type.name}) {tensor.shape}")
 
     print("Writing GGUF file...")
     writer.write_header_to_file()
@@ -188,7 +197,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--type",
-        default="f32",
+        default=None,
         choices=['BF16', 'F16', 'F32', 'F64', 'I16', 'I32', 'I64', 'I8', 'IQ1_M', 'IQ1_S', 'IQ2_S', 'IQ2_XS', 'IQ2_XXS', 'IQ3_S', 'IQ3_XXS', 'IQ4_NL', 'IQ4_XS', 'MXFP4', 'NVFP4', 'Q1_0', 'Q2_K', 'Q3_K', 'Q4_0', 'Q4_1', 'Q4_K', 'Q5_0', 'Q5_1', 'Q5_K', 'Q6_K', 'Q8_0', 'Q8_1', 'Q8_K', 'TQ1_0', 'TQ2_0'],
         help="Tensor quantization",
     )

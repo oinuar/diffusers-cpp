@@ -1,6 +1,7 @@
 #include "../TestCLI.hpp"
 #include "nn/Parameter.hpp"
 #include "nn/Visitor.hpp"
+#include "nn/RethrowVisitor.hpp"
 #include "nn/attention/ScaledDotProductAttention.hpp"
 #include "nn/attention/FlashAttentionOp.hpp"
 
@@ -38,7 +39,8 @@ public:
 
             AdaLayerNormContinuous<> model(embedding_dim, conditioning_embedding_dim, elementwise_affine, eps, bias);
 
-            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
@@ -56,7 +58,8 @@ public:
 
             TimestepEmbedding<> model(in_channels, time_embed_dim, out_dim, cond_proj_dim, sample_proj_bias);
 
-            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
@@ -72,7 +75,8 @@ public:
 
             Timesteps model(num_channels, flip_sin_to_cos, downscale_freq_shift, scale);
 
-            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
@@ -98,7 +102,8 @@ public:
 
             Flux2FeedForward model(dim, dim_out, mult, inner_dim, bias);
 
-            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
@@ -113,7 +118,8 @@ public:
 
             Flux2Modulation model(dim, mod_param_sets, bias);
 
-            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
@@ -130,7 +136,8 @@ public:
 
             Flux2TimestepGuidanceEmbeddings model(in_channels, embedding_dim, bias, guidance_embeds);
 
-            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
@@ -145,7 +152,8 @@ public:
 
             Flux2PosEmbed model(theta, axes_dim);
 
-            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
@@ -190,7 +198,8 @@ public:
                 elementwise_affine
             );
 
-            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
@@ -242,7 +251,8 @@ public:
                 mlp_mult_factor
             );
 
-            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
@@ -279,7 +289,8 @@ public:
                 bias
             );
 
-            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
@@ -332,7 +343,8 @@ public:
                 bias
             );
 
-            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
@@ -393,7 +405,8 @@ public:
                 guidance_embeds
             );
 
-            CreateParametersVisitor visitor(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
@@ -424,26 +437,14 @@ protected:
 
         virtual void visit(Parameter& parameter, std::vector<std::string> path) {
             auto joined_path = join_path(path);
-
-            try {
-                auto tensor = args_.get_one<Tensor>(joined_path, {ctx_, inputs_});
-                parameter.set(tensor);
-            } catch (const std::runtime_error& error) {
-                errors_ += "\n  - ";
-                errors_ += error.what();
-            }
-        }
-
-        void rethrow() {
-            if (!errors_.empty())
-                throw std::runtime_error("There were following errors while creating parameters: " + errors_);
+            auto tensor = args_.get_one<Tensor>(joined_path, {ctx_, inputs_});
+            parameter.set(tensor);
         }
 
     private:
         Context& ctx_;
         std::vector<std::pair<Tensor, std::vector<float>>>& inputs_;
         ArgumentParser& args_;
-        std::string errors_;
         
         static std::string join_path(const std::vector<std::string>& path) {
             return std::accumulate(std::begin(path), std::end(path), std::string("--param"), [](const std::string& acc, const std::string& x) {

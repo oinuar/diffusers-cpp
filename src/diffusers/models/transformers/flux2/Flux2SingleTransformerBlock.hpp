@@ -58,7 +58,7 @@ public:
         hidden_states = hidden_states + mod_gate * attn_output;
 
         if (hidden_states.dtype() == GGML_TYPE_F16)
-            hidden_states = hidden_states.clip(-65504, 65504);
+            hidden_states = hidden_states.clamp(-65504, 65504);
 
         if (split_hidden_states) {
             if (text_seq_len) {

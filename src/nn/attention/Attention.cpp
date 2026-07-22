@@ -2,7 +2,6 @@
 
 #include "nn/Linear.hpp"
 
-
 Attention::Attention(
     int64_t query_dim,
     int64_t heads,
@@ -13,44 +12,44 @@ Attention::Attention(
       dim_head_(dim_head > 0 ? dim_head : query_dim / heads),
       inner_dim_(heads_ * dim_head_)
 {
-    /*
-        to_q = Linear(query_dim, inner_dim)
-        to_k = Linear(query_dim, inner_dim)
-        to_v = Linear(query_dim, inner_dim)
-    */
-
     modules["to_q"] =
         std::make_shared<Linear>(
             query_dim,
             inner_dim_,
-            false
+            true
         );
 
     modules["to_k"] =
         std::make_shared<Linear>(
             query_dim,
             inner_dim_,
-            false
+            true
         );
 
     modules["to_v"] =
         std::make_shared<Linear>(
             query_dim,
             inner_dim_,
-            false
+            true
         );
 
 
     /*
-        output projection
+       Diffusers:
+       to_out = ModuleList([
+           Linear(inner_dim, query_dim),
+           Dropout()
+       ])
     */
 
-    modules["to_out"] =
+    modules["to_out.0"] =
         std::make_shared<Linear>(
             inner_dim_,
-            query_dim
+            query_dim,
+            true
         );
 }
+
 Tensor Attention::forward(
     ggml_context* ctx,
     Tensor hidden_states
@@ -219,7 +218,7 @@ Tensor Attention::forward(
 
     out =
         std::static_pointer_cast<Linear>(
-            modules["to_out"])
+            modules["to_out.0"])
         ->forward(
             ctx,
             out

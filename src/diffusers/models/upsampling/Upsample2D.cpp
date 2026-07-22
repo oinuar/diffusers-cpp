@@ -2,33 +2,31 @@
 
 #include "nn/modules/conv/Conv2d.hpp"
 
-
 Upsample2D::Upsample2D(
     int64_t channels,
-    bool use_conv
+    bool use_conv,
+    std::optional<int64_t> out_channels,
+    bool use_conv_transpose
 )
-    : use_conv_(use_conv)
+    : use_conv_(use_conv),
+      use_conv_transpose_(use_conv_transpose)
 {
+    const int64_t out_channels_ =
+        out_channels.value_or(channels);
+
     if (use_conv_) {
-        /*
-            Diffusers:
-
-            Conv2d(
-                channels,
-                channels,
-                kernel_size=3,
-                padding=1
-            )
-        */
-
         modules["conv"] =
             std::make_shared<Conv2d>(
                 channels,
-                channels,
+                out_channels_,
                 3,
                 1,
                 1
             );
+    }
+
+    if (use_conv_transpose_) {
+        // TODO: not used in Flux2
     }
 }
 

@@ -77,6 +77,14 @@ public:
 
         /** @brief Converts the shape to a human-readable string representation. */
         std::string to_string() const;
+
+        bool operator ==(const Shape& other) const {
+            return ne_ == other.ne_ && rank_ == other.rank_;
+        }
+
+        bool operator !=(const Shape& other) const {
+            return !(*this == other);
+        }
     private:
         std::array<int64_t, 4> ne_;
         int64_t rank_;
@@ -411,7 +419,7 @@ public:
         return Tensor(ctx_, ggml_scale(ctx_, t_, 1.0f / rhs), shape_);
     }
 
-    Tensor clip(float a, float b) const {
+    Tensor clamp(float a, float b) const {
         return Tensor(ctx_, ggml_clamp(ctx_, t_, a, b), shape_);
     }
 

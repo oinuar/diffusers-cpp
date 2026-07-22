@@ -174,6 +174,13 @@ if(DIFFUSERS_SYCL AND DEFINED SYCL_COMPILE_OPTIONS)
     target_compile_options(diffusers PRIVATE ${SYCL_COMPILE_OPTIONS})
 endif()
 
+add_executable(diffusers-cli
+    src/main.cpp
+)
+
+target_include_directories(diffusers-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(diffusers-cli PRIVATE diffusers)
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------

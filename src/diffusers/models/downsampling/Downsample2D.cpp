@@ -2,40 +2,44 @@
 
 #include "nn/modules/conv/Conv2d.hpp"
 
-
 Downsample2D::Downsample2D(
     int64_t channels,
-    int64_t out_channels,
     bool use_conv,
+    std::optional<int64_t> out_channels,
     int64_t padding
 )
     : use_conv_(use_conv)
 {
-    if (out_channels < 0)
-        out_channels = channels;
-
+    const int64_t out_channels_ =
+        out_channels.value_or(channels);
 
     if (use_conv_) {
-
-        /*
-            Diffusers:
-
-            Conv2d(
-                channels,
-                out_channels,
-                kernel_size=3,
-                stride=2,
-                padding=padding
-            )
-        */
-
         modules["conv"] =
             std::make_shared<Conv2d>(
                 channels,
-                out_channels,
+                out_channels_,
                 3,
                 2,
                 padding
             );
     }
+}
+
+Tensor Downsample2D::forward(
+    ggml_context* ctx,
+    Tensor hidden_states
+)
+{
+    if (use_conv_) {
+
+        hidden_states =
+            std::static_pointer_cast<Conv2d>(
+                modules["conv"])
+            ->forward(
+                ctx,
+                hidden_states
+            );
+    }
+
+    return hidden_states;
 }

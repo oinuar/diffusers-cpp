@@ -111,7 +111,7 @@ public:
         encoder_hidden_states = encoder_hidden_states + c_gate_mlp * context_ff_output;
 
         if (encoder_hidden_states.dtype() == GGML_TYPE_F16)
-            encoder_hidden_states = encoder_hidden_states.clip(-65504, 65504);
+            encoder_hidden_states = encoder_hidden_states.clamp(-65504, 65504);
 
         return {encoder_hidden_states, hidden_states};
     }

@@ -6,8 +6,8 @@ class Downsample2D : public Module {
 public:
     Downsample2D(
         int64_t channels,
-        int64_t out_channels = -1,
         bool use_conv = true,
+        std::optional<int64_t> out_channels = std::nullopt,
         int64_t padding = 1
     );
 

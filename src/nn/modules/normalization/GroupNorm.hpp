@@ -8,17 +8,15 @@ public:
         int64_t num_groups,
         int64_t num_channels,
         float eps = 1e-5,
-        bool affine = true
+        bool affine = true,
+        bool bias = true
     );
 
-    Tensor forward(
-        ggml_context* ctx,
-        Tensor x
-    );
+    Tensor forward(ggml_context* ctx, Tensor input);
 
 private:
     int64_t num_groups_;
-    int64_t num_channels_;
     float eps_;
     bool affine_;
+    bool bias_;
 };

@@ -12,9 +12,9 @@ public:
         int64_t in_channels,
         int64_t out_channels,
         bool add_downsample,
-        float resnet_eps = 1e-6,
-        const std::string& resnet_act_fn = "silu",
-        int64_t resnet_groups = 32,
+        float resnet_eps,
+        const std::string& resnet_act_fn,
+        int64_t resnet_groups,
         std::optional<int64_t> temb_channels = std::nullopt
     );
 

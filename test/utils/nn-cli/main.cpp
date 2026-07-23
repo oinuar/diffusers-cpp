@@ -8,6 +8,7 @@
 #include "nn/modules/normalization/RMSNorm.hpp"
 #include "nn/modules/normalization/LayerNorm.hpp"
 #include "nn/modules/normalization/GroupNorm.hpp"
+#include "nn/modules/conv/Conv2d.hpp"
 #include "nn/attention/ScaledDotProductAttention.hpp"
 #include "nn/attention/FlashAttentionOp.hpp"
 
@@ -92,6 +93,25 @@ public:
             visitor.rethrow();
 
             return model.forward(*ctx, input);
+        }
+
+        if (args_.get(0) == "Conv2d") {
+            auto in_channels = args_.get_one<int64_t>("--in_channels");
+            auto out_channels = args_.get_one<int64_t>("--out_channels");
+            auto kernel_size = args_.get_one<int64_t>("--kernel_size");
+            auto stride = args_.get_optional<int64_t>("--stride").value_or(1);
+            auto padding = args_.get_optional<int64_t>("--padding").value_or(0);
+            auto bias = args_.get_optional<bool>("--bias").value_or(true);
+            auto x = args_.get_one<Tensor>("--x", {ctx, inputs_});
+
+            Conv2d model(in_channels, out_channels, kernel_size, stride, padding, bias);
+
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(*ctx, x);
         }
 
         if (args_.get(0) == "FlashAttention") {

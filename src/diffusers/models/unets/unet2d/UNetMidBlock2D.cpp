@@ -1,7 +1,9 @@
 #include "diffusers/models/unets/unet2d/UNetMidBlock2D.hpp"
 
 #include "diffusers/models/resnet/ResnetBlock2D.hpp"
-#include "nn/attention/Attention.hpp"
+#include "diffusers/models/attention_processor/Attention.hpp"
+#include "nn/attention/ScaledDotProductAttention.hpp"
+#include "nn/attention/FlashAttentionOp.hpp"
 
 UNetMidBlock2D::UNetMidBlock2D(
     int64_t in_channels,
@@ -40,7 +42,7 @@ UNetMidBlock2D::UNetMidBlock2D(
 
     if (add_attention) {
         modules["attentions.0"] =
-            std::make_shared<Attention>(
+            std::make_shared<Attention<ScaledDotProductAttention<FlashAttentionOp>>>(
                 in_channels,
                 attention_head_dim
             );
@@ -97,7 +99,7 @@ Tensor UNetMidBlock2D::forward(
     if (add_attention_) {
 
         sample =
-            std::static_pointer_cast<Attention>(
+            std::static_pointer_cast<Attention<ScaledDotProductAttention<FlashAttentionOp>>>(
                 modules["attentions.0"])
             ->forward(
                 ctx,

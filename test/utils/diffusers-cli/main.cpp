@@ -12,6 +12,7 @@
 #include "diffusers/models/downsampling/Downsample2D.hpp"
 #include "diffusers/models/embeddings/TimestepEmbedding.hpp"
 #include "diffusers/models/embeddings/Timesteps.hpp"
+#include "diffusers/models/attention_processor/Attention.hpp"
 
 #include "diffusers/models/transformers/flux2/Flux2SwiGLU.hpp"
 #include "diffusers/models/transformers/flux2/Flux2FeedForward.hpp"
@@ -184,6 +185,28 @@ public:
             visitor.rethrow();
 
             return model.forward(*ctx, timesteps);
+        }
+
+        if (args_.get(0) == "Attention") {
+            auto query_dim = args_.get_one<int64_t>("--query_dim");
+            auto heads = args_.get_one<int64_t>("--heads");
+            auto dim_head = args_.get_one<int64_t>("--dim_head");
+            auto dropout = args_.get_optional<float>("--dropout").value_or(0.0f);
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
+
+            Attention<ScaledDotProductAttention<FlashAttentionOp>> model(
+                query_dim,
+                heads,
+                dim_head,
+                dropout
+            );
+
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(*ctx, hidden_states);
         }
 
 

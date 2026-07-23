@@ -39,15 +39,29 @@ UNetMidBlock2D::UNetMidBlock2D(
             /* conv_2d_out_channels  */ 0
         );
 
-
     if (add_attention) {
+        int64_t heads = in_channels / attention_head_dim;
+
         modules["attentions.0"] =
             std::make_shared<Attention<ScaledDotProductAttention<FlashAttentionOp>>>(
                 in_channels,
-                attention_head_dim
+                in_channels / attention_head_dim,
+                attention_head_dim,
+
+                0.0f,       // dropout
+
+                true,        // qkv bias
+                true,        // residual_connection
+
+                resnet_groups, // norm_num_groups = attn_groups
+
+                resnet_eps,   // 1e-6
+
+                output_scale_factor, // 1.0
+
+                true          // upcast_softmax
             );
     }
-
 
     modules["resnets.1"] =
         std::make_shared<ResnetBlock2D>(
@@ -71,17 +85,13 @@ UNetMidBlock2D::UNetMidBlock2D(
         );
 }
 
-
 Tensor UNetMidBlock2D::forward(
     ggml_context* ctx,
     Tensor sample,
     std::optional<Tensor> temb
 )
 {
-    /*
-        hidden_states = self.resnets[0](hidden_states, temb)
-    */
-
+    // 1. First ResNet block
     sample =
         std::static_pointer_cast<ResnetBlock2D>(
             modules["resnets.0"])
@@ -91,27 +101,19 @@ Tensor UNetMidBlock2D::forward(
             temb
         );
 
-
-    /*
-        hidden_states = self.attentions[0](hidden_states)
-    */
-
+    // 2. Attention block (if enabled)
     if (add_attention_) {
-
         sample =
-            std::static_pointer_cast<Attention<ScaledDotProductAttention<FlashAttentionOp>>>(
-                modules["attentions.0"])
+            std::static_pointer_cast<
+                Attention<ScaledDotProductAttention<FlashAttentionOp>>
+            >(modules["attentions.0"])
             ->forward(
                 ctx,
                 sample
             );
     }
 
-
-    /*
-        hidden_states = self.resnets[1](hidden_states, temb)
-    */
-
+    // 3. Second ResNet block
     sample =
         std::static_pointer_cast<ResnetBlock2D>(
             modules["resnets.1"])
@@ -120,7 +122,6 @@ Tensor UNetMidBlock2D::forward(
             sample,
             temb
         );
-
 
     return sample;
 }

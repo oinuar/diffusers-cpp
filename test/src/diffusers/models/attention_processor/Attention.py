@@ -6,15 +6,13 @@ class TestNN_Attention(TestCase):
     def test_basic(self):
         model = Attention(
             query_dim=8,
-            heads=2,
-            dim_head=4,
+            heads=1,
+            dim_head=8
         )
 
-        model.set_processor(AttnProcessor2_0())
-
         hidden_states = torch.randn(
-            1,
-            4,
+            2,
+            5,
             8,
         )
 
@@ -23,8 +21,8 @@ class TestNN_Attention(TestCase):
         actual = self.cli(
             "Attention",
             "--query_dim", "8",
-            "--heads", "2",
-            "--dim_head", "4",
+            "--heads", "1",
+            "--dim_head", "8",
             "--hidden_states", str(hidden_states.tolist()),
             "--param-to_q-weight", str(model.to_q.weight.tolist()),
             "--param-to_k-weight", str(model.to_k.weight.tolist()),
@@ -35,7 +33,7 @@ class TestNN_Attention(TestCase):
 
         self.assertTensors(actual, [expected])
 
-    def test_four_heads(self):
+    def test_multihead(self):
         model = Attention(
             query_dim=16,
             heads=4,
@@ -43,8 +41,8 @@ class TestNN_Attention(TestCase):
         )
 
         hidden_states = torch.randn(
-            2,
-            9,
+            1,
+            11,
             16,
         )
 
@@ -92,5 +90,145 @@ class TestNN_Attention(TestCase):
             "--param-to_out.0-weight", str(model.to_out[0].weight.tolist()),
             "--param-to_out.0-bias", str(model.to_out[0].bias.tolist()),
        )
+
+        self.assertTensors(actual, [expected])
+
+    def test_spatial_input(self):
+        model = Attention(
+            query_dim=8,
+            heads=1,
+            dim_head=8,
+        )
+
+        hidden_states = torch.randn(
+            1,
+            8,
+            2,
+            2,
+        )
+
+        expected = model(hidden_states)
+
+        actual = self.cli(
+            "Attention",
+            "--query_dim", "8",
+            "--heads", "1",
+            "--dim_head", "8",
+            "--hidden_states", str(hidden_states.tolist()),
+            "--param-to_q-weight", str(model.to_q.weight.tolist()),
+            "--param-to_k-weight", str(model.to_k.weight.tolist()),
+            "--param-to_v-weight", str(model.to_v.weight.tolist()),
+            "--param-to_out.0-weight", str(model.to_out[0].weight.tolist()),
+            "--param-to_out.0-bias", str(model.to_out[0].bias.tolist()),
+        )
+
+        self.assertTensors(actual, [expected])
+
+    def test_residual(self):
+        model = Attention(
+            query_dim=8,
+            heads=1,
+            dim_head=8,
+            residual_connection=True
+        )
+
+        hidden_states = torch.randn(
+            1,
+            8,
+            2,
+            2,
+        )
+
+        expected = model(hidden_states)
+
+        actual = self.cli(
+            "Attention",
+            "--query_dim", "8",
+            "--heads", "1",
+            "--dim_head", "8",
+            "--residual_connection", "true",
+            "--hidden_states", str(hidden_states.tolist()),
+            "--param-to_q-weight", str(model.to_q.weight.tolist()),
+            "--param-to_k-weight", str(model.to_k.weight.tolist()),
+            "--param-to_v-weight", str(model.to_v.weight.tolist()),
+            "--param-to_out.0-weight", str(model.to_out[0].weight.tolist()),
+            "--param-to_out.0-bias", str(model.to_out[0].bias.tolist()),
+        )
+
+        self.assertTensors(actual, [expected])
+
+    def test_bias(self):
+        model = Attention(
+            query_dim=8,
+            heads=1,
+            dim_head=8,
+            bias=True,
+            out_bias=True
+        )
+
+        hidden_states = torch.randn(
+            1,
+            8,
+            2,
+            2,
+        )
+
+        expected = model(hidden_states)
+
+        actual = self.cli(
+            "Attention",
+            "--query_dim", "8",
+            "--heads", "1",
+            "--dim_head", "8",
+            "--bias", "true",
+            "--out_bias", "true",
+            "--hidden_states", str(hidden_states.tolist()),
+            "--param-to_q-weight", str(model.to_q.weight.tolist()),
+            "--param-to_q-bias", str(model.to_q.bias.tolist()),
+            "--param-to_k-weight", str(model.to_k.weight.tolist()),
+            "--param-to_k-bias", str(model.to_k.bias.tolist()),
+            "--param-to_v-weight", str(model.to_v.weight.tolist()),
+            "--param-to_v-bias", str(model.to_v.bias.tolist()),
+            "--param-to_out.0-weight", str(model.to_out[0].weight.tolist()),
+            "--param-to_out.0-bias", str(model.to_out[0].bias.tolist()),
+        )
+
+        self.assertTensors(actual, [expected])
+
+    def test_bias_3d(self):
+        model = Attention(
+            query_dim=8,
+            heads=1,
+            dim_head=8,
+            bias=True,
+            out_bias=True
+        )
+
+        # [batch, sequence, channels]
+        hidden_states = torch.randn(
+            1,
+            4,
+            8,
+        )
+
+        expected = model(hidden_states)
+
+        actual = self.cli(
+            "Attention",
+            "--query_dim", "8",
+            "--heads", "1",
+            "--dim_head", "8",
+            "--bias", "true",
+            "--out_bias", "true",
+            "--hidden_states", str(hidden_states.tolist()),
+            "--param-to_q-weight", str(model.to_q.weight.tolist()),
+            "--param-to_q-bias", str(model.to_q.bias.tolist()),
+            "--param-to_k-weight", str(model.to_k.weight.tolist()),
+            "--param-to_k-bias", str(model.to_k.bias.tolist()),
+            "--param-to_v-weight", str(model.to_v.weight.tolist()),
+            "--param-to_v-bias", str(model.to_v.bias.tolist()),
+            "--param-to_out.0-weight", str(model.to_out[0].weight.tolist()),
+            "--param-to_out.0-bias", str(model.to_out[0].bias.tolist()),
+        )
 
         self.assertTensors(actual, [expected])

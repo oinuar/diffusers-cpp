@@ -14,6 +14,8 @@
 #include "diffusers/models/embeddings/Timesteps.hpp"
 #include "diffusers/models/attention_processor/Attention.hpp"
 
+#include "diffusers/models/unets/unet2d/UNetMidBlock2D.hpp"
+
 #include "diffusers/models/transformers/flux2/Flux2SwiGLU.hpp"
 #include "diffusers/models/transformers/flux2/Flux2FeedForward.hpp"
 #include "diffusers/models/transformers/flux2/Flux2Modulation.hpp"
@@ -192,13 +194,25 @@ public:
             auto heads = args_.get_one<int64_t>("--heads");
             auto dim_head = args_.get_one<int64_t>("--dim_head");
             auto dropout = args_.get_optional<float>("--dropout").value_or(0.0f);
+            auto bias = args_.get_optional<bool>("--bias").value_or(false);
+            auto residual_connection = args_.get_optional<bool>("--residual_connection").value_or(false);
+            auto norm_num_groups = args_.get_optional<int64_t>("--norm_num_groups");
+            auto eps = args_.get_optional<float>("--eps").value_or(1e-6);
+            auto rescale_output_factor = args_.get_optional<float>("--rescale_output_factor").value_or(1.0f);
+            auto upcast_softmax = args_.get_optional<bool>("--upcast_softmax").value_or(false);
             auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
 
             Attention<ScaledDotProductAttention<FlashAttentionOp>> model(
                 query_dim,
                 heads,
                 dim_head,
-                dropout
+                dropout,
+                bias,
+                residual_connection,
+                norm_num_groups,
+                eps,
+                rescale_output_factor,
+                upcast_softmax
             );
 
             CreateParametersVisitor create_parameters(ctx, inputs_, args_);
@@ -207,6 +221,40 @@ public:
             visitor.rethrow();
 
             return model.forward(*ctx, hidden_states);
+        }
+
+
+        if (args_.get(0) == "UNetMidBlock2D") {
+            auto in_channels = args_.get_one<int64_t>("--in_channels");
+            auto resnet_eps = args_.get_optional<float>("--resnet_eps").value_or(1e-6);
+            auto resnet_act_fn = args_.get_optional<std::string>("--resnet_act_fn").value_or("silu");
+            auto output_scale_factor = args_.get_optional<float>("--output_scale_factor").value_or(1.0f);
+            auto resnet_time_scale_shift = args_.get_optional<std::string>("--resnet_time_scale_shift").value_or("default");
+            auto attention_head_dim = args_.get_optional<int64_t>("--attention_head_dim").value_or(1);
+            auto resnet_groups = args_.get_optional<int64_t>("--resnet_groups").value_or(32);
+            auto temb_channels = args_.get_optional<int64_t>("--temb_channels");
+            auto add_attention = args_.get_optional<bool>("--add_attention").value_or(true);
+            auto sample = args_.get_one<Tensor>("--sample", {ctx, inputs_});
+            auto temb = args_.get_optional<Tensor>("--temb", {ctx, inputs_});
+
+            UNetMidBlock2D model(
+                in_channels,
+                resnet_eps,
+                resnet_act_fn,
+                output_scale_factor,
+                resnet_time_scale_shift,
+                attention_head_dim,
+                resnet_groups,
+                temb_channels,
+                add_attention
+            );
+
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(*ctx, sample, temb);
         }
 
 

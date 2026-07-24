@@ -1,88 +1,74 @@
 #include "diffusers/models/unets/unet2d/DownEncoderBlock2D.hpp"
-
+#include "nn/ModuleList.hpp"
+#include "nn/SiLU.hpp"
 #include "diffusers/models/resnet/ResnetBlock2D.hpp"
 #include "diffusers/models/downsampling/Downsample2D.hpp"
 
 DownEncoderBlock2D::DownEncoderBlock2D(
-    int64_t num_layers,
     int64_t in_channels,
     int64_t out_channels,
-    bool add_downsample,
+    float dropout,
+    int64_t num_layers,
     float resnet_eps,
-    const std::string& resnet_act_fn,
     int64_t resnet_groups,
-    std::optional<int64_t> temb_channels
-)
-    : num_layers_(num_layers),
-      add_downsample_(add_downsample)
+    bool resnet_pre_norm,
+    float output_scale_factor,
+    bool add_downsample,
+    int64_t downsample_padding 
+) : add_downsample_(add_downsample)
 {
-    for (int64_t i = 0; i < num_layers; ++i) {
-        const int64_t block_in_channels =
-            i == 0 ? in_channels : out_channels;
+    auto resnets = std::make_shared<ModuleList>(num_layers);
+    modules["resnets"] = resnets;
 
-        modules["resnets." + std::to_string(i)] =
-            std::make_shared<ResnetBlock2D>(
-                /* in_channels            */ block_in_channels,
-                /* out_channels           */ out_channels,
-                /* conv_shortcut          */ std::nullopt,
-                /* dropout               */ 0.0f,
-                /* temb_channels         */ temb_channels,
-                /* groups                */ resnet_groups,
-                /* groups_out            */ std::nullopt,
-                /* eps                   */ resnet_eps,
-                /* non_linearity         */ resnet_act_fn,
-                /* time_embedding_norm   */ "default",
-                /* kernel                */ 3,
-                /* output_scale_factor   */ 1.0f,
-                /* use_in_shortcut       */ false,
-                /* up                    */ false,
-                /* down                  */ false,
-                /* conv_shortcut_bias    */ true,
-                /* conv_2d_out_channels  */ 0
-            );
-    }
+    // if resnet_time_scale_shift == "spatial":
+    // else:
+    for (auto i = 0; i < resnets->size(); ++i) {
+        const int64_t block_in_channels = i == 0 ? in_channels : out_channels;
 
-    if (add_downsample_) {
-        modules["downsamplers.0"] =
-            std::make_shared<Downsample2D>(
-                out_channels,
-                true,   // use_conv
-                out_channels,
-                1
-            );
+        (*resnets)[i] = std::make_shared<ResnetBlock2D<SiLU>>(
+            block_in_channels, // in_channels
+            out_channels,
+            std::nullopt, // conv_shortcut
+            0.0f, // dropout
+            std::nullopt, // temb_channels
+            resnet_groups, // groups
+            std::nullopt, // groups_out
+            resnet_pre_norm, // per_norm
+            resnet_eps, // eps
+            false, // skip_time_act
+            3, // kernel_size
+            output_scale_factor,
+            false, // use_in_shortcut
+            false, // up
+            false, // down
+            true, // conv_shortcut_bias
+            std::nullopt // conv_2d_out_channels
+        );
     }
+    
+    if (add_downsample)
+        modules["downsamplers"] = std::shared_ptr<Module>(new ModuleList({
+            std::shared_ptr<Module>(new Downsample2D(
+                out_channels, // channels
+                true, // use_conv
+                out_channels,
+                downsample_padding // padding
+            ))
+        }));
 }
 
-Tensor DownEncoderBlock2D::forward(
-    ggml_context* ctx,
-    Tensor hidden_states,
-    std::optional<Tensor> temb
-)
-{
-    for (int64_t i = 0; i < num_layers_; ++i) {
+Tensor DownEncoderBlock2D::forward(ggml_context* ctx, Tensor hidden_states) {
+    auto resnets = std::static_pointer_cast<ModuleList>(modules["resnets"]);
 
-        hidden_states =
-            std::static_pointer_cast<ResnetBlock2D>(
-                modules["resnets." + std::to_string(i)])
-            ->forward(
-                ctx,
-                hidden_states,
-                temb
-            );
-    }
-
+    for (auto i = 0; i < resnets->size(); ++i)
+        hidden_states = std::static_pointer_cast<ResnetBlock2D<SiLU>>((*resnets)[i])->forward(ctx, hidden_states);
 
     if (add_downsample_) {
+        auto downsamplers = std::static_pointer_cast<ModuleList>(modules["downsamplers"]);
 
-        hidden_states =
-            std::static_pointer_cast<Downsample2D>(
-                modules["downsamplers.0"])
-            ->forward(
-                ctx,
-                hidden_states
-            );
+        for (auto i = 0; i < downsamplers->size(); ++i)
+            hidden_states = std::static_pointer_cast<Downsample2D>((*downsamplers)[i])->forward(ctx, hidden_states);
     }
-
 
     return hidden_states;
 }

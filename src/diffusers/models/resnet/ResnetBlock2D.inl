@@ -5,7 +5,8 @@
 #include "nn/SiLU.hpp"
 #include "nn/Linear.hpp"
 
-ResnetBlock2D::ResnetBlock2D(
+template <class NonLinearity>
+ResnetBlock2D<NonLinearity>::ResnetBlock2D(
     int64_t in_channels,
     std::optional<int64_t> out_channels,
     std::optional<int64_t> conv_shortcut,
@@ -13,48 +14,34 @@ ResnetBlock2D::ResnetBlock2D(
     std::optional<int64_t> temb_channels,
     int64_t groups,
     std::optional<int64_t> groups_out,
+    bool pre_norm,
     float eps,
-    const std::string& non_linearity,
-    const std::string& time_embedding_norm,
-    int64_t kernel,
-    std::optional<int64_t> output_scale_factor,
-    bool use_in_shortcut,
+    bool skip_time_act,
+    int64_t kernel_size,
+    float output_scale_factor,
+    std::optional<bool> use_in_shortcut,
     bool up,
     bool down,
     bool conv_shortcut_bias,
-    int64_t conv_2d_out_channels
+    std::optional<int64_t> conv_2d_out_channels
 )
-    : output_scale_factor_(output_scale_factor.value_or(1.0f))
+    : output_scale_factor_(output_scale_factor)
 {
+    if (!pre_norm)
+        throw std::invalid_argument("'pre_norm': not implemented");
+
     const int64_t out_channels_ =
         out_channels.value_or(in_channels);
 
     const int64_t groups_out_ =
         groups_out.value_or(groups);
 
-    const int64_t conv_2d_out_channels_ =
-        conv_2d_out_channels == 0
-            ? out_channels_
-            : conv_2d_out_channels;
+    const int64_t conv_2d_out_channels_ = conv_2d_out_channels.value_or(out_channels_);
 
-
-    /*
-        Diffusers:
-
-        self.use_in_shortcut = self.in_channels != self.out_channels
-        self.use_shortcut = use_in_shortcut or self.use_in_shortcut
-
-        In C++ we only need the effective flag because
-        conv_shortcut is created and used together.
-    */
-    use_in_shortcut_ =
-        use_in_shortcut ||
-        (in_channels != out_channels_);
-
+    use_in_shortcut_ = use_in_shortcut ? *use_in_shortcut : in_channels != conv_2d_out_channels_;
 
     use_temb_ =
         temb_channels.has_value();
-
 
     modules["norm1"] =
         std::make_shared<GroupNorm>(
@@ -63,32 +50,24 @@ ResnetBlock2D::ResnetBlock2D(
             eps
         );
 
-
-    modules["nonlinearity"] =
-        std::make_shared<SiLU>();
-
+    modules["nonlinearity"] = std::make_shared<NonLinearity>();
 
     modules["conv1"] =
         std::make_shared<Conv2d>(
             in_channels,
             out_channels_,
-            kernel,
+            kernel_size,
             1,
-            kernel / 2
+            kernel_size / 2
         );
 
-
     if (use_temb_) {
-
         modules["time_emb_proj"] =
             std::make_shared<Linear>(
                 temb_channels.value(),
-                time_embedding_norm == "default"
-                    ? out_channels_
-                    : out_channels_ * 2
+                out_channels_
             );
     }
-
 
     modules["norm2"] =
         std::make_shared<GroupNorm>(
@@ -97,23 +76,20 @@ ResnetBlock2D::ResnetBlock2D(
             eps
         );
 
-
     modules["conv2"] =
         std::make_shared<Conv2d>(
             out_channels_,
             conv_2d_out_channels_,
-            kernel,
+            kernel_size,
             1,
-            kernel / 2
+            kernel_size / 2
         );
-
 
     /*
         Diffusers creates conv_shortcut when
         input channels != output channels.
     */
-    if (use_in_shortcut_) {
-
+    if (use_in_shortcut_)
         modules["conv_shortcut"] =
             std::make_shared<Conv2d>(
                 in_channels,
@@ -123,27 +99,18 @@ ResnetBlock2D::ResnetBlock2D(
                 0,
                 conv_shortcut_bias
             );
-    }
 
+    if (up) 
+        throw std::invalid_argument("'up': not implemented");
 
-    if (up) {
-        // TODO: Upsample2D
-    }
-
-    if (down) {
-        // TODO: Downsample2D
-    }
+    if (down)
+        throw std::invalid_argument("'down': not implemented");
 }
 
 
-Tensor ResnetBlock2D::forward(
-    ggml_context* ctx,
-    Tensor input_tensor,
-    std::optional<Tensor> temb
-)
-{
+template <class NonLinearity>
+Tensor ResnetBlock2D<NonLinearity>::forward(ggml_context* ctx, Tensor input_tensor, std::optional<Tensor> temb) {
     Tensor hidden_states = input_tensor;
-
 
     hidden_states =
         std::static_pointer_cast<GroupNorm>(
@@ -153,7 +120,6 @@ Tensor ResnetBlock2D::forward(
             hidden_states
         );
 
-
     hidden_states =
         std::static_pointer_cast<SiLU>(
             modules["nonlinearity"])
@@ -161,7 +127,6 @@ Tensor ResnetBlock2D::forward(
             ctx,
             hidden_states
         );
-
 
     hidden_states =
         std::static_pointer_cast<Conv2d>(
@@ -171,9 +136,7 @@ Tensor ResnetBlock2D::forward(
             hidden_states
         );
 
-
     if (use_temb_ && temb) {
-
         auto t =
             std::static_pointer_cast<SiLU>(
                 modules["nonlinearity"])
@@ -209,11 +172,9 @@ Tensor ResnetBlock2D::forward(
                 Tensor::Slice::none()
             }];
 
-
         hidden_states =
             hidden_states + t;
     }
-
 
     hidden_states =
         std::static_pointer_cast<GroupNorm>(
@@ -223,7 +184,6 @@ Tensor ResnetBlock2D::forward(
             hidden_states
         );
 
-
     hidden_states =
         std::static_pointer_cast<SiLU>(
             modules["nonlinearity"])
@@ -232,7 +192,6 @@ Tensor ResnetBlock2D::forward(
             hidden_states
         );
 
-
     hidden_states =
         std::static_pointer_cast<Conv2d>(
             modules["conv2"])
@@ -240,7 +199,6 @@ Tensor ResnetBlock2D::forward(
             ctx,
             hidden_states
         );
-
 
     /*
         Residual projection.
@@ -252,8 +210,7 @@ Tensor ResnetBlock2D::forward(
 
         conv_shortcut performs Cin -> Cout.
     */
-    if (use_in_shortcut_) {
-
+    if (use_in_shortcut_)
         input_tensor =
             std::static_pointer_cast<Conv2d>(
                 modules["conv_shortcut"])
@@ -261,8 +218,6 @@ Tensor ResnetBlock2D::forward(
                 ctx,
                 input_tensor
             );
-    }
-
 
     return (input_tensor + hidden_states) / output_scale_factor_;
 }

@@ -37,7 +37,7 @@ class TestNNResnetBlock2D(TestCase):
             "--param-conv2-bias", str(model.conv2.bias.tolist()),
         )
 
-        self.assertTensors(actual, [expected], rtol=2e-4, atol=2e-5)
+        self.assertTensors(actual, [expected])
 
     def test_channel_projection(self):
         model = ResnetBlock2D(
@@ -75,7 +75,7 @@ class TestNNResnetBlock2D(TestCase):
             "--param-conv_shortcut-bias", str(model.conv_shortcut.bias.tolist()),
         )
 
-        self.assertTensors(actual, [expected], rtol=2e-4, atol=2e-5)
+        self.assertTensors(actual, [expected])
 
     def test_with_temb(self):
         model = ResnetBlock2D(
@@ -116,4 +116,4 @@ class TestNNResnetBlock2D(TestCase):
             "--param-conv2-bias", str(model.conv2.bias.tolist()),
         )
 
-        self.assertTensors(actual, [expected], rtol=2e-4, atol=2e-5)
+        self.assertTensors(actual, [expected])

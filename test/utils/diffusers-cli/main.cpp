@@ -15,6 +15,7 @@
 #include "diffusers/models/attention_processor/Attention.hpp"
 
 #include "diffusers/models/unets/unet2d/UNetMidBlock2D.hpp"
+#include "diffusers/models/unets/unet2d/DownEncoderBlock2D.hpp"
 
 #include "diffusers/models/transformers/flux2/Flux2SwiGLU.hpp"
 #include "diffusers/models/transformers/flux2/Flux2FeedForward.hpp"
@@ -108,39 +109,34 @@ public:
             auto in_channels = args_.get_one<int64_t>("--in_channels");
             auto out_channels = args_.get_optional<int64_t>("--out_channels");
             auto conv_shortcut = args_.get_optional<int64_t>("--conv_shortcut");
-            auto dropout = args_.get_optional<float>("--dropout").value_or(0.0f);
             auto temb_channels = args_.get_optional<int64_t>("--temb_channels");
             auto groups = args_.get_optional<int64_t>("--groups").value_or(32);
             auto groups_out = args_.get_optional<int64_t>("--groups_out");
             auto eps = args_.get_optional<float>("--eps").value_or(1e-6f);
-            auto non_linearity = args_.get_optional<std::string>("--non_linearity").value_or("swish");
-            auto time_embedding_norm = args_.get_optional<std::string>("--time_embedding_norm").value_or("default");
-            auto kernel = args_.get_optional<int64_t>("--kernel").value_or(3);
+            auto kernel_size = args_.get_optional<int64_t>("--kernel_size").value_or(3);
             auto output_scale_factor = args_.get_optional<int64_t>("--output_scale_factor").value_or(1);
-            auto use_in_shortcut = args_.get_optional<bool>("--use_in_shortcut").value_or(false);
-            auto up = args_.get_optional<bool>("--up").value_or(false);
-            auto down = args_.get_optional<bool>("--down").value_or(false);
+            auto use_in_shortcut = args_.get_optional<bool>("--use_in_shortcut");
             auto conv_shortcut_bias = args_.get_optional<bool>("--conv_shortcut_bias").value_or(true);
-            auto conv_2d_out_channels = args_.get_optional<int64_t>("--conv_2d_out_channels").value_or(0);
+            auto conv_2d_out_channels = args_.get_optional<int64_t>("--conv_2d_out_channels");
             auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
             auto temb = args_.get_optional<Tensor>("--temb", {ctx, inputs_});
 
-            ResnetBlock2D model(
+            ResnetBlock2D<SiLU> model(
                 in_channels,
                 out_channels,
                 conv_shortcut,
-                dropout,
+                0.0f, // dropout
                 temb_channels,
                 groups,
                 groups_out,
+                true, // pre_norm
                 eps,
-                non_linearity,
-                time_embedding_norm,
-                kernel,
+                false, // skip_time_act
+                kernel_size,
                 output_scale_factor,
                 use_in_shortcut,
-                up,
-                down,
+                false, // down
+                false, // up
                 conv_shortcut_bias,
                 conv_2d_out_channels
             );
@@ -226,27 +222,28 @@ public:
 
         if (args_.get(0) == "UNetMidBlock2D") {
             auto in_channels = args_.get_one<int64_t>("--in_channels");
+            auto temb_channels = args_.get_optional<int64_t>("--temb_channels");
+            auto num_layers = args_.get_optional<int64_t>("--num_layers").value_or(1);
             auto resnet_eps = args_.get_optional<float>("--resnet_eps").value_or(1e-6);
-            auto resnet_act_fn = args_.get_optional<std::string>("--resnet_act_fn").value_or("silu");
             auto output_scale_factor = args_.get_optional<float>("--output_scale_factor").value_or(1.0f);
-            auto resnet_time_scale_shift = args_.get_optional<std::string>("--resnet_time_scale_shift").value_or("default");
             auto attention_head_dim = args_.get_optional<int64_t>("--attention_head_dim").value_or(1);
             auto resnet_groups = args_.get_optional<int64_t>("--resnet_groups").value_or(32);
-            auto temb_channels = args_.get_optional<int64_t>("--temb_channels");
             auto add_attention = args_.get_optional<bool>("--add_attention").value_or(true);
             auto sample = args_.get_one<Tensor>("--sample", {ctx, inputs_});
             auto temb = args_.get_optional<Tensor>("--temb", {ctx, inputs_});
 
             UNetMidBlock2D model(
                 in_channels,
-                resnet_eps,
-                resnet_act_fn,
-                output_scale_factor,
-                resnet_time_scale_shift,
-                attention_head_dim,
-                resnet_groups,
                 temb_channels,
-                add_attention
+                0.0f, // dropout
+                num_layers, 
+                resnet_eps,
+                resnet_groups,
+                std::nullopt, // attn_groups
+                true, // resnet_pre_norm
+                add_attention,
+                attention_head_dim,
+                output_scale_factor
             );
 
             CreateParametersVisitor create_parameters(ctx, inputs_, args_);
@@ -255,6 +252,38 @@ public:
             visitor.rethrow();
 
             return model.forward(*ctx, sample, temb);
+        }
+        
+        if (args_.get(0) == "DownEncoderBlock2D") {
+            auto in_channels = args_.get_one<int64_t>("--in_channels");
+            auto out_channels = args_.get_one<int64_t>("--out_channels");
+            auto num_layers = args_.get_optional<int64_t>("--num_layers").value_or(1);
+            auto resnet_eps = args_.get_optional<float>("--resnet_eps").value_or(1e-6);
+            auto resnet_groups = args_.get_optional<int64_t>("--resnet_groups").value_or(32);
+            auto output_scale_factor = args_.get_optional<float>("--output_scale_factor").value_or(1.0f);
+            auto add_downsample = args_.get_optional<bool>("--add_downsample").value_or(true);
+            auto downsample_padding = args_.get_optional<int64_t>("--downsample_padding").value_or(1);
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
+
+            DownEncoderBlock2D model(
+                in_channels,
+                out_channels,
+                0.0f, // dropout
+                num_layers,
+                resnet_eps,
+                resnet_groups,
+                true, // resnet_pre_norm
+                output_scale_factor,
+                add_downsample,
+                downsample_padding
+            );
+
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(*ctx, hidden_states);
         }
 
 

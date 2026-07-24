@@ -8,23 +8,20 @@
 class DownEncoderBlock2D : public Module {
 public:
     DownEncoderBlock2D(
-        int64_t num_layers,
         int64_t in_channels,
         int64_t out_channels,
-        bool add_downsample,
-        float resnet_eps,
-        const std::string& resnet_act_fn,
-        int64_t resnet_groups,
-        std::optional<int64_t> temb_channels = std::nullopt
+        float dropout = 0.0f,
+        int64_t num_layers = 1,
+        float resnet_eps = 1e-6,
+        int64_t resnet_groups = 32,
+        bool resnet_pre_norm = true,
+        float output_scale_factor = 1.0,
+        bool add_downsample = true,
+        int64_t downsample_padding = 1
     );
 
-    Tensor forward(
-        ggml_context* ctx,
-        Tensor hidden_states,
-        std::optional<Tensor> temb = std::nullopt
-    );
+    Tensor forward(ggml_context* ctx, Tensor hidden_states);
 
 private:
-    int64_t num_layers_;
     bool add_downsample_;
 };

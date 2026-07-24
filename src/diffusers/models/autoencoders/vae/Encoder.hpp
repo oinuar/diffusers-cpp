@@ -40,27 +40,32 @@ public:
 
             modules["down_blocks." + std::to_string(i)] =
                 std::make_shared<DownEncoderBlock2D>(
-                    layers_per_block,
-                    input_channel,
-                    output_channel,
-                    add_downsample,
-                    1e-6,
-                    "silu",
-                    norm_num_groups
+                    input_channel, // in_channels
+                    output_channel // out_channels
+
+                    //layers_per_block,
+                    //input_channel,
+                    //output_channel,
+                    //add_downsample,
+                    //1e-6,
+                    //"silu",
+                    //norm_num_groups
                 );
         }
 
         modules["mid_block"] =
             std::make_shared<UNetMidBlock2D>(
-                block_out_channels.back(),
-                1e-6,
-                "silu",
-                1.0f,
-                "default",
-                1,
-                norm_num_groups,
-                std::nullopt,
-                mid_block_add_attention
+                block_out_channels.back(), // in_channels
+                block_out_channels.back() // out_channels
+                //block_out_channels.back(),
+                //1e-6,
+                //"silu",
+                //1.0f,
+                //"default",
+                //1,
+                //norm_num_groups,
+                //std::nullopt,
+                //mid_block_add_attention
             );
 
 

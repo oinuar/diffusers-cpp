@@ -1,127 +1,89 @@
 #include "diffusers/models/unets/unet2d/UNetMidBlock2D.hpp"
-
+#include "nn/SiLU.hpp"
+#include "nn/ModuleList.hpp"
 #include "diffusers/models/resnet/ResnetBlock2D.hpp"
 #include "diffusers/models/attention_processor/Attention.hpp"
 #include "nn/attention/ScaledDotProductAttention.hpp"
 #include "nn/attention/FlashAttentionOp.hpp"
+#include <iostream>
 
 UNetMidBlock2D::UNetMidBlock2D(
     int64_t in_channels,
-    float resnet_eps,
-    const std::string& resnet_act_fn,
-    float output_scale_factor,
-    const std::string& resnet_time_scale_shift,
-    int64_t attention_head_dim,
-    int64_t resnet_groups,
     std::optional<int64_t> temb_channels,
-    bool add_attention
-)
-    : add_attention_(add_attention)
+    float dropout,
+    int64_t num_layers,
+    float resnet_eps,
+    int64_t resnet_groups,
+    std::optional<int64_t> attn_groups,
+    bool resnet_pre_norm,
+    bool add_attention,
+    int64_t attention_head_dim,
+    float output_scale_factor
+) : add_attention_(add_attention)
 {
-    modules["resnets.0"] =
-        std::make_shared<ResnetBlock2D>(
-            /* in_channels           */ in_channels,
-            /* out_channels          */ in_channels,
-            /* conv_shortcut         */ std::nullopt,
-            /* dropout               */ 0.0f,
-            /* temb_channels         */ temb_channels,
-            /* groups                */ resnet_groups,
-            /* groups_out            */ std::nullopt,
-            /* eps                   */ resnet_eps,
-            /* non_linearity         */ resnet_act_fn,
-            /* time_embedding_norm   */ resnet_time_scale_shift,
-            /* kernel                */ 3,
-            /* output_scale_factor   */ output_scale_factor,
-            /* use_in_shortcut       */ false,
-            /* up                    */ false,
-            /* down                  */ false,
-            /* conv_shortcut_bias    */ true,
-            /* conv_2d_out_channels  */ 0
+    // there is always at least one resnet
+    auto resnets = std::make_shared<ModuleList>(num_layers + 1);
+    modules["resnets"] = resnets;
+
+    auto attentions = std::make_shared<ModuleList>(num_layers);
+    modules["attentions"] = attentions;
+
+    for (auto i = 0; i < resnets->size(); ++i) {
+        if (i > 0 && add_attention) {
+            auto heads = in_channels / attention_head_dim;
+
+            (*attentions)[i - 1] =
+                std::make_shared<Attention<ScaledDotProductAttention<FlashAttentionOp>>>(
+                    in_channels, // query_dim
+                    in_channels / attention_head_dim, // heads
+                    attention_head_dim, // dim_head
+                    0.0f,       // dropout
+                    true,        // bias
+                    true,        // residual_connection
+                    resnet_groups, // norm_num_groups
+                    resnet_eps,   // 1e-6
+                    output_scale_factor, // 1.0
+                    true          // upcast_softmax
+                );
+        }
+
+        //if resnet_time_scale_shift == "spatial":
+        //else:
+        (*resnets)[i] = std::make_shared<ResnetBlock2D<SiLU>>(
+            in_channels,
+            in_channels, // out_channels
+            std::nullopt, // conv_shortcut
+            0.0f, // dropout
+            temb_channels,
+            resnet_groups, // groups
+            std::nullopt, // groups_out
+            true, // per_norm
+            resnet_eps, // eps
+            false, // skip_time_act
+            3, // kernel_size
+            output_scale_factor,
+            std::nullopt, // use_in_shortcut
+            false, // up
+            false, // down
+            true, // conv_shortcut_bias
+            std::nullopt // conv_2d_out_channels
         );
-
-    if (add_attention) {
-        int64_t heads = in_channels / attention_head_dim;
-
-        modules["attentions.0"] =
-            std::make_shared<Attention<ScaledDotProductAttention<FlashAttentionOp>>>(
-                in_channels,
-                in_channels / attention_head_dim,
-                attention_head_dim,
-
-                0.0f,       // dropout
-
-                true,        // qkv bias
-                true,        // residual_connection
-
-                resnet_groups, // norm_num_groups = attn_groups
-
-                resnet_eps,   // 1e-6
-
-                output_scale_factor, // 1.0
-
-                true          // upcast_softmax
-            );
     }
-
-    modules["resnets.1"] =
-        std::make_shared<ResnetBlock2D>(
-            /* in_channels           */ in_channels,
-            /* out_channels          */ in_channels,
-            /* conv_shortcut         */ std::nullopt,
-            /* dropout               */ 0.0f,
-            /* temb_channels         */ temb_channels,
-            /* groups                */ resnet_groups,
-            /* groups_out            */ std::nullopt,
-            /* eps                   */ resnet_eps,
-            /* non_linearity         */ resnet_act_fn,
-            /* time_embedding_norm   */ resnet_time_scale_shift,
-            /* kernel                */ 3,
-            /* output_scale_factor   */ output_scale_factor,
-            /* use_in_shortcut       */ false,
-            /* up                    */ false,
-            /* down                  */ false,
-            /* conv_shortcut_bias    */ true,
-            /* conv_2d_out_channels  */ 0
-        );
 }
 
-Tensor UNetMidBlock2D::forward(
-    ggml_context* ctx,
-    Tensor sample,
-    std::optional<Tensor> temb
-)
-{
-    // 1. First ResNet block
-    sample =
-        std::static_pointer_cast<ResnetBlock2D>(
-            modules["resnets.0"])
-        ->forward(
-            ctx,
-            sample,
-            temb
-        );
+Tensor UNetMidBlock2D::forward(ggml_context* ctx, Tensor hidden_states, std::optional<Tensor> temb) {
+    auto resnets = std::static_pointer_cast<ModuleList>(modules["resnets"]);
 
-    // 2. Attention block (if enabled)
-    if (add_attention_) {
-        sample =
-            std::static_pointer_cast<
-                Attention<ScaledDotProductAttention<FlashAttentionOp>>
-            >(modules["attentions.0"])
-            ->forward(
-                ctx,
-                sample
-            );
+    for (auto i = 0; i < resnets->size(); ++i) {
+        if (i > 0 && add_attention_) {
+            auto attentions = std::static_pointer_cast<ModuleList>(modules["attentions"]);
+
+            hidden_states = std::static_pointer_cast<Attention<ScaledDotProductAttention<FlashAttentionOp>>>((*attentions)[i - 1])
+                ->forward(ctx, hidden_states);
+        }
+
+        hidden_states = std::static_pointer_cast<ResnetBlock2D<SiLU>>((*resnets)[i])->forward(ctx, hidden_states, temb);
     }
 
-    // 3. Second ResNet block
-    sample =
-        std::static_pointer_cast<ResnetBlock2D>(
-            modules["resnets.1"])
-        ->forward(
-            ctx,
-            sample,
-            temb
-        );
-
-    return sample;
+    return hidden_states;
 }

@@ -60,17 +60,18 @@ public:
         */
         modules["mid_block"] =
             std::make_shared<UNetMidBlock2D>(
-                block_out_channels.back(),
-                1e-6,
-                act_fn,
-                1.0f,
-                norm_type == "group" ? "default" : norm_type,
-                block_out_channels.back(),
-                norm_num_groups,
-                temb_channels,
-                mid_block_add_attention
+                block_out_channels.back(), // in_channels,
+                *temb_channels,
+                0.0f, // dropout
+                1, // num_layers
+                1e-6, // resnet_eps
+                norm_num_groups, // resnet_groups
+                std::nullopt, // attn_groups
+                true, // resnet_pre_norm
+                mid_block_add_attention, // add_attention = true,
+                block_out_channels.back(), // attention_head_dim
+                1.0f // output_scale_factor
             );
-
 
         /*
         reversed_block_out_channels = reversed(block_out_channels)
@@ -108,20 +109,19 @@ public:
             */
             modules["up_blocks." + std::to_string(i)] =
                 std::make_shared<UpDecoderBlock2D>(
-                    layers_per_block + 1,
-                    prev_output_channel,
-                    output_channel,
-                    prev_output_channel,
-                    !is_final_block,
-                    1e-6,
-                    act_fn,
-                    norm_num_groups,
-                    output_channel,
-                    temb_channels,
-                    norm_type
+                    prev_output_channel, // in_channels
+                    output_channel, // out_channels
+                    std::nullopt, // resolution_idx
+                    0.0f, // dropout
+                    layers_per_block + 1, // num_layers
+                    1e-6, // resnet_eps
+                    norm_num_groups, // resnet_groups
+                    true, // resnet_pre_norm
+                    1.0f, // output_scale_factor
+                    !is_final_block, // add_upsample
+                    temb_channels
                 );
         }
-
 
         /*
         if norm_type == "spatial":

@@ -20,15 +20,13 @@ DownEncoderBlock2D::DownEncoderBlock2D(
     auto resnets = std::make_shared<ModuleList>(num_layers);
     modules["resnets"] = resnets;
 
-    auto channels = in_channels;
-
-    // if resnet_time_scale_shift == "spatial":
-    // else:
     for (auto i = 0; i < resnets->size(); ++i) {
-        channels = i == 0 ? channels : out_channels;
+        auto input_channels = i == 0 ? in_channels : out_channels;
 
+        // if resnet_time_scale_shift == "spatial":
+        // else:
         (*resnets)[i] = std::make_shared<ResnetBlock2D<SiLU>>(
-            channels, // in_channels
+            input_channels, // in_channels
             out_channels,
             std::nullopt, // conv_shortcut
             0.0f, // dropout

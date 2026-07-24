@@ -16,6 +16,7 @@
 
 #include "diffusers/models/unets/unet2d/UNetMidBlock2D.hpp"
 #include "diffusers/models/unets/unet2d/DownEncoderBlock2D.hpp"
+#include "diffusers/models/unets/unet2d/UpDecoderBlock2D.hpp"
 
 #include "diffusers/models/transformers/flux2/Flux2SwiGLU.hpp"
 #include "diffusers/models/transformers/flux2/Flux2FeedForward.hpp"
@@ -284,6 +285,40 @@ public:
 
             return model.forward(*ctx, hidden_states);
         }
+
+        if (args_.get(0) == "UpDecoderBlock2D") {
+            auto in_channels = args_.get_one<int64_t>("--in_channels");
+            auto out_channels = args_.get_one<int64_t>("--out_channels");
+            auto num_layers = args_.get_optional<int64_t>("--num_layers").value_or(1);
+            auto resnet_groups = args_.get_optional<int64_t>("--resnet_groups").value_or(32);
+            auto output_scale_factor = args_.get_optional<float>("--output_scale_factor").value_or(1.0f);
+            auto add_upsample = args_.get_optional<bool>("--add_upsample").value_or(true);
+            auto temb_channels = args_.get_optional<int64_t>("--temb_channels");
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
+            auto temb = args_.get_optional<Tensor>("--temb", {ctx, inputs_});
+
+            UpDecoderBlock2D model(
+                in_channels,
+                out_channels,
+                std::nullopt, // resolution_idx
+                0.0f, // dropout
+                num_layers,
+                1e-6, // resnet_eps
+                resnet_groups,
+                true, // resnet_pre_norm
+                output_scale_factor,
+                add_upsample,
+                temb_channels
+            );
+
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(*ctx, hidden_states, temb);
+        }
+
 
 
         if (args_.get(0) == "Flux2SwiGLU") {

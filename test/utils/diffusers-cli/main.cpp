@@ -258,7 +258,6 @@ public:
             auto in_channels = args_.get_one<int64_t>("--in_channels");
             auto out_channels = args_.get_one<int64_t>("--out_channels");
             auto num_layers = args_.get_optional<int64_t>("--num_layers").value_or(1);
-            auto resnet_eps = args_.get_optional<float>("--resnet_eps").value_or(1e-6);
             auto resnet_groups = args_.get_optional<int64_t>("--resnet_groups").value_or(32);
             auto output_scale_factor = args_.get_optional<float>("--output_scale_factor").value_or(1.0f);
             auto add_downsample = args_.get_optional<bool>("--add_downsample").value_or(true);
@@ -270,7 +269,7 @@ public:
                 out_channels,
                 0.0f, // dropout
                 num_layers,
-                resnet_eps,
+                1e-6, // resnet_eps
                 resnet_groups,
                 true, // resnet_pre_norm
                 output_scale_factor,

@@ -20,12 +20,7 @@ class TestNNSpatialNorm(TestCase):
             "--zq_channels", "3",
             "--f", str(f.tolist()),
             "--zq", str(zq.tolist()),
-            "--param-norm_layer-weight", str(model.norm_layer.weight.tolist()),
-            "--param-norm_layer-bias", str(model.norm_layer.bias.tolist()),
-            "--param-conv_y-weight", str(model.conv_y.weight.tolist()),
-            "--param-conv_y-bias", str(model.conv_y.bias.tolist()),
-            "--param-conv_b-weight", str(model.conv_b.weight.tolist()),
-            "--param-conv_b-bias", str(model.conv_b.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -47,12 +42,7 @@ class TestNNSpatialNorm(TestCase):
             "--zq_channels", "3",
             "--f", str(f.tolist()),
             "--zq", str(zq.tolist()),
-            "--param-norm_layer-weight", str(model.norm_layer.weight.tolist()),
-            "--param-norm_layer-bias", str(model.norm_layer.bias.tolist()),
-            "--param-conv_y-weight", str(model.conv_y.weight.tolist()),
-            "--param-conv_y-bias", str(model.conv_y.bias.tolist()),
-            "--param-conv_b-weight", str(model.conv_b.weight.tolist()),
-            "--param-conv_b-bias", str(model.conv_b.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])

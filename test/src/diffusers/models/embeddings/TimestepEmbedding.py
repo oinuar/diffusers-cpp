@@ -18,10 +18,7 @@ class TestNNTimestepEmbedding(TestCase):
             "--in_channels", "8",
             "--time_embed_dim", "4",
             "--sample", str(sample.tolist()),
-            "--param-linear_1-weight", str(model.linear_1.weight.tolist()),
-            "--param-linear_1-bias", str(model.linear_1.bias.tolist()),
-            "--param-linear_2-weight", str(model.linear_2.weight.tolist()),
-            "--param-linear_2-bias", str(model.linear_2.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -45,11 +42,7 @@ class TestNNTimestepEmbedding(TestCase):
             "--cond_proj_dim", "2",
             "--sample", str(sample.tolist()),
             "--condition", str(condition.tolist()),
-            "--param-linear_1-weight", str(model.linear_1.weight.tolist()),
-            "--param-linear_1-bias", str(model.linear_1.bias.tolist()),
-            "--param-linear_2-weight", str(model.linear_2.weight.tolist()),
-            "--param-linear_2-bias", str(model.linear_2.bias.tolist()),
-            "--param-cond_proj-weight", str(model.cond_proj.weight.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])

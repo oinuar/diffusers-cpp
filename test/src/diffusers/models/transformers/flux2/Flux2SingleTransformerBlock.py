@@ -22,18 +22,12 @@ class TestFlux2SingleTransformerBlock(TestCase):
 
         actual = self.cli(
             "Flux2SingleTransformerBlock",
-
             "--dim", "8",
             "--num_attention_heads", "2",
             "--attention_head_dim", "4",
-
             "--hidden_states", str(hidden_states.tolist()),
             "--temb_mod", str(temb_mod.tolist()),
-
-            "--param-attn-to_qkv_mlp_proj-weight", str(model.attn.to_qkv_mlp_proj.weight.tolist()),
-            "--param-attn-norm_q-weight", str(model.attn.norm_q.weight.tolist()),
-            "--param-attn-norm_k-weight", str(model.attn.norm_k.weight.tolist()),
-            "--param-attn-to_out-weight", str(model.attn.to_out.weight.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -58,21 +52,14 @@ class TestFlux2SingleTransformerBlock(TestCase):
 
         actual = self.cli(
             "Flux2SingleTransformerBlock",
-
             "--dim", "8",
             "--num_attention_heads", "2",
             "--attention_head_dim", "4",
-
             "--hidden_states", str(hidden_states.tolist()),
             "--encoder_hidden_states", str(encoder_hidden_states.tolist()),
             "--temb_mod", str(temb_mod.tolist()),
-
             "--split_hidden_states", "true",
-
-            "--param-attn-to_qkv_mlp_proj-weight", str(model.attn.to_qkv_mlp_proj.weight.tolist()),
-            "--param-attn-norm_q-weight", str(model.attn.norm_q.weight.tolist()),
-            "--param-attn-norm_k-weight", str(model.attn.norm_k.weight.tolist()),
-            "--param-attn-to_out-weight", str(model.attn.to_out.weight.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, list(expected))

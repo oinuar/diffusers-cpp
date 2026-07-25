@@ -19,8 +19,6 @@ public:
         bool double_z = true,
         bool mid_block_add_attention = true
     ) {
-        this->layers_per_block = layers_per_block;
-
         modules["conv_in"] =
             std::make_shared<Conv2d>(
                 in_channels,

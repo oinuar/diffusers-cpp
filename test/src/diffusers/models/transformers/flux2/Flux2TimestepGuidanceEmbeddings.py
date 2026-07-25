@@ -20,14 +20,7 @@ class TestFlux2TimestepGuidanceEmbeddings(TestCase):
             "--embedding_dim", "8",
             "--timestep", str(timestep.tolist()),
             "--guidance", str(guidance.tolist()),
-            "--param-timestep_embedder-linear_1-weight", str(model.timestep_embedder.linear_1.weight.tolist()),
-            #"--param-timestep_embedder-linear_1-bias", str(model.timestep_embedder.linear_1.bias.tolist()),
-            "--param-timestep_embedder-linear_2-weight", str(model.timestep_embedder.linear_2.weight.tolist()),
-            #"--param-timestep_embedder-linear_2-bias", str(model.timestep_embedder.linear_2.bias.tolist()),
-            "--param-guidance_embedder-linear_1-weight", str(model.guidance_embedder.linear_1.weight.tolist()),
-            #"--param-guidance_embedder-linear_1-bias", str(model.guidance_embedder.linear_1.bias.tolist()),
-            "--param-guidance_embedder-linear_2-weight", str(model.guidance_embedder.linear_2.weight.tolist()),
-            #"--param-guidance_embedder-linear_2-bias", str(model.guidance_embedder.linear_2.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])

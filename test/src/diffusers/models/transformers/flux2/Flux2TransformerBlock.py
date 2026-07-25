@@ -29,33 +29,11 @@ class TestFlux2TransformerBlock(TestCase):
             "--dim", "8",
             "--num_attention_heads", "2",
             "--attention_head_dim", "4",
-
             "--hidden_states", str(hidden_states.tolist()),
             "--encoder_hidden_states", str(encoder_hidden_states.tolist()),
             "--temb_mod_img", str(temb_mod_img.tolist()),
             "--temb_mod_txt", str(temb_mod_txt.tolist()),
-
-            "--param-attn-to_q-weight", str(model.attn.to_q.weight.tolist()),
-            "--param-attn-to_k-weight", str(model.attn.to_k.weight.tolist()),
-            "--param-attn-to_v-weight", str(model.attn.to_v.weight.tolist()),
-
-            "--param-attn-norm_q-weight", str(model.attn.norm_q.weight.tolist()),
-            "--param-attn-norm_k-weight", str(model.attn.norm_k.weight.tolist()),
-
-            "--param-attn-to_out-0-weight", str(model.attn.to_out[0].weight.tolist()),
-
-            "--param-attn-norm_added_q-weight", str(model.attn.norm_added_q.weight.tolist()),
-            "--param-attn-norm_added_k-weight", str(model.attn.norm_added_k.weight.tolist()),
-            "--param-attn-add_q_proj-weight", str(model.attn.add_q_proj.weight.tolist()),
-            "--param-attn-add_k_proj-weight", str(model.attn.add_k_proj.weight.tolist()),
-            "--param-attn-add_v_proj-weight", str(model.attn.add_v_proj.weight.tolist()),
-            "--param-attn-to_add_out-weight", str(model.attn.to_add_out.weight.tolist()),
-
-            "--param-ff-linear_in-weight", str(model.ff.linear_in.weight.tolist()),
-            "--param-ff-linear_out-weight", str(model.ff.linear_out.weight.tolist()),
-
-            "--param-ff_context-linear_in-weight", str(model.ff_context.linear_in.weight.tolist()),
-            "--param-ff_context-linear_out-weight", str(model.ff_context.linear_out.weight.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, list(expected))
@@ -87,45 +65,11 @@ class TestFlux2TransformerBlock(TestCase):
             "--num_attention_heads", "2",
             "--attention_head_dim", "4",
             "--bias", "true",
-
             "--hidden_states", str(hidden_states.tolist()),
             "--encoder_hidden_states", str(encoder_hidden_states.tolist()),
             "--temb_mod_img", str(temb_mod_img.tolist()),
             "--temb_mod_txt", str(temb_mod_txt.tolist()),
-
-            "--param-attn-to_q-weight", str(model.attn.to_q.weight.tolist()),
-            "--param-attn-to_q-bias", str(model.attn.to_q.bias.tolist()),
-            "--param-attn-to_k-weight", str(model.attn.to_k.weight.tolist()),
-            "--param-attn-to_k-bias", str(model.attn.to_k.bias.tolist()),
-            "--param-attn-to_v-weight", str(model.attn.to_v.weight.tolist()),
-            "--param-attn-to_v-bias", str(model.attn.to_v.bias.tolist()),
-
-            "--param-attn-norm_q-weight", str(model.attn.norm_q.weight.tolist()),
-            "--param-attn-norm_k-weight", str(model.attn.norm_k.weight.tolist()),
-
-            "--param-attn-to_out-0-weight", str(model.attn.to_out[0].weight.tolist()),
-            "--param-attn-to_out-0-bias", str(model.attn.to_out[0].bias.tolist()),
-
-            "--param-attn-norm_added_q-weight", str(model.attn.norm_added_q.weight.tolist()),
-            "--param-attn-norm_added_k-weight", str(model.attn.norm_added_k.weight.tolist()),
-            "--param-attn-add_q_proj-weight", str(model.attn.add_q_proj.weight.tolist()),
-            "--param-attn-add_q_proj-bias", str(model.attn.add_q_proj.bias.tolist()),
-            "--param-attn-add_k_proj-weight", str(model.attn.add_k_proj.weight.tolist()),
-            "--param-attn-add_k_proj-bias", str(model.attn.add_k_proj.bias.tolist()),
-            "--param-attn-add_v_proj-weight", str(model.attn.add_v_proj.weight.tolist()),
-            "--param-attn-add_v_proj-bias", str(model.attn.add_v_proj.bias.tolist()),
-            "--param-attn-to_add_out-weight", str(model.attn.to_add_out.weight.tolist()),
-            "--param-attn-to_add_out-bias", str(model.attn.to_add_out.bias.tolist()),
-
-            "--param-ff-linear_in-weight", str(model.ff.linear_in.weight.tolist()),
-            "--param-ff-linear_in-bias", str(model.ff.linear_in.bias.tolist()),
-            "--param-ff-linear_out-weight", str(model.ff.linear_out.weight.tolist()),
-            "--param-ff-linear_out-bias", str(model.ff.linear_out.bias.tolist()),
-
-            "--param-ff_context-linear_in-weight", str(model.ff_context.linear_in.weight.tolist()),
-            "--param-ff_context-linear_in-bias", str(model.ff_context.linear_in.bias.tolist()),
-            "--param-ff_context-linear_out-weight", str(model.ff_context.linear_out.weight.tolist()),
-            "--param-ff_context-linear_out-bias", str(model.ff_context.linear_out.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, list(expected))
@@ -155,33 +99,11 @@ class TestFlux2TransformerBlock(TestCase):
             "--dim", "8",
             "--num_attention_heads", "2",
             "--attention_head_dim", "4",
-
             "--hidden_states", str(hidden_states.tolist()),
             "--encoder_hidden_states", str(encoder_hidden_states.tolist()),
             "--temb_mod_img", str(temb_mod_img.tolist()),
             "--temb_mod_txt", str(temb_mod_txt.tolist()),
-
-            "--param-attn-to_q-weight", str(model.attn.to_q.weight.tolist()),
-            "--param-attn-to_k-weight", str(model.attn.to_k.weight.tolist()),
-            "--param-attn-to_v-weight", str(model.attn.to_v.weight.tolist()),
-
-            "--param-attn-norm_q-weight", str(model.attn.norm_q.weight.tolist()),
-            "--param-attn-norm_k-weight", str(model.attn.norm_k.weight.tolist()),
-
-            "--param-attn-to_out-0-weight", str(model.attn.to_out[0].weight.tolist()),
-
-            "--param-attn-norm_added_q-weight", str(model.attn.norm_added_q.weight.tolist()),
-            "--param-attn-norm_added_k-weight", str(model.attn.norm_added_k.weight.tolist()),
-            "--param-attn-add_q_proj-weight", str(model.attn.add_q_proj.weight.tolist()),
-            "--param-attn-add_k_proj-weight", str(model.attn.add_k_proj.weight.tolist()),
-            "--param-attn-add_v_proj-weight", str(model.attn.add_v_proj.weight.tolist()),
-            "--param-attn-to_add_out-weight", str(model.attn.to_add_out.weight.tolist()),
-
-            "--param-ff-linear_in-weight", str(model.ff.linear_in.weight.tolist()),
-            "--param-ff-linear_out-weight", str(model.ff.linear_out.weight.tolist()),
-
-            "--param-ff_context-linear_in-weight", str(model.ff_context.linear_in.weight.tolist()),
-            "--param-ff_context-linear_out-weight", str(model.ff_context.linear_out.weight.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, list(expected))

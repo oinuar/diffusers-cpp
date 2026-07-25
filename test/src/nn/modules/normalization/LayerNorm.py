@@ -13,8 +13,7 @@ class TestNNNormalizationLayerNorm(TestCase):
             'LayerNorm',
             '--dim', '3',
             '--x', str(x.tolist()),
-            '--param-weight', str(model.weight.tolist()),
-            '--param-bias', str(model.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -30,6 +29,7 @@ class TestNNNormalizationLayerNorm(TestCase):
             '--dim', '3',
             '--elementwise_affine', 'false',
             '--x', str(x.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])

@@ -16,7 +16,7 @@ class TestFlux2Modulation(TestCase):
             "Flux2Modulation",
             "--dim", "8",
             "--temb", str(temb.tolist()),
-            "--param-linear-weight", str(model.linear.weight.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -36,8 +36,7 @@ class TestFlux2Modulation(TestCase):
             "--dim", "8",
             "--bias", "true",
             "--temb", str(temb.tolist()),
-            "--param-linear-weight", str(model.linear.weight.tolist()),
-            "--param-linear-bias", str(model.linear.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])

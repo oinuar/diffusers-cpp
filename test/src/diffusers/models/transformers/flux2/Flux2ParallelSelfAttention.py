@@ -21,16 +21,8 @@ class TestFlux2ParallelSelfAttention(TestCase):
             "--query_dim", "8",
             "--heads", "2",
             "--dim_head", "4",
-
             "--hidden_states", str(hidden_states.tolist()),
-
-            "--param-to_qkv_mlp_proj-weight", str(model.to_qkv_mlp_proj.weight.tolist()),
-
-            "--param-norm_q-weight", str(model.norm_q.weight.tolist()),
-            "--param-norm_k-weight", str(model.norm_k.weight.tolist()),
-            
-            "--param-to_out-weight", str(model.to_out.weight.tolist()),
-            "--param-to_out-bias", str(model.to_out.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])

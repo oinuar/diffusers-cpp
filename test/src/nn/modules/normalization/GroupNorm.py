@@ -20,8 +20,7 @@ class TestNNNormalizationGroupNorm(TestCase):
             "--num_channels", "4",
             "--eps", "1e-6",
             "--input", str(input.tolist()),
-            "--param-weight", str(model.weight.tolist()),
-            "--param-bias", str(model.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -43,8 +42,7 @@ class TestNNNormalizationGroupNorm(TestCase):
             "--num_channels", "8",
             "--eps", "1e-6",
             "--input", str(input.tolist()),
-            "--param-weight", str(model.weight.tolist()),
-            "--param-bias", str(model.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -68,6 +66,7 @@ class TestNNNormalizationGroupNorm(TestCase):
             "--eps", "1e-6",
             "--affine", "false",
             "--input", str(input.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -91,7 +90,7 @@ class TestNNNormalizationGroupNorm(TestCase):
             "--eps", "1e-6",
             "--bias", "false",
             "--input", str(input.tolist()),
-            "--param-weight", str(model.weight.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])

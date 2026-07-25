@@ -18,8 +18,7 @@ class TestFlux2FeedForward(TestCase):
             "--dim", "8",
             "--dim_out", "8",
             "--x", str(x.tolist()),
-            "--param-linear_in-weight", str(model.linear_in.weight.tolist()),
-            "--param-linear_out-weight", str(model.linear_out.weight.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -39,8 +38,7 @@ class TestFlux2FeedForward(TestCase):
             "--dim", "8",
             "--dim_out", "12",
             "--x", str(x.tolist()),
-            "--param-linear_in-weight", str(model.linear_in.weight.tolist()),
-            "--param-linear_out-weight", str(model.linear_out.weight.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -62,10 +60,7 @@ class TestFlux2FeedForward(TestCase):
             "--dim_out", "8",
             "--bias", "true",
             "--x", str(x.tolist()),
-            "--param-linear_in-weight", str(model.linear_in.weight.tolist()),
-            "--param-linear_in-bias", str(model.linear_in.bias.tolist()),
-            "--param-linear_out-weight", str(model.linear_out.weight.tolist()),
-            "--param-linear_out-bias", str(model.linear_out.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])

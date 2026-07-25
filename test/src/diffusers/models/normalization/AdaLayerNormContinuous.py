@@ -20,10 +20,7 @@ class TestNNAdaLayerNormContinuous(TestCase):
             '--conditioning_embedding_dim', '4',
             '--hidden_states', str(hidden_states.tolist()),
             '--conditioning_embedding', str(conditioning_embedding.tolist()),
-            '--param-linear-weight', str(model.linear.weight.tolist()),
-            '--param-linear-bias', str(model.linear.bias.tolist()),
-            '--param-norm-weight', str(model.norm.weight.tolist()),
-            '--param-norm-bias', str(model.norm.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])

@@ -23,18 +23,7 @@ class TestNNResnetBlock2D(TestCase):
             "--out_channels", "8",
             "--groups", "8",
             "--hidden_states", str(hidden_states.tolist()),
-
-            "--param-norm1-weight", str(model.norm1.weight.tolist()),
-            "--param-norm1-bias", str(model.norm1.bias.tolist()),
-
-            "--param-conv1-weight", str(model.conv1.weight.tolist()),
-            "--param-conv1-bias", str(model.conv1.bias.tolist()),
-
-            "--param-norm2-weight", str(model.norm2.weight.tolist()),
-            "--param-norm2-bias", str(model.norm2.bias.tolist()),
-
-            "--param-conv2-weight", str(model.conv2.weight.tolist()),
-            "--param-conv2-bias", str(model.conv2.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -58,21 +47,7 @@ class TestNNResnetBlock2D(TestCase):
             "--out_channels", "16",
             "--groups", "8",
             "--hidden_states", str(hidden_states.tolist()),
-
-            "--param-norm1-weight", str(model.norm1.weight.tolist()),
-            "--param-norm1-bias", str(model.norm1.bias.tolist()),
-
-            "--param-conv1-weight", str(model.conv1.weight.tolist()),
-            "--param-conv1-bias", str(model.conv1.bias.tolist()),
-
-            "--param-norm2-weight", str(model.norm2.weight.tolist()),
-            "--param-norm2-bias", str(model.norm2.bias.tolist()),
-
-            "--param-conv2-weight", str(model.conv2.weight.tolist()),
-            "--param-conv2-bias", str(model.conv2.bias.tolist()),
-
-            "--param-conv_shortcut-weight", str(model.conv_shortcut.weight.tolist()),
-            "--param-conv_shortcut-bias", str(model.conv_shortcut.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -99,21 +74,7 @@ class TestNNResnetBlock2D(TestCase):
             "--temb_channels", "16",
             "--hidden_states", str(hidden_states.tolist()),
             "--temb", str(temb.tolist()),
-
-            "--param-norm1-weight", str(model.norm1.weight.tolist()),
-            "--param-norm1-bias", str(model.norm1.bias.tolist()),
-
-            "--param-conv1-weight", str(model.conv1.weight.tolist()),
-            "--param-conv1-bias", str(model.conv1.bias.tolist()),
-
-            "--param-time_emb_proj-weight", str(model.time_emb_proj.weight.tolist()),
-            "--param-time_emb_proj-bias", str(model.time_emb_proj.bias.tolist()),
-
-            "--param-norm2-weight", str(model.norm2.weight.tolist()),
-            "--param-norm2-bias", str(model.norm2.bias.tolist()),
-
-            "--param-conv2-weight", str(model.conv2.weight.tolist()),
-            "--param-conv2-bias", str(model.conv2.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])

@@ -24,11 +24,7 @@ class TestNN_Attention(TestCase):
             "--heads", "1",
             "--dim_head", "8",
             "--hidden_states", str(hidden_states.tolist()),
-            "--param-to_q-weight", str(model.to_q.weight.tolist()),
-            "--param-to_k-weight", str(model.to_k.weight.tolist()),
-            "--param-to_v-weight", str(model.to_v.weight.tolist()),
-            "--param-to_out.0-weight", str(model.to_out[0].weight.tolist()),
-            "--param-to_out.0-bias", str(model.to_out[0].bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -54,11 +50,7 @@ class TestNN_Attention(TestCase):
             "--heads", "4",
             "--dim_head", "4",
             "--hidden_states", str(hidden_states.tolist()),
-            "--param-to_q-weight", str(model.to_q.weight.tolist()),
-            "--param-to_k-weight", str(model.to_k.weight.tolist()),
-            "--param-to_v-weight", str(model.to_v.weight.tolist()),
-            "--param-to_out.0-weight", str(model.to_out[0].weight.tolist()),
-            "--param-to_out.0-bias", str(model.to_out[0].bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -84,11 +76,7 @@ class TestNN_Attention(TestCase):
             "--heads", "1",
             "--dim_head", "4",
             "--hidden_states", str(hidden_states.tolist()),
-            "--param-to_q-weight", str(model.to_q.weight.tolist()),
-            "--param-to_k-weight", str(model.to_k.weight.tolist()),
-            "--param-to_v-weight", str(model.to_v.weight.tolist()),
-            "--param-to_out.0-weight", str(model.to_out[0].weight.tolist()),
-            "--param-to_out.0-bias", str(model.to_out[0].bias.tolist()),
+            *self.params(model),
        )
 
         self.assertTensors(actual, [expected])
@@ -115,11 +103,7 @@ class TestNN_Attention(TestCase):
             "--heads", "1",
             "--dim_head", "8",
             "--hidden_states", str(hidden_states.tolist()),
-            "--param-to_q-weight", str(model.to_q.weight.tolist()),
-            "--param-to_k-weight", str(model.to_k.weight.tolist()),
-            "--param-to_v-weight", str(model.to_v.weight.tolist()),
-            "--param-to_out.0-weight", str(model.to_out[0].weight.tolist()),
-            "--param-to_out.0-bias", str(model.to_out[0].bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -148,11 +132,7 @@ class TestNN_Attention(TestCase):
             "--dim_head", "8",
             "--residual_connection", "true",
             "--hidden_states", str(hidden_states.tolist()),
-            "--param-to_q-weight", str(model.to_q.weight.tolist()),
-            "--param-to_k-weight", str(model.to_k.weight.tolist()),
-            "--param-to_v-weight", str(model.to_v.weight.tolist()),
-            "--param-to_out.0-weight", str(model.to_out[0].weight.tolist()),
-            "--param-to_out.0-bias", str(model.to_out[0].bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -183,14 +163,7 @@ class TestNN_Attention(TestCase):
             "--bias", "true",
             "--out_bias", "true",
             "--hidden_states", str(hidden_states.tolist()),
-            "--param-to_q-weight", str(model.to_q.weight.tolist()),
-            "--param-to_q-bias", str(model.to_q.bias.tolist()),
-            "--param-to_k-weight", str(model.to_k.weight.tolist()),
-            "--param-to_k-bias", str(model.to_k.bias.tolist()),
-            "--param-to_v-weight", str(model.to_v.weight.tolist()),
-            "--param-to_v-bias", str(model.to_v.bias.tolist()),
-            "--param-to_out.0-weight", str(model.to_out[0].weight.tolist()),
-            "--param-to_out.0-bias", str(model.to_out[0].bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -221,14 +194,7 @@ class TestNN_Attention(TestCase):
             "--bias", "true",
             "--out_bias", "true",
             "--hidden_states", str(hidden_states.tolist()),
-            "--param-to_q-weight", str(model.to_q.weight.tolist()),
-            "--param-to_q-bias", str(model.to_q.bias.tolist()),
-            "--param-to_k-weight", str(model.to_k.weight.tolist()),
-            "--param-to_k-bias", str(model.to_k.bias.tolist()),
-            "--param-to_v-weight", str(model.to_v.weight.tolist()),
-            "--param-to_v-bias", str(model.to_v.bias.tolist()),
-            "--param-to_out.0-weight", str(model.to_out[0].weight.tolist()),
-            "--param-to_out.0-bias", str(model.to_out[0].bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])

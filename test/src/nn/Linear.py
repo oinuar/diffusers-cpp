@@ -14,8 +14,7 @@ class TestNNLinear(TestCase):
             '--in_features', '8',
             '--out_features', '4',
             '--x', str(x.tolist()),
-            '--param-weight', str(model.weight.tolist()),
-            '--param-bias', str(model.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -31,8 +30,7 @@ class TestNNLinear(TestCase):
             '--in_features', '8',
             '--out_features', '4',
             '--x', str(x.tolist()),
-            '--param-weight', str(model.weight.tolist()),
-            '--param-bias', str(model.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])

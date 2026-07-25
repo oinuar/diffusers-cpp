@@ -16,6 +16,7 @@ class TestNNUpsample2D(TestCase):
             "Upsample2D",
             "--channels", "4",
             "--hidden_states", str(hidden_states.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -35,8 +36,7 @@ class TestNNUpsample2D(TestCase):
             "--channels", "4",
             "--use_conv", "true",
             "--hidden_states", str(hidden_states.tolist()),
-            "--param-conv-weight", str(model.conv.weight.tolist()),
-            "--param-conv-bias", str(model.conv.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])

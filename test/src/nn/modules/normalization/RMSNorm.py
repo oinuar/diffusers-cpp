@@ -13,7 +13,7 @@ class TestNNNormalizationRMSNorm(TestCase):
             'RMSNorm',
             '--dim', '3',
             '--x', str(x.tolist()),
-            '--param-weight', str(model.weight.tolist()),
+            *self.params(model),
         )
 
-        self.assertTensors(actual, [expected], rtol=1e-3, atol=1e-5)
+        self.assertTensors(actual, [expected])

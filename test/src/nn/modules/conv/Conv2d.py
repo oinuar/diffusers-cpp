@@ -24,8 +24,7 @@ class TestNNConv2d(TestCase):
             "--stride", "1",
             "--padding", "1",
             "--x", str(x.tolist()),
-            "--param-weight", str(model.weight.tolist()),
-            "--param-bias", str(model.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -51,8 +50,7 @@ class TestNNConv2d(TestCase):
             "--stride", "2",
             "--padding", "1",
             "--x", str(x.tolist()),
-            "--param-weight", str(model.weight.tolist()),
-            "--param-bias", str(model.bias.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -80,7 +78,7 @@ class TestNNConv2d(TestCase):
             "--padding", "0",
             "--bias", "false",
             "--x", str(x.tolist()),
-            "--param-weight", str(model.weight.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])
@@ -106,8 +104,33 @@ class TestNNConv2d(TestCase):
             "--stride", "1",
             "--padding", "0",
             "--x", str(x.tolist()),
-            "--param-weight", str(model.weight.tolist()),
-            "--param-bias", str(model.bias.tolist()),
+            *self.params(model),
+        )
+
+        self.assertTensors(actual, [expected])
+
+    def test_stride_2_padding_0(self):
+        model = Conv2d(
+            in_channels=8,
+            out_channels=8,
+            kernel_size=3,
+            stride=2,
+            padding=0,
+        )
+
+        x = torch.randn(1, 8, 16, 16)
+
+        expected = model.forward(x)
+
+        actual = self.cli(
+            "Conv2d",
+            "--in_channels", "8",
+            "--out_channels", "8",
+            "--kernel_size", "3",
+            "--stride", "2",
+            "--padding", "0",
+            "--x", str(x.tolist()),
+            *self.params(model),
         )
 
         self.assertTensors(actual, [expected])

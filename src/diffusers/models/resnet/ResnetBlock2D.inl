@@ -3,7 +3,6 @@
 #include "nn/modules/conv/Conv2d.hpp"
 #include "nn/SiLU.hpp"
 #include "nn/Linear.hpp"
-#include <iostream>
 
 template <class NonLinearity>
 ResnetBlock2D<NonLinearity>::ResnetBlock2D(
@@ -84,8 +83,6 @@ ResnetBlock2D<NonLinearity>::ResnetBlock2D(
             1,
             kernel_size / 2
         );
-
-    std::cerr << "@@@ " << use_in_shortcut_ << std::endl;
 
     /*
         Diffusers creates conv_shortcut when

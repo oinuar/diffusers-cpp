@@ -1,5 +1,4 @@
 #include "diffusers/models/downsampling/Downsample2D.hpp"
-
 #include "nn/modules/conv/Conv2d.hpp"
 
 Downsample2D::Downsample2D(
@@ -8,7 +7,7 @@ Downsample2D::Downsample2D(
     std::optional<int64_t> out_channels,
     int64_t padding
 )
-    : use_conv_(use_conv)
+    : use_conv_(use_conv), padding_(padding)
 {
     const int64_t out_channels_ =
         out_channels.value_or(channels);
@@ -31,14 +30,50 @@ Tensor Downsample2D::forward(
 )
 {
     if (use_conv_) {
-        hidden_states =
-            std::static_pointer_cast<Conv2d>(
-                modules["conv"])
-            ->forward(
+        if (padding_ == 0) {
+            auto shape = hidden_states.shape();
+
+            int64_t n = shape[0];
+            int64_t c = shape[1];
+            int64_t h = shape[2];
+            int64_t w = shape[3];
+
+            // F.pad(hidden_states, (0, 1, 0, 1))
+            //
+            // First pad width:
+            // [N,C,H,W] -> [N,C,H,W+1]
+            auto w_zeros = Tensor::zeros(
                 ctx,
-                hidden_states
+                {n, c, h, 1},
+                hidden_states.dtype()
             );
-    } else {
+
+            hidden_states = Tensor::cat(
+                {hidden_states, w_zeros},
+                -1
+            );
+
+            // Then pad height:
+            // [N,C,H,W+1] -> [N,C,H+1,W+1]
+            auto h_zeros = Tensor::zeros(
+                ctx,
+                {n, c, 1, w + 1},
+                hidden_states.dtype()
+            );
+
+            hidden_states = Tensor::cat(
+                {hidden_states, h_zeros},
+                2
+            );
+        }
+
+        auto conv =  std::static_pointer_cast<Conv2d>(modules["conv"]);
+
+        hidden_states = conv->forward(ctx, hidden_states);
+    }
+    
+    // TODO: implement AvgPool2D
+    else {
         auto y = ggml_pool_2d(
             ctx,
             *hidden_states,

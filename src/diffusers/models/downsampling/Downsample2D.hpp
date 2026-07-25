@@ -18,4 +18,5 @@ public:
 
 private:
     bool use_conv_;
+    int64_t padding_;
 };

@@ -61,3 +61,28 @@ class TestNNDownsample2D(TestCase):
         )
 
         self.assertTensors(actual, [expected])
+
+    def test_with_conv_padding_zero(self):
+        model = Downsample2D(
+            channels=8,
+            use_conv=True,
+            out_channels=8,
+            padding=0,
+        )
+
+        hidden_states = torch.randn(1, 8, 16, 16)
+
+        expected = model.forward(hidden_states)
+
+        actual = self.cli(
+            "Downsample2D",
+            "--channels", "8",
+            "--out_channels", "8",
+            "--use_conv", "true",
+            "--padding", "0",
+            "--hidden_states", str(hidden_states.tolist()),
+            "--param-conv-weight", str(model.conv.weight.tolist()),
+            "--param-conv-bias", str(model.conv.bias.tolist()),
+        )
+
+        self.assertTensors(actual, [expected])

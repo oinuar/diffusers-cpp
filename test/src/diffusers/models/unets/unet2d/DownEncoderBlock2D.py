@@ -26,24 +26,7 @@ class TestNNDownEncoderBlock2D(TestCase):
             "--add_downsample", "false",
             "--resnet_groups", "4",
             "--hidden_states", str(hidden_states.tolist()),
-            "--param-resnets-1-conv2-bias", str(model.resnets[1].conv2.bias.tolist()),
-            "--param-resnets-1-conv2-weight", str(model.resnets[1].conv2.weight.tolist()),
-            "--param-resnets-1-norm2-bias", str(model.resnets[1].norm2.bias.tolist()),
-            "--param-resnets-1-norm2-weight", str(model.resnets[1].norm2.weight.tolist()),
-            "--param-resnets-1-conv1-bias", str(model.resnets[1].conv1.bias.tolist()),
-            "--param-resnets-1-conv1-weight", str(model.resnets[1].conv1.weight.tolist()),
-            "--param-resnets-1-norm1-bias", str(model.resnets[1].norm1.bias.tolist()),
-            "--param-resnets-1-norm1-weight", str(model.resnets[1].norm1.weight.tolist()),
-            "--param-resnets-0-conv2-bias", str(model.resnets[0].conv2.bias.tolist()),
-            "--param-resnets-0-conv2-weight", str(model.resnets[0].conv2.weight.tolist()),
-            "--param-resnets-0-norm2-bias", str(model.resnets[0].norm2.bias.tolist()),
-            "--param-resnets-0-norm2-weight", str(model.resnets[0].norm2.weight.tolist()),
-            "--param-resnets-0-conv1-bias", str(model.resnets[0].conv1.bias.tolist()),
-            "--param-resnets-0-conv1-weight", str(model.resnets[0].conv1.weight.tolist()),
-            "--param-resnets-0-conv_shortcut-bias", str(model.resnets[0].conv_shortcut.bias.tolist()),
-            "--param-resnets-0-conv_shortcut-weight", str(model.resnets[0].conv_shortcut.weight.tolist()),
-            "--param-resnets-0-norm1-bias", str(model.resnets[0].norm1.bias.tolist()),
-            "--param-resnets-0-norm1-weight", str(model.resnets[0].norm1.weight.tolist()),
+            *self.params(model)
         )
 
         self.assertTensors(actual, [expected])
@@ -71,26 +54,37 @@ class TestNNDownEncoderBlock2D(TestCase):
             "--add_downsample", "true",
             "--resnet_groups", "4",
             "--hidden_states", str(hidden_states.tolist()),
-            "--param-downsamplers-0-conv-bias", str(model.downsamplers[0].conv.bias.tolist()),
-            "--param-downsamplers-0-conv-weight", str(model.downsamplers[0].conv.weight.tolist()),
-            "--param-resnets-1-conv2-bias", str(model.resnets[1].conv2.bias.tolist()),
-            "--param-resnets-1-conv2-weight", str(model.resnets[1].conv2.weight.tolist()),
-            "--param-resnets-1-norm2-bias", str(model.resnets[1].norm2.bias.tolist()),
-            "--param-resnets-1-norm2-weight", str(model.resnets[1].norm2.weight.tolist()),
-            "--param-resnets-1-conv1-bias", str(model.resnets[1].conv1.bias.tolist()),
-            "--param-resnets-1-conv1-weight", str(model.resnets[1].conv1.weight.tolist()),
-            "--param-resnets-1-norm1-bias", str(model.resnets[1].norm1.bias.tolist()),
-            "--param-resnets-1-norm1-weight", str(model.resnets[1].norm1.weight.tolist()),
-            "--param-resnets-0-conv2-bias", str(model.resnets[0].conv2.bias.tolist()),
-            "--param-resnets-0-conv2-weight", str(model.resnets[0].conv2.weight.tolist()),
-            "--param-resnets-0-norm2-bias", str(model.resnets[0].norm2.bias.tolist()),
-            "--param-resnets-0-norm2-weight", str(model.resnets[0].norm2.weight.tolist()),
-            "--param-resnets-0-conv1-bias", str(model.resnets[0].conv1.bias.tolist()),
-            "--param-resnets-0-conv1-weight", str(model.resnets[0].conv1.weight.tolist()),
-            "--param-resnets-0-conv_shortcut-bias", str(model.resnets[0].conv_shortcut.bias.tolist()),
-            "--param-resnets-0-conv_shortcut-weight", str(model.resnets[0].conv_shortcut.weight.tolist()),
-            "--param-resnets-0-norm1-bias", str(model.resnets[0].norm1.bias.tolist()),
-            "--param-resnets-0-norm1-weight", str(model.resnets[0].norm1.weight.tolist()),
+            *self.params(model)
+        )
+
+        self.assertTensors(actual, [expected])
+
+    def test_with_downsample_padding_zero(self):
+        model = DownEncoderBlock2D(
+            num_layers=2,
+            in_channels=8,
+            out_channels=8,
+            add_downsample=True,
+            downsample_padding=0,
+            resnet_eps=1e-6,
+            resnet_act_fn="silu",
+            resnet_groups=4,
+        )
+
+        hidden_states = torch.randn(1, 8, 16, 16)
+
+        expected = model.forward(hidden_states)
+
+        actual = self.cli(
+            "DownEncoderBlock2D",
+            "--num_layers", "2",
+            "--in_channels", "8",
+            "--out_channels", "8",
+            "--add_downsample", "true",
+            "--downsample_padding", "0",
+            "--resnet_groups", "4",
+            "--hidden_states", str(hidden_states.tolist()),
+            *self.params(model)
         )
 
         self.assertTensors(actual, [expected])

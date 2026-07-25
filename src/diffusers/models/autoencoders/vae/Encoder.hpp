@@ -1,6 +1,7 @@
 #pragma once
 
 #include "nn/Module.hpp"
+#include "nn/ModuleList.hpp"
 #include "nn/SiLU.hpp"
 #include "nn/modules/conv/Conv2d.hpp"
 #include "nn/modules/normalization/GroupNorm.hpp"
@@ -23,116 +24,99 @@ public:
         modules["conv_in"] =
             std::make_shared<Conv2d>(
                 in_channels,
-                block_out_channels[0],
-                3,
-                1,
-                1
+                block_out_channels[0], // out_channels
+                3, // kernel_size
+                1, // stride
+                1 // padding
             );
 
-        int64_t output_channel = block_out_channels[0];
+        auto down_blocks = std::make_shared<ModuleList>(block_out_channels.size());
+        modules["down_blocks"] = down_blocks;
 
-        for (size_t i = 0; i < block_out_channels.size(); ++i) {
-            int64_t input_channel = output_channel;
+        auto output_channel = block_out_channels[0];
+
+        for (auto i = 0; i < block_out_channels.size(); ++i) {
+            auto input_channel = output_channel;
             output_channel = block_out_channels[i];
 
-            bool add_downsample =
-                i != block_out_channels.size() - 1;
+            bool is_final_block = i == block_out_channels.size() - 1;
 
-            modules["down_blocks." + std::to_string(i)] =
+            (*down_blocks)[i] = 
                 std::make_shared<DownEncoderBlock2D>(
                     input_channel, // in_channels
-                    output_channel // out_channels
-
-                    //layers_per_block,
-                    //input_channel,
-                    //output_channel,
-                    //add_downsample,
-                    //1e-6,
-                    //"silu",
-                    //norm_num_groups
+                    output_channel, // out_channels
+                    0.0f, // dropout
+                    layers_per_block, // num_layers
+                    1e-6, // resnet_eps
+                    norm_num_groups, // resnet_groups
+                    true, // resnet_pre_norm
+                    1.0f, // output_scale_factor
+                    !is_final_block, // add_downsample
+                    1 // downsample_padding
                 );
         }
 
         modules["mid_block"] =
             std::make_shared<UNetMidBlock2D>(
                 block_out_channels.back(), // in_channels
-                block_out_channels.back() // out_channels
-                //block_out_channels.back(),
-                //1e-6,
-                //"silu",
-                //1.0f,
-                //"default",
-                //1,
-                //norm_num_groups,
-                //std::nullopt,
-                //mid_block_add_attention
+                std::nullopt, // temb_channels
+                0.0f, // dropout
+                1, // num_layers
+                1e-6, // resnet_eps
+                norm_num_groups, // resnet_groups
+                std::nullopt, // attn_groups
+                true, // resnet_pre_norm
+                mid_block_add_attention, // add_attention
+                block_out_channels.back(), // attention_head_dim
+                1.0f // output_scale_factor
             );
-
 
         modules["conv_norm_out"] =
             std::make_shared<GroupNorm>(
-                norm_num_groups,
-                block_out_channels.back(),
-                1e-6
+                norm_num_groups, // num_groups
+                block_out_channels.back(), // num_channels
+                1e-6 // eps
             );
 
-        modules["conv_act"] =
-            std::make_shared<SiLU>();
+        modules["conv_act"] = std::make_shared<SiLU>();
+
+        auto conv_out_channels = double_z ? 2 * out_channels : out_channels;
 
         modules["conv_out"] =
             std::make_shared<Conv2d>(
-                block_out_channels.back(),
-                double_z ? out_channels * 2 : out_channels,
-                3,
-                1,
-                1
+                block_out_channels.back(), // in_channels
+                conv_out_channels, // out_channels
+                3, // kernel_size
+                1, // stride
+                1 // padding
             );
     }
 
     Tensor forward(ggml_context* ctx, Tensor sample) {
-        auto conv_in =
-            std::static_pointer_cast<Conv2d>(
-                modules["conv_in"]);
-
+        auto conv_in = std::static_pointer_cast<Conv2d>(modules["conv_in"]);
         sample = conv_in->forward(ctx, sample);
+        
+        auto down_blocks = std::static_pointer_cast<ModuleList>(modules["down_blocks"]);
 
-
-        for (int i = 0; ; ++i) {
-            auto it = modules.find(
-                "down_blocks." + std::to_string(i)
-            );
-
-            if (it == modules.end())
-                break;
-
-            auto block =
-                std::static_pointer_cast<DownEncoderBlock2D>(
-                    it->second);
-
+        // down
+        for (auto i = 0; i < down_blocks->size(); ++i) {
+            auto block = std::static_pointer_cast<DownEncoderBlock2D>((*down_blocks)[i]);
             sample = block->forward(ctx, sample);
         }
 
+        // middle
+        auto mid_block = std::static_pointer_cast<UNetMidBlock2D>(modules["mid_block"]);
+        sample = mid_block->forward(ctx, sample);
 
-        sample =
-            std::static_pointer_cast<UNetMidBlock2D>(
-                modules["mid_block"])
-            ->forward(ctx, sample);
+        // post-process
+        auto conv_norm_out = std::static_pointer_cast<GroupNorm>(modules["conv_norm_out"]);
+        sample = conv_norm_out->forward(ctx, sample);
 
+        auto conv_act = std::static_pointer_cast<SiLU>(modules["conv_act"]);
+        sample = conv_act->forward(ctx, sample);
 
-        sample =
-            std::static_pointer_cast<GroupNorm>(
-                modules["conv_norm_out"])
-            ->forward(ctx, sample);
-
-        sample =
-            std::static_pointer_cast<SiLU>(
-                modules["conv_act"])
-            ->forward(ctx, sample);
-
-        sample =
-            std::static_pointer_cast<Conv2d>(
-                modules["conv_out"])
-            ->forward(ctx, sample);
+        auto conv_out = std::static_pointer_cast<Conv2d>(modules["conv_out"]);
+        sample = conv_out->forward(ctx, sample);
 
         return sample;
     }

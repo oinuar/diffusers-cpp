@@ -15,7 +15,7 @@ public:
 
     Tensor forward(ggml_context* ctx, Tensor x);
 
-private:
+public:
     int64_t stride_;
     int64_t padding_;
     bool bias_;

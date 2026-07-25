@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "nn/Module.hpp"
+#include "nn/ModuleList.hpp"
 #include "nn/SiLU.hpp"
 #include "nn/modules/conv/Conv2d.hpp"
 #include "nn/modules/normalization/GroupNorm.hpp"
@@ -20,22 +21,10 @@ public:
         const std::vector<int64_t>& block_out_channels = {64},
         int layers_per_block = 2,
         int norm_num_groups = 32,
-        const std::string& act_fn = "silu",
-        const std::string& norm_type = "group",
         bool mid_block_add_attention = true
     )
-        : layers_per_block(layers_per_block),
-          norm_type(norm_type)
+        : layers_per_block(layers_per_block)
     {
-        /*
-         self.conv_in = nn.Conv2d(
-             in_channels,
-             block_out_channels[-1],
-             kernel_size=3,
-             stride=1,
-             padding=1,
-         )
-        */
         modules["conv_in"] =
             std::make_shared<Conv2d>(
                 in_channels,
@@ -45,69 +34,40 @@ public:
                 1
             );
 
-
-        /*
-        temb_channels = in_channels if norm_type == "spatial" else None
-        */
-        std::optional<int64_t> temb_channels;
-
-        if (norm_type == "spatial")
-            temb_channels = in_channels;
-
-
-        /*
-        self.mid_block = UNetMidBlock2D(...)
-        */
         modules["mid_block"] =
             std::make_shared<UNetMidBlock2D>(
                 block_out_channels.back(), // in_channels,
-                *temb_channels,
+                std::nullopt, // temb_channels
                 0.0f, // dropout
                 1, // num_layers
                 1e-6, // resnet_eps
                 norm_num_groups, // resnet_groups
                 std::nullopt, // attn_groups
                 true, // resnet_pre_norm
-                mid_block_add_attention, // add_attention = true,
+                mid_block_add_attention, // add_attention
                 block_out_channels.back(), // attention_head_dim
                 1.0f // output_scale_factor
             );
 
-        /*
-        reversed_block_out_channels = reversed(block_out_channels)
-        */
-        std::vector<int64_t> reversed_channels(
+        std::vector<int64_t> reversed_block_out_channels(
             block_out_channels.rbegin(),
             block_out_channels.rend()
         );
 
+        int64_t output_channel = reversed_block_out_channels[0];
 
-        /*
-        output_channel = reversed_block_out_channels[0]
-        */
-        int64_t output_channel = reversed_channels[0];
+        auto up_blocks = std::make_shared<ModuleList>(reversed_block_out_channels.size());
+        modules["up_blocks"] = up_blocks;
 
-
-        /*
-        for i, up_block_type in enumerate(up_block_types):
-        */
-        for (size_t i = 0; i < reversed_channels.size(); ++i) {
+        for (size_t i = 0; i < reversed_block_out_channels.size(); ++i) {
 
             int64_t prev_output_channel = output_channel;
-            output_channel = reversed_channels[i];
+            output_channel = reversed_block_out_channels[i];
 
-
-            /*
-            is_final_block = i == len(block_out_channels)-1
-            */
             bool is_final_block =
-                i == reversed_channels.size() - 1;
+                i == reversed_block_out_channels.size() - 1;
 
-
-            /*
-            up_block = get_up_block(...)
-            */
-            modules["up_blocks." + std::to_string(i)] =
+            (*up_blocks)[i] =
                 std::make_shared<UpDecoderBlock2D>(
                     prev_output_channel, // in_channels
                     output_channel, // out_channels
@@ -119,7 +79,7 @@ public:
                     true, // resnet_pre_norm
                     1.0f, // output_scale_factor
                     !is_final_block, // add_upsample
-                    temb_channels
+                    std::nullopt // temb_channels
                 );
         }
 
@@ -130,61 +90,36 @@ public:
             self.conv_norm_out = GroupNorm(...)
         */
 
-        if (norm_type == "spatial") {
-            modules["conv_norm_out"] =
-                std::make_shared<SpatialNorm>(
-                    block_out_channels[0],
-                    temb_channels.value()
-                );
-        }
-        else {
-            modules["conv_norm_out"] =
-                std::make_shared<GroupNorm>(
-                    norm_num_groups,
-                    block_out_channels[0],
-                    1e-6
-                );
-        }
+        modules["conv_norm_out"] =
+            std::make_shared<GroupNorm>(
+                norm_num_groups, // num_groups
+                block_out_channels[0], // num_channels
+                1e-6 // eps
+            );
 
-
-        /*
-        self.conv_act = nn.SiLU()
-        */
         modules["conv_act"] =
             std::make_shared<SiLU>();
 
-
-        /*
-        self.conv_out = nn.Conv2d(...)
-        */
         modules["conv_out"] =
             std::make_shared<Conv2d>(
-                block_out_channels[0],
-                out_channels,
-                3,
-                1,
-                1
+                block_out_channels[0], // in_channels
+                out_channels, // out_channels
+                3, // kernel_size
+                1, // stride
+                1 // padding
             );
     }
-
 
     Tensor forward(
         ggml_context* ctx,
         Tensor sample,
         std::optional<Tensor> latent_embeds = std::nullopt
     ) {
-        /*
-        sample = self.conv_in(sample)
-        */
         sample =
             std::static_pointer_cast<Conv2d>(
                 modules["conv_in"])
             ->forward(ctx, sample);
 
-
-        /*
-        sample = self.mid_block(sample, latent_embeds)
-        */
         sample =
             std::static_pointer_cast<UNetMidBlock2D>(
                 modules["mid_block"])
@@ -194,38 +129,13 @@ public:
                 latent_embeds
             );
 
+        auto up_blocks = std::static_pointer_cast<ModuleList>(modules["up_blocks"]);
 
-        /*
-        for up_block in self.up_blocks:
-            sample = up_block(sample, latent_embeds)
-        */
-        for (int i = 0; ; ++i) {
+        for (auto i = 0; i < up_blocks->size(); ++i) {
+            auto up_block = std::static_pointer_cast<UpDecoderBlock2D>((*up_blocks)[i]);
 
-            auto key =
-                "up_blocks." + std::to_string(i);
-
-            auto it = modules.find(key);
-
-            if (it == modules.end())
-                break;
-
-            sample =
-                std::static_pointer_cast<UpDecoderBlock2D>(
-                    it->second)
-                ->forward(
-                    ctx,
-                    sample,
-                    latent_embeds
-                );
+            sample = up_block->forward(ctx, sample, latent_embeds);
         }
-
-
-        /*
-        if latent_embeds is None:
-            sample = self.conv_norm_out(sample)
-        else:
-            sample = self.conv_norm_out(sample, latent_embeds)
-        */
 
         if (latent_embeds) {
             sample =
@@ -247,12 +157,6 @@ public:
                 );
         }
 
-
-        /*
-        sample = self.conv_act(sample)
-        sample = self.conv_out(sample)
-        */
-
         sample =
             std::static_pointer_cast<SiLU>(
                 modules["conv_act"])
@@ -264,12 +168,10 @@ public:
                 modules["conv_out"])
             ->forward(ctx, sample);
 
-
         return sample;
     }
 
 
 private:
     int layers_per_block;
-    std::string norm_type;
 };

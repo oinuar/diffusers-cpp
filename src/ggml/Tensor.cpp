@@ -2,7 +2,6 @@
 #include <limits>
 #include <sstream>
 #include <algorithm>
-#include <iostream>
 
 std::string Tensor::Shape::to_string() const {
     std::ostringstream oss;
@@ -595,8 +594,6 @@ Tensor Tensor::sum(int64_t dim, bool keepdim) const {
 Tensor Tensor::mean(int64_t dim, bool keepdim) const {
     const int64_t size = shape_[dim];
     auto t = sum(dim, keepdim);
-
-    std::cerr << "shape: " << t.shape().to_string() << ", " << shape_[dim] << std::endl;
 
     return t / static_cast<float>(size);
 }

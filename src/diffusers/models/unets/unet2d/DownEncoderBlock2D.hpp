@@ -15,7 +15,7 @@ public:
         float resnet_eps = 1e-6,
         int64_t resnet_groups = 32,
         bool resnet_pre_norm = true,
-        float output_scale_factor = 1.0,
+        float output_scale_factor = 1.0f,
         bool add_downsample = true,
         int64_t downsample_padding = 1
     );

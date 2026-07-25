@@ -36,14 +36,11 @@ AutoencoderKLFlux2::AutoencoderKLFlux2(
     );
 
     modules["decoder"] = std::make_shared<Decoder>(
-        latent_channels,
+        latent_channels, // in_channels
         out_channels,
-        //up_block_types,
-        block_out_channels,
+        block_out_channels, 
         layers_per_block,
         norm_num_groups,
-        "silu",
-        "group",
         mid_block_add_attention
     );
 

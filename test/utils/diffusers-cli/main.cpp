@@ -18,6 +18,9 @@
 #include "diffusers/models/unets/unet2d/DownEncoderBlock2D.hpp"
 #include "diffusers/models/unets/unet2d/UpDecoderBlock2D.hpp"
 
+#include "diffusers/models/autoencoders/vae/Decoder.hpp"
+#include "diffusers/models/autoencoders/vae/Encoder.hpp"
+
 #include "diffusers/models/transformers/flux2/Flux2SwiGLU.hpp"
 #include "diffusers/models/transformers/flux2/Flux2FeedForward.hpp"
 #include "diffusers/models/transformers/flux2/Flux2Modulation.hpp"
@@ -149,6 +152,63 @@ public:
 
             return model.forward(*ctx, hidden_states, temb);
         }
+
+
+        if (args_.get(0) == "Decoder") {
+            auto in_channels = args_.get_optional<int64_t>("--in_channels").value_or(3);
+            auto out_channels = args_.get_optional<int64_t>("--out_channels").value_or(3);
+            auto block_out_channels = args_.get_many<int64_t>("--block_out_channels");
+            auto layers_per_block = args_.get_optional<int>("--layers_per_block").value_or(2);
+            auto norm_num_groups = args_.get_optional<int>("--norm_num_groups").value_or(32);
+            auto mid_block_add_attention = args_.get_optional<bool>("--mid_block_add_attention").value_or(true);
+            auto sample = args_.get_one<Tensor>("--sample", {ctx, inputs_});
+            auto latent_embeds = args_.get_optional<Tensor>("--latent_embeds", {ctx, inputs_});
+
+            Decoder model(
+                in_channels,
+                out_channels,
+                block_out_channels,
+                layers_per_block,
+                norm_num_groups,
+                mid_block_add_attention
+            );
+
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(*ctx, sample, latent_embeds);
+        }
+
+        if (args_.get(0) == "Encoder") {
+            auto in_channels = args_.get_optional<int64_t>("--in_channels").value_or(3);
+            auto out_channels = args_.get_optional<int64_t>("--out_channels").value_or(3);
+            auto block_out_channels = args_.get_many<int64_t>("--block_out_channels");
+            auto layers_per_block = args_.get_optional<int>("--layers_per_block").value_or(2);
+            auto norm_num_groups = args_.get_optional<int>("--norm_num_groups").value_or(32);
+            auto double_z = args_.get_optional<bool>("--double_z").value_or(true);
+            auto mid_block_add_attention = args_.get_optional<bool>("--mid_block_add_attention").value_or(true);
+            auto sample = args_.get_one<Tensor>("--sample", {ctx, inputs_});
+
+            Encoder model(
+                in_channels,
+                out_channels,
+                block_out_channels,
+                layers_per_block,
+                norm_num_groups,
+                double_z,
+                mid_block_add_attention
+            );
+
+            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(*ctx, sample);
+        }
+
 
         if (args_.get(0) == "TimestepEmbedding") {
             auto in_channels = args_.get_one<int64_t>("--in_channels");

@@ -1,5 +1,6 @@
 #include "diffusers/models/attention_processor/Attention.hpp"
 #include "nn/Linear.hpp"
+#include "nn/ModuleList.hpp"
 
 template <class AttnOp>
 Attention<AttnOp>::Attention(
@@ -45,22 +46,21 @@ Attention<AttnOp>::Attention(
         );
 
 
-    modules["to_out.0"] =
-        std::make_shared<Linear>(
+    modules["to_out"] = std::shared_ptr<Module>(new ModuleList({
+        std::shared_ptr<Module>(new Linear(
             inner_dim_,
             query_dim,
             true
-        );
+        ))
+    }));
 
-
-    if (norm_num_groups_) {
+    if (norm_num_groups_)
         modules["group_norm"] =
             std::make_shared<GroupNorm>(
                 *norm_num_groups_,
                 query_dim,
                 eps
             );
-    }
 }
 
 template <class AttnOp>
@@ -199,14 +199,9 @@ Tensor Attention<AttnOp>::forward(
         });
 
 
-    out =
-        std::static_pointer_cast<Linear>(
-            modules["to_out.0"])
-        ->forward(
-            ctx,
-            out
-        );
+    auto to_out = std::static_pointer_cast<ModuleList>(modules["to_out"]);
 
+    out = std::static_pointer_cast<Linear>((*to_out)[0])->forward(ctx, out);
 
     if (is_4d) {
 

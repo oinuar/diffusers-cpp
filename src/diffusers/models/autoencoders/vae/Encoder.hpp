@@ -50,7 +50,7 @@ public:
                     true, // resnet_pre_norm
                     1.0f, // output_scale_factor
                     !is_final_block, // add_downsample
-                    1 // downsample_padding
+                    0 // downsample_padding
                 );
         }
 
@@ -118,7 +118,4 @@ public:
 
         return sample;
     }
-
-private:
-    int layers_per_block;
 };

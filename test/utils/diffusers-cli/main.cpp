@@ -20,6 +20,7 @@
 
 #include "diffusers/models/autoencoders/vae/Decoder.hpp"
 #include "diffusers/models/autoencoders/vae/Encoder.hpp"
+#include "diffusers/models/autoencoders/AutoencoderKLFlux2.hpp"
 
 #include "diffusers/models/transformers/flux2/Flux2SwiGLU.hpp"
 #include "diffusers/models/transformers/flux2/Flux2FeedForward.hpp"
@@ -208,6 +209,56 @@ public:
 
             return model.forward(runtime, sample);
         }
+
+        if (args_.get(0) == "AutoencoderKLFlux2") {
+            auto in_channels = args_.get_optional<int64_t>("--in_channels").value_or(3);
+            auto out_channels = args_.get_optional<int64_t>("--out_channels").value_or(3);
+            auto block_out_channels = args_.get_many<int64_t>("--block_out_channels");
+            auto layers_per_block = args_.get_optional<int64_t>("--layers_per_block").value_or(2);
+            auto latent_channels = args_.get_optional<int64_t>("--latent_channels").value_or(32);
+            auto norm_num_groups = args_.get_optional<int64_t>("--norm_num_groups").value_or(32);
+            auto sample_size = args_.get_optional<int64_t>("--sample_size").value_or(1024);
+            auto force_upcast = args_.get_optional<bool>("--force_upcast").value_or(true);
+            auto use_quant_conv = args_.get_optional<bool>("--use_quant_conv").value_or(true);
+            auto use_post_quant_conv = args_.get_optional<bool>("--use_post_quant_conv").value_or(true);
+            auto mid_block_add_attention = args_.get_optional<bool>("--mid_block_add_attention").value_or(true);
+            auto batch_norm_eps = args_.get_optional<float>("--batch_norm_eps").value_or(1e-4f);
+            auto batch_norm_momentum = args_.get_optional<float>("--batch_norm_momentum").value_or(0.1f);
+            auto patch_size = std::make_tuple(
+                args_.get_optional<int64_t>("--patch_size-0").value_or(2),
+                args_.get_optional<int64_t>("--patch_size-1").value_or(2)
+            );
+            auto sample = args_.get_one<Tensor>("--sample", {runtime});
+            auto sample_posterior = args_.get_optional<bool>("--sample_posterior").value_or(false);
+
+            if (block_out_channels.empty())
+                block_out_channels = {128, 256, 512, 512};
+
+            AutoencoderKLFlux2 model(
+                in_channels,
+                out_channels,
+                block_out_channels,
+                layers_per_block,
+                latent_channels,
+                norm_num_groups,
+                sample_size,
+                force_upcast,
+                use_quant_conv,
+                use_post_quant_conv,
+                mid_block_add_attention,
+                batch_norm_eps,
+                batch_norm_momentum,
+                patch_size
+            );
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(runtime, sample, sample_posterior);
+        }
+
 
 
         if (args_.get(0) == "TimestepEmbedding") {

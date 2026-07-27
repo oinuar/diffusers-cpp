@@ -22,26 +22,11 @@ public:
         std::tuple<int64_t, int64_t> patch_size = {2, 2}
     );
 
-    DiagonalGaussianDistribution encode(
-        Runtime& runtime,
-        Tensor x
-    );
+    DiagonalGaussianDistribution encode(Runtime& runtime, Tensor x);
 
-    Tensor decode(
-        Runtime& runtime,
-        Tensor z
-    );
+    Tensor decode(Runtime& runtime, Tensor z);
 
-    Tensor forward(
-        Runtime& runtime,
-        Tensor sample,
-        bool sample_posterior
-    );
-
-    Tensor decode_latents(
-        Runtime& runtime,
-        Tensor latents
-    );
+    Tensor forward(Runtime& runtime, Tensor sample, bool sample_posterior = false);
 
 private:
     bool use_quant_conv_;

@@ -9,55 +9,33 @@ DiagonalGaussianDistribution::DiagonalGaussianDistribution(
 )
     : deterministic_(deterministic)
 {
-    /*
-        Encoder output:
-
-        [B, 2*C, H, W]
-
-        Split into:
-
-        mean   [B,C,H,W]
-        logvar [B,C,H,W]
-    */
-
-    auto channels = parameters.shape()[1];
-
-    auto chunks =
-        parameters.chunk(
-            2,
-            1
-        );
+    auto chunks = parameters.chunk(2, 1);
 
     mean_ = chunks[0];
+    logvar_ = chunks[1];
+    logvar_ = logvar_.clamp(-30.0, 20.0).contiguous();
 
-    logvar_ =
-        chunks[1].clamp(
-            -30.0f,
-            20.0f
-        );
-
-
-    if (!deterministic_) {
-        std_ =
-            exp(
-                logvar_ * 0.5f
-            );
+    if (deterministic) {
+        std_ = Tensor::zeros(*runtime.context(), mean_.shape(), mean_.dtype());
+        var_ = Tensor::zeros(*runtime.context(), mean_.shape(), mean_.dtype());
     }
     else {
-        std_ = Tensor::zeros(*runtime.context(), mean_.shape(), mean_.dtype());
+        std_ = exp(0.5f * logvar_);
+        var_ = exp(logvar_);
     }
 }
 
-Tensor DiagonalGaussianDistribution::sample(
-    Runtime& runtime
-)
-{
-    if (deterministic_)
-        return mean_;
+Tensor DiagonalGaussianDistribution::sample(Runtime& runtime) {
+    auto sample = runtime.create<float>(mean_.shape(), [](Tensor tensor, std::mt19937& rng) {
+        std::vector<float> data(tensor.numel());
+        std::normal_distribution<float> dist(0.0f, 1.0f);
 
+        for (auto& x : data)
+            x = dist(rng);
 
-    //auto noise = Tensor::zeros(ctx, mean_.shape(), mean_.dtype()).rand();
-    auto noise = 0.0f; // TODO: this needs to be solved
+        return data;
+    });
 
-    return mean_ + std_ * noise;
+    auto x = mean_ + std_ * sample;
+    return x;
 }

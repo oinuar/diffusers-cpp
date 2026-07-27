@@ -7,6 +7,7 @@ import torch
 class TestCase(unittest.TestCase):
     def cli(self, *args: str) -> list:
         cli_bin = os.environ['CLI']
+        print(" ".join([cli_bin] + list(map(lambda x: x if x.startswith("--") else f'"{x}"', [*args]))))
         result = subprocess.run([cli_bin, *args], capture_output=True, text=True, timeout=30)
         if result.returncode != 0:
             raise RuntimeError(f'{cli_bin} failed (rc={result.returncode}):\n{result.stderr}')

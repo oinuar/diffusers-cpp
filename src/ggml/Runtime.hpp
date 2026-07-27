@@ -10,7 +10,7 @@
 class Runtime {
 public:
     template<typename T>
-    using Initializer = std::function<std::vector<T>(Tensor, std::mt19937& rng)>;
+    using Initializer = std::function<std::vector<T>(Tensor, std::mt19937&)>;
 
     explicit Runtime(Context& context, uint64_t seed)
         : context_(context), rng_(seed) {}

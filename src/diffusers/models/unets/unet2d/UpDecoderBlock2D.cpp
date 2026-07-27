@@ -57,17 +57,17 @@ UpDecoderBlock2D::UpDecoderBlock2D(
         }));
 }
 
-Tensor UpDecoderBlock2D::forward(ggml_context* ctx, Tensor hidden_states, std::optional<Tensor> temb) {
+Tensor UpDecoderBlock2D::forward(Runtime& runtime, Tensor hidden_states, std::optional<Tensor> temb) {
     auto resnets = std::static_pointer_cast<ModuleList>(modules["resnets"]);
 
     for (auto i = 0; i < resnets->size(); ++i)
-        hidden_states = std::static_pointer_cast<ResnetBlock2D<SiLU>>((*resnets)[i])->forward(ctx, hidden_states);
+        hidden_states = std::static_pointer_cast<ResnetBlock2D<SiLU>>((*resnets)[i])->forward(runtime, hidden_states);
 
     if (add_upsample_) {
         auto upsamplers = std::static_pointer_cast<ModuleList>(modules["upsamplers"]);
 
         for (auto i = 0; i < upsamplers->size(); ++i)
-            hidden_states = std::static_pointer_cast<Upsample2D>((*upsamplers)[i])->forward(ctx, hidden_states);
+            hidden_states = std::static_pointer_cast<Upsample2D>((*upsamplers)[i])->forward(runtime, hidden_states);
     }
 
     return hidden_states;

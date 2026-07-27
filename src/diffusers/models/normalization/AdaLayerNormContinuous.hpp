@@ -14,7 +14,7 @@ public:
         bool bias = true
     );
 
-    Tensor forward(ggml_context* ctx, Tensor hidden_states, Tensor conditioning_embedding);
+    Tensor forward(Runtime& runtime, Tensor hidden_states, Tensor conditioning_embedding);
 };
 
 #include "diffusers/models/normalization/AdaLayerNormContinuous.inl"

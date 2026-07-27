@@ -38,7 +38,7 @@ class TestDiffusersCLI : public TestCLI {
 public:
     TestDiffusersCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual Plan build(Context& ctx) {
+    virtual Plan build(Runtime& runtime) {
 
         if (args_.get(0) == "AdaLayerNormContinuous") {
             auto embedding_dim = args_.get_one<int64_t>("--embedding_dim");
@@ -46,33 +46,33 @@ public:
             auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
             auto eps = args_.get_optional<float>("--eps").value_or(1e-5f);
             auto bias = args_.get_optional<bool>("--bias").value_or(true);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
-            auto conditioning_embedding = args_.get_one<Tensor>("--conditioning_embedding", {ctx, inputs_});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto conditioning_embedding = args_.get_one<Tensor>("--conditioning_embedding", {runtime});
 
             AdaLayerNormContinuous<> model(embedding_dim, conditioning_embedding_dim, elementwise_affine, eps, bias);
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, hidden_states, conditioning_embedding);
+            return model.forward(runtime, hidden_states, conditioning_embedding);
         }
 
         if (args_.get(0) == "SpatialNorm") {
             auto f_channels = args_.get_one<int64_t>("--f_channels");
             auto zq_channels = args_.get_one<int64_t>("--zq_channels");
-            auto f = args_.get_one<Tensor>("--f", {ctx, inputs_});
-            auto zq = args_.get_one<Tensor>("--zq", {ctx, inputs_});
+            auto f = args_.get_one<Tensor>("--f", {runtime});
+            auto zq = args_.get_one<Tensor>("--zq", {runtime});
 
             SpatialNorm model(f_channels, zq_channels);
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, f, zq);
+            return model.forward(runtime, f, zq);
         }
 
         if (args_.get(0) == "Upsample2D") {
@@ -80,16 +80,16 @@ public:
             auto use_conv = args_.get_optional<bool>("--use_conv").value_or(false);
             auto out_channels = args_.get_optional<int64_t>("--out_channels");
             auto use_conv_transpose = args_.get_optional<bool>("--use_conv_transpose").value_or(false);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
 
             Upsample2D model(channels, use_conv, out_channels, use_conv_transpose);
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, hidden_states);
+            return model.forward(runtime, hidden_states);
         }
 
         if (args_.get(0) == "Downsample2D") {
@@ -97,16 +97,16 @@ public:
             auto use_conv = args_.get_optional<bool>("--use_conv").value_or(false);
             auto out_channels = args_.get_optional<int64_t>("--out_channels");
             auto padding = args_.get_optional<int64_t>("--padding").value_or(1);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
 
             Downsample2D model(channels, use_conv, out_channels, padding);
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, hidden_states);
+            return model.forward(runtime, hidden_states);
         }
 
         if (args_.get(0) == "ResnetBlock2D") {
@@ -122,8 +122,8 @@ public:
             auto use_in_shortcut = args_.get_optional<bool>("--use_in_shortcut");
             auto conv_shortcut_bias = args_.get_optional<bool>("--conv_shortcut_bias").value_or(true);
             auto conv_2d_out_channels = args_.get_optional<int64_t>("--conv_2d_out_channels");
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
-            auto temb = args_.get_optional<Tensor>("--temb", {ctx, inputs_});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto temb = args_.get_optional<Tensor>("--temb", {runtime});
 
             ResnetBlock2D<SiLU> model(
                 in_channels,
@@ -145,12 +145,12 @@ public:
                 conv_2d_out_channels
             );
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, hidden_states, temb);
+            return model.forward(runtime, hidden_states, temb);
         }
 
 
@@ -161,8 +161,8 @@ public:
             auto layers_per_block = args_.get_optional<int>("--layers_per_block").value_or(2);
             auto norm_num_groups = args_.get_optional<int>("--norm_num_groups").value_or(32);
             auto mid_block_add_attention = args_.get_optional<bool>("--mid_block_add_attention").value_or(true);
-            auto sample = args_.get_one<Tensor>("--sample", {ctx, inputs_});
-            auto latent_embeds = args_.get_optional<Tensor>("--latent_embeds", {ctx, inputs_});
+            auto sample = args_.get_one<Tensor>("--sample", {runtime});
+            auto latent_embeds = args_.get_optional<Tensor>("--latent_embeds", {runtime});
 
             Decoder model(
                 in_channels,
@@ -173,12 +173,12 @@ public:
                 mid_block_add_attention
             );
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, sample, latent_embeds);
+            return model.forward(runtime, sample, latent_embeds);
         }
 
         if (args_.get(0) == "Encoder") {
@@ -189,7 +189,7 @@ public:
             auto norm_num_groups = args_.get_optional<int>("--norm_num_groups").value_or(32);
             auto double_z = args_.get_optional<bool>("--double_z").value_or(true);
             auto mid_block_add_attention = args_.get_optional<bool>("--mid_block_add_attention").value_or(true);
-            auto sample = args_.get_one<Tensor>("--sample", {ctx, inputs_});
+            auto sample = args_.get_one<Tensor>("--sample", {runtime});
 
             Encoder model(
                 in_channels,
@@ -201,12 +201,12 @@ public:
                 mid_block_add_attention
             );
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, sample);
+            return model.forward(runtime, sample);
         }
 
 
@@ -216,17 +216,17 @@ public:
             auto out_dim = args_.get_optional<int64_t>("--out_dim");
             auto cond_proj_dim = args_.get_optional<int64_t>("--cond_proj_dim");
             auto sample_proj_bias = args_.get_optional<bool>("--sample_proj_bias").value_or(true);
-            auto sample = args_.get_one<Tensor>("--sample", {ctx, inputs_});
-            auto condition = args_.get_optional<Tensor>("--condition", {ctx, inputs_});
+            auto sample = args_.get_one<Tensor>("--sample", {runtime});
+            auto condition = args_.get_optional<Tensor>("--condition", {runtime});
 
             TimestepEmbedding<> model(in_channels, time_embed_dim, out_dim, cond_proj_dim, sample_proj_bias);
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, sample, condition);
+            return model.forward(runtime, sample, condition);
         }
 
         if (args_.get(0) == "Timesteps") {
@@ -234,16 +234,16 @@ public:
             auto flip_sin_to_cos = args_.get_one<bool>("--flip_sin_to_cos");
             auto downscale_freq_shift = args_.get_one<float>("--downscale_freq_shift");
             auto scale = args_.get_optional<float>("--scale").value_or(1.0);
-            auto timesteps = args_.get_one<Tensor>("--timesteps", {ctx, inputs_});
+            auto timesteps = args_.get_one<Tensor>("--timesteps", {runtime});
 
             Timesteps model(num_channels, flip_sin_to_cos, downscale_freq_shift, scale);
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, timesteps);
+            return model.forward(runtime, timesteps);
         }
 
         if (args_.get(0) == "Attention") {
@@ -257,7 +257,7 @@ public:
             auto eps = args_.get_optional<float>("--eps").value_or(1e-6);
             auto rescale_output_factor = args_.get_optional<float>("--rescale_output_factor").value_or(1.0f);
             auto upcast_softmax = args_.get_optional<bool>("--upcast_softmax").value_or(false);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
 
             Attention<ScaledDotProductAttention<FlashAttentionOp>> model(
                 query_dim,
@@ -272,12 +272,12 @@ public:
                 upcast_softmax
             );
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, hidden_states);
+            return model.forward(runtime, hidden_states);
         }
 
 
@@ -290,8 +290,8 @@ public:
             auto attention_head_dim = args_.get_optional<int64_t>("--attention_head_dim").value_or(1);
             auto resnet_groups = args_.get_optional<int64_t>("--resnet_groups").value_or(32);
             auto add_attention = args_.get_optional<bool>("--add_attention").value_or(true);
-            auto sample = args_.get_one<Tensor>("--sample", {ctx, inputs_});
-            auto temb = args_.get_optional<Tensor>("--temb", {ctx, inputs_});
+            auto sample = args_.get_one<Tensor>("--sample", {runtime});
+            auto temb = args_.get_optional<Tensor>("--temb", {runtime});
 
             UNetMidBlock2D model(
                 in_channels,
@@ -307,12 +307,12 @@ public:
                 output_scale_factor
             );
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, sample, temb);
+            return model.forward(runtime, sample, temb);
         }
         
         if (args_.get(0) == "DownEncoderBlock2D") {
@@ -323,7 +323,7 @@ public:
             auto output_scale_factor = args_.get_optional<float>("--output_scale_factor").value_or(1.0f);
             auto add_downsample = args_.get_optional<bool>("--add_downsample").value_or(true);
             auto downsample_padding = args_.get_optional<int64_t>("--downsample_padding").value_or(1);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
 
             DownEncoderBlock2D model(
                 in_channels,
@@ -338,12 +338,12 @@ public:
                 downsample_padding
             );
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, hidden_states);
+            return model.forward(runtime, hidden_states);
         }
 
         if (args_.get(0) == "UpDecoderBlock2D") {
@@ -354,8 +354,8 @@ public:
             auto output_scale_factor = args_.get_optional<float>("--output_scale_factor").value_or(1.0f);
             auto add_upsample = args_.get_optional<bool>("--add_upsample").value_or(true);
             auto temb_channels = args_.get_optional<int64_t>("--temb_channels");
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
-            auto temb = args_.get_optional<Tensor>("--temb", {ctx, inputs_});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto temb = args_.get_optional<Tensor>("--temb", {runtime});
 
             UpDecoderBlock2D model(
                 in_channels,
@@ -371,22 +371,22 @@ public:
                 temb_channels
             );
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, hidden_states, temb);
+            return model.forward(runtime, hidden_states, temb);
         }
 
 
 
         if (args_.get(0) == "Flux2SwiGLU") {
-            auto x = args_.get_one<Tensor>("--x", {ctx, inputs_});
+            auto x = args_.get_one<Tensor>("--x", {runtime});
 
             Flux2SwiGLU model;
 
-            return model.forward(*ctx, x);
+            return model.forward(runtime, x);
         }
 
         if (args_.get(0) == "Flux2FeedForward") {
@@ -395,32 +395,32 @@ public:
             auto mult = args_.get_optional<float>("--mult").value_or(3.0);
             auto inner_dim = args_.get_optional<int64_t>("--inner_dim");
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto x = args_.get_one<Tensor>("--x", {ctx, inputs_});
+            auto x = args_.get_one<Tensor>("--x", {runtime});
 
             Flux2FeedForward model(dim, dim_out, mult, inner_dim, bias);
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, x);
+            return model.forward(runtime, x);
         }
 
         if (args_.get(0) == "Flux2Modulation") {
             auto dim = args_.get_one<int64_t>("--dim");
             auto mod_param_sets = args_.get_optional<int64_t>("--mod_param_sets").value_or(2);
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto temb = args_.get_one<Tensor>("--temb", {ctx, inputs_});
+            auto temb = args_.get_one<Tensor>("--temb", {runtime});
 
             Flux2Modulation model(dim, mod_param_sets, bias);
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, temb);
+            return model.forward(runtime, temb);
         }
 
         if (args_.get(0) == "Flux2TimestepGuidanceEmbeddings") {
@@ -428,33 +428,33 @@ public:
             auto embedding_dim = args_.get_one<int64_t>("--embedding_dim");
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
             auto guidance_embeds = args_.get_optional<bool>("--guidance_embeds").value_or(true);
-            auto timestep = args_.get_one<Tensor>("--timestep", {ctx, inputs_});
-            auto guidance = args_.get_optional<Tensor>("--guidance", {ctx, inputs_});
+            auto timestep = args_.get_one<Tensor>("--timestep", {runtime});
+            auto guidance = args_.get_optional<Tensor>("--guidance", {runtime});
 
             Flux2TimestepGuidanceEmbeddings model(in_channels, embedding_dim, bias, guidance_embeds);
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, timestep, guidance);
+            return model.forward(runtime, timestep, guidance);
         }
 
         if (args_.get(0) == "Flux2PosEmbed") {
             auto theta = args_.get_one<int64_t>("--theta");
             auto axes_dim = args_.get_many<int64_t>("--axes_dim");
-            auto x = args_.get_one<Tensor>("--x", {ctx, inputs_});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {ctx, inputs_});
+            auto x = args_.get_one<Tensor>("--x", {runtime});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {runtime});
 
             Flux2PosEmbed model(theta, axes_dim);
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, x, position_ids);
+            return model.forward(runtime, x, position_ids);
         }
 
         if (args_.get(0) == "Flux2Attention") {
@@ -469,12 +469,12 @@ public:
             auto eps = args_.get_optional<float>("--eps").value_or(1e-5);
             auto out_dim = args_.get_optional<int64_t>("--out_dim");
             auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
-            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {ctx, inputs_});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {ctx, inputs_});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {runtime});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {runtime});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {ctx, inputs_});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {runtime});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -495,12 +495,12 @@ public:
                 elementwise_affine
             );
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            auto [y1, y2] = model.forward(*ctx, hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb);
+            auto [y1, y2] = model.forward(runtime, hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb);
             std::vector<Tensor> results;
 
             results.push_back(y1);
@@ -523,11 +523,11 @@ public:
             auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
             auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(4.0);
             auto mlp_mult_factor = args_.get_optional<int64_t>("--mlp_mult_factor").value_or(2);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {ctx, inputs_});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {runtime});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {ctx, inputs_});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {runtime});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -548,12 +548,12 @@ public:
                 mlp_mult_factor
             );
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(*ctx, hidden_states, attention_mask, image_rotary_emb);
+            return model.forward(runtime, hidden_states, attention_mask, image_rotary_emb);
         }
 
         if (args_.get(0) == "Flux2SingleTransformerBlock") {
@@ -563,14 +563,14 @@ public:
             auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(3.0);
             auto eps = args_.get_optional<float>("--eps").value_or(1e-6);
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
-            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {ctx, inputs_});
-            auto temb_mod = args_.get_one<Tensor>("--temb_mod", {ctx, inputs_});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {runtime});
+            auto temb_mod = args_.get_one<Tensor>("--temb_mod", {runtime});
             auto split_hidden_states = args_.get_optional<bool>("--split_hidden_states").value_or(false);
             auto text_seq_len = args_.get_optional<int64_t>("--text_seq_len");
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {ctx, inputs_});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {runtime});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -586,13 +586,13 @@ public:
                 bias
             );
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
             auto [y1, y2] = model.forward(
-                *ctx,
+                runtime,
                 hidden_states,
                 encoder_hidden_states,
                 temb_mod,
@@ -618,13 +618,13 @@ public:
             auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(3.0);
             auto eps = args_.get_optional<float>("--eps").value_or(1e-6);
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
-            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {ctx, inputs_});
-            auto temb_mod_img = args_.get_one<Tensor>("--temb_mod_img", {ctx, inputs_});
-            auto temb_mod_txt = args_.get_one<Tensor>("--temb_mod_txt", {ctx, inputs_});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {runtime});
+            auto temb_mod_img = args_.get_one<Tensor>("--temb_mod_img", {runtime});
+            auto temb_mod_txt = args_.get_one<Tensor>("--temb_mod_txt", {runtime});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {ctx, inputs_});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {runtime});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -640,13 +640,13 @@ public:
                 bias
             );
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
             auto [y1, y2] = model.forward(
-                *ctx,
+                runtime,
                 hidden_states,
                 encoder_hidden_states,
                 temb_mod_img,
@@ -673,12 +673,12 @@ public:
             auto eps = args_.get_optional<float>("--eps").value_or(1e-6f);
             auto guidance_embeds = args_.get_optional<bool>("--guidance_embeds").value_or(true);
 
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {ctx, inputs_});
-            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {ctx, inputs_});
-            auto timestep = args_.get_one<Tensor>("--timestep", {ctx, inputs_});
-            auto img_ids = args_.get_one<Tensor>("--img_ids", {ctx, inputs_});
-            auto txt_ids = args_.get_one<Tensor>("--txt_ids", {ctx, inputs_});
-            auto guidance = args_.get_optional<Tensor>("--guidance", {ctx, inputs_});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {runtime});
+            auto timestep = args_.get_one<Tensor>("--timestep", {runtime});
+            auto img_ids = args_.get_one<Tensor>("--img_ids", {runtime});
+            auto txt_ids = args_.get_one<Tensor>("--txt_ids", {runtime});
+            auto guidance = args_.get_optional<Tensor>("--guidance", {runtime});
             auto num_ref_tokens = args_.get_optional<int64_t>("--num_ref_tokens").value_or(0);
             auto ref_fixed_timestep = args_.get_optional<float>("--ref_fixed_timestep").value_or(0.0f);
 
@@ -702,13 +702,13 @@ public:
                 guidance_embeds
             );
 
-            CreateParametersVisitor create_parameters(ctx, inputs_, args_);
+            CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
             return model.forward(
-                *ctx,
+                runtime,
                 hidden_states,
                 encoder_hidden_states,
                 timestep,
@@ -728,19 +728,21 @@ public:
 protected:
     class CreateParametersVisitor : public Visitor {
     public:
-        CreateParametersVisitor(Context& ctx, std::vector<std::pair<Tensor, std::vector<float>>>& inputs, ArgumentParser& args)
-            : ctx_(ctx), inputs_(inputs), args_(args)
+        CreateParametersVisitor(Runtime& runtime, ArgumentParser& args)
+            : runtime_(runtime), args_(args)
         {}
 
         virtual void visit(Parameter& parameter, std::vector<std::string> path) {
             auto joined_path = join_path(path);
-            auto tensor = args_.get_one<Tensor>(joined_path, {ctx_, inputs_});
+            auto tensor = args_.get_one<Tensor>(joined_path, {runtime_});
             parameter.set(tensor);
         }
 
+        virtual void visit(Value& value, std::vector<std::string> path) {
+        }
+
     private:
-        Context& ctx_;
-        std::vector<std::pair<Tensor, std::vector<float>>>& inputs_;
+        Runtime& runtime_;
         ArgumentParser& args_;
         
         static std::string join_path(const std::vector<std::string>& path) {

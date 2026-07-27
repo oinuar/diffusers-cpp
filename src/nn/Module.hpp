@@ -6,6 +6,7 @@
 #include "ggml/Tensor.hpp"
 
 class Visitor;
+class Runtime;
 
 class Module {
 public:

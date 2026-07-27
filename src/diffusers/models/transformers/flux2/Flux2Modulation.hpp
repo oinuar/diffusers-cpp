@@ -11,12 +11,12 @@ public:
         modules["act_fn"] = std::make_shared<SiLU>();
     }
 
-    Tensor forward(ggml_context* ctx, Tensor temb) {
+    Tensor forward(Runtime& runtime, Tensor temb) {
         auto act_fn = std::static_pointer_cast<SiLU>(modules["act_fn"]);
         auto linear = std::static_pointer_cast<Linear>(modules["linear"]);
 
-        auto mod = act_fn->forward(ctx, temb);
-        mod = linear->forward(ctx, mod);
+        auto mod = act_fn->forward(runtime, temb);
+        mod = linear->forward(runtime, mod);
 
         return mod;
     }

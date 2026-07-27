@@ -36,14 +36,14 @@ public:
     {
     }
 
-    Tensor forward(ggml_context* ctx, Tensor x) {
+    Tensor forward(Runtime& runtime, Tensor x) {
         auto linear_in = std::static_pointer_cast<Linear>(modules["linear_in"]);
         auto act_fn = std::static_pointer_cast<Flux2SwiGLU>(modules["act_fn"]);
         auto linear_out = std::static_pointer_cast<Linear>(modules["linear_out"]);
 
-        x = linear_in->forward(ctx, x);
-        x = act_fn->forward(ctx, x);
-        x = linear_out->forward(ctx, x);
+        x = linear_in->forward(runtime, x);
+        x = act_fn->forward(runtime, x);
+        x = linear_out->forward(runtime, x);
 
         return x;
     }

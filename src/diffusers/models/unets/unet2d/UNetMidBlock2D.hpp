@@ -18,7 +18,7 @@ public:
         float output_scale_factor = 1.0f
     );
 
-    Tensor forward(ggml_context* ctx, Tensor sample, std::optional<Tensor> temb = std::nullopt);
+    Tensor forward(Runtime& runtime, Tensor sample, std::optional<Tensor> temb = std::nullopt);
 
 private:
     bool add_attention_;

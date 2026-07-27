@@ -8,7 +8,7 @@ class Qwen3RotaryEmbedding : public Module {
 public:
     Qwen3RotaryEmbedding(const Qwen3Config& config);
 
-    std::pair<Tensor, Tensor> forward(ggml_context* ctx, Tensor x, Tensor position_ids);
+    std::pair<Tensor, Tensor> forward(Runtime& runtime, Tensor x, Tensor position_ids);
 
 private:
     int64_t dim_;

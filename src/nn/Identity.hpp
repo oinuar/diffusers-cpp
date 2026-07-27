@@ -4,7 +4,7 @@
 
 class Identity : public Module {
 public:
-    Tensor forward(ggml_context*, Tensor input) {
+    Tensor forward(Runtime&, Tensor input) {
         return input;
     }
 };

@@ -108,14 +108,14 @@ ResnetBlock2D<NonLinearity>::ResnetBlock2D(
 
 
 template <class NonLinearity>
-Tensor ResnetBlock2D<NonLinearity>::forward(ggml_context* ctx, Tensor input_tensor, std::optional<Tensor> temb) {
+Tensor ResnetBlock2D<NonLinearity>::forward(Runtime& runtime, Tensor input_tensor, std::optional<Tensor> temb) {
     Tensor hidden_states = input_tensor;
 
     hidden_states =
         std::static_pointer_cast<GroupNorm>(
             modules["norm1"])
         ->forward(
-            ctx,
+            runtime,
             hidden_states
         );
 
@@ -123,7 +123,7 @@ Tensor ResnetBlock2D<NonLinearity>::forward(ggml_context* ctx, Tensor input_tens
         std::static_pointer_cast<SiLU>(
             modules["nonlinearity"])
         ->forward(
-            ctx,
+            runtime,
             hidden_states
         );
 
@@ -131,7 +131,7 @@ Tensor ResnetBlock2D<NonLinearity>::forward(ggml_context* ctx, Tensor input_tens
         std::static_pointer_cast<Conv2d>(
             modules["conv1"])
         ->forward(
-            ctx,
+            runtime,
             hidden_states
         );
 
@@ -140,7 +140,7 @@ Tensor ResnetBlock2D<NonLinearity>::forward(ggml_context* ctx, Tensor input_tens
             std::static_pointer_cast<SiLU>(
                 modules["nonlinearity"])
             ->forward(
-                ctx,
+                runtime,
                 *temb
             );
 
@@ -149,7 +149,7 @@ Tensor ResnetBlock2D<NonLinearity>::forward(ggml_context* ctx, Tensor input_tens
             std::static_pointer_cast<Linear>(
                 modules["time_emb_proj"])
             ->forward(
-                ctx,
+                runtime,
                 t
             );
 
@@ -179,7 +179,7 @@ Tensor ResnetBlock2D<NonLinearity>::forward(ggml_context* ctx, Tensor input_tens
         std::static_pointer_cast<GroupNorm>(
             modules["norm2"])
         ->forward(
-            ctx,
+            runtime,
             hidden_states
         );
 
@@ -187,7 +187,7 @@ Tensor ResnetBlock2D<NonLinearity>::forward(ggml_context* ctx, Tensor input_tens
         std::static_pointer_cast<SiLU>(
             modules["nonlinearity"])
         ->forward(
-            ctx,
+            runtime,
             hidden_states
         );
 
@@ -195,7 +195,7 @@ Tensor ResnetBlock2D<NonLinearity>::forward(ggml_context* ctx, Tensor input_tens
         std::static_pointer_cast<Conv2d>(
             modules["conv2"])
         ->forward(
-            ctx,
+            runtime,
             hidden_states
         );
 
@@ -214,7 +214,7 @@ Tensor ResnetBlock2D<NonLinearity>::forward(ggml_context* ctx, Tensor input_tens
             std::static_pointer_cast<Conv2d>(
                 modules["conv_shortcut"])
             ->forward(
-                ctx,
+                runtime,
                 input_tensor
             );
 

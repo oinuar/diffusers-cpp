@@ -7,13 +7,13 @@
 class Parameter : public Module {
 public:
     Parameter(const Tensor::Shape& shape)
-        : tensor_(), shape_(shape)
+        : shape_(shape), tensor_()
     {
     }
 
     Tensor forward() {
-        if (tensor_.ndim() == 0)
-            throw std::runtime_error("Undefined tensor parameter; did you forget to set it?");
+        if (!tensor_)
+            throw std::runtime_error("Undefined tensor Parameter; did you forget to set it?");
 
         return tensor_;
     }

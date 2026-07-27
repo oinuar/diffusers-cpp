@@ -62,7 +62,7 @@ public:
     }
 
     virtual std::tuple<Tensor, std::optional<Tensor>> forward(
-        ggml_context* ctx,
+        Runtime& runtime,
         Tensor hidden_states,
         std::optional<Tensor> encoder_hidden_states,
         std::optional<Tensor> attention_mask = std::nullopt,
@@ -73,9 +73,9 @@ public:
         auto to_k = std::static_pointer_cast<Linear>(modules["to_k"]);
         auto to_v = std::static_pointer_cast<Linear>(modules["to_v"]);
 
-        auto query = to_q->forward(ctx, hidden_states);
-        auto key = to_k->forward(ctx, hidden_states);
-        auto value = to_v->forward(ctx, hidden_states);
+        auto query = to_q->forward(runtime, hidden_states);
+        auto key = to_k->forward(runtime, hidden_states);
+        auto value = to_v->forward(runtime, hidden_states);
 
         std::optional<Tensor> encoder_query, encoder_key, encoder_value;
 
@@ -84,9 +84,9 @@ public:
             auto add_k_proj = std::static_pointer_cast<Linear>(modules["add_k_proj"]);
             auto add_v_proj = std::static_pointer_cast<Linear>(modules["add_v_proj"]);
 
-            encoder_query = add_q_proj->forward(ctx, encoder_hidden_states.value());
-            encoder_key = add_k_proj->forward(ctx, encoder_hidden_states.value());
-            encoder_value = add_v_proj->forward(ctx, encoder_hidden_states.value());
+            encoder_query = add_q_proj->forward(runtime, encoder_hidden_states.value());
+            encoder_key = add_k_proj->forward(runtime, encoder_hidden_states.value());
+            encoder_value = add_v_proj->forward(runtime, encoder_hidden_states.value());
         }
         // end of _get_qkv_projections(...)
 
@@ -97,8 +97,8 @@ public:
         auto norm_q = std::static_pointer_cast<RMSNorm>(modules["norm_q"]);
         auto norm_k = std::static_pointer_cast<RMSNorm>(modules["norm_k"]);
 
-        query = norm_q->forward(ctx, query);
-        key = norm_k->forward(ctx, key);
+        query = norm_q->forward(runtime, query);
+        key = norm_k->forward(runtime, key);
 
         if (added_kv_proj_dim_) {
             encoder_query = encoder_query.value().unflatten(-1, {heads_, -1});
@@ -108,8 +108,8 @@ public:
             auto norm_added_q = std::static_pointer_cast<RMSNorm>(modules["norm_added_q"]);
             auto norm_added_k = std::static_pointer_cast<RMSNorm>(modules["norm_added_k"]);
 
-            encoder_query = norm_added_q->forward(ctx, encoder_query.value());
-            encoder_key = norm_added_k->forward(ctx, encoder_key.value());
+            encoder_query = norm_added_q->forward(runtime, encoder_query.value());
+            encoder_key = norm_added_k->forward(runtime, encoder_key.value());
 
             query = Tensor::cat({encoder_query.value(), query}, 1);
             key = Tensor::cat({encoder_key.value(), key}, 1);
@@ -117,14 +117,14 @@ public:
         }
 
         if (image_rotary_emb) {
-            query = image_rotary_emb->first->forward(ctx, query, image_rotary_emb->second);
-            key = image_rotary_emb->first->forward(ctx, key, image_rotary_emb->second);
+            query = image_rotary_emb->first->forward(runtime, query, image_rotary_emb->second);
+            key = image_rotary_emb->first->forward(runtime, key, image_rotary_emb->second);
         }
 
         AttnOp dispatch_attention_fn;
 
         hidden_states = dispatch_attention_fn(
-            ctx,
+            runtime,
             query,
             key,
             value,
@@ -145,13 +145,13 @@ public:
             encoder_hidden_states = parts.at(0);
             hidden_states = parts.at(1);
 
-            encoder_hidden_states = to_add_out->forward(ctx, encoder_hidden_states.value());
+            encoder_hidden_states = to_add_out->forward(runtime, encoder_hidden_states.value());
         }
 
         auto to_out = std::static_pointer_cast<ModuleList>(modules["to_out"]);
 
-        hidden_states = std::static_pointer_cast<Linear>((*to_out)[0])->forward(ctx, hidden_states);
-        hidden_states = std::static_pointer_cast<Dropout>((*to_out)[1])->forward(ctx, hidden_states);
+        hidden_states = std::static_pointer_cast<Linear>((*to_out)[0])->forward(runtime, hidden_states);
+        hidden_states = std::static_pointer_cast<Dropout>((*to_out)[1])->forward(runtime, hidden_states);
 
         if (encoder_hidden_states)
             return {hidden_states, encoder_hidden_states.value()};

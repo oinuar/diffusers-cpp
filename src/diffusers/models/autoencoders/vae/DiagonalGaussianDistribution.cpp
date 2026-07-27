@@ -1,10 +1,9 @@
 #include "diffusers/models/autoencoders/vae/DiagonalGaussianDistribution.hpp"
-
+#include "ggml/Runtime.hpp"
 #include <cmath>
 
-
 DiagonalGaussianDistribution::DiagonalGaussianDistribution(
-    ggml_context* ctx,
+    Runtime& runtime,
     Tensor parameters,
     bool deterministic
 )
@@ -45,12 +44,12 @@ DiagonalGaussianDistribution::DiagonalGaussianDistribution(
             );
     }
     else {
-        std_ = Tensor::zeros(ctx, mean_.shape(), mean_.dtype());
+        std_ = Tensor::zeros(*runtime.context(), mean_.shape(), mean_.dtype());
     }
 }
 
 Tensor DiagonalGaussianDistribution::sample(
-    ggml_context* ctx
+    Runtime& runtime
 )
 {
     if (deterministic_)

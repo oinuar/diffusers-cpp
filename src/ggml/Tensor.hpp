@@ -34,6 +34,9 @@
  */
 class Tensor {
 public:
+    template<typename T>
+    struct TypeOf;
+
     /** @brief Shape descriptor for tensors with up to 4 dimensions.
      *
      * Stores exactly 4 dimension slots (matching ggml's maximum tensor rank) plus a logical size field
@@ -207,6 +210,11 @@ public:
     ggml_type dtype() const {
         throw_if_not_valid();
         return t_->type;
+    }
+
+    /** @brief Returns true if tensor is valid; otherwise returns false. */
+    operator bool() const {
+        return ctx_ != nullptr && t_ != nullptr;
     }
 
     /** @brief Returns a contiguous copy of this tensor.
@@ -518,3 +526,35 @@ inline Tensor pow(float base, const Tensor& exponent) {
 inline Tensor rsqrt(const Tensor& tensor) {
     return 1.0f / sqrt(tensor);
 }
+
+template<>
+struct Tensor::TypeOf<float> {
+    static constexpr ggml_type value = GGML_TYPE_F32;
+};
+
+template<>
+struct Tensor::TypeOf<int8_t> {
+    static constexpr ggml_type value = GGML_TYPE_I8;
+};
+
+template<>
+struct Tensor::TypeOf<uint8_t> {
+    // GGML has no unsigned byte type.
+    // Use I8 storage.
+    static constexpr ggml_type value = GGML_TYPE_I8;
+};
+
+template<>
+struct Tensor::TypeOf<int16_t> {
+    static constexpr ggml_type value = GGML_TYPE_I16;
+};
+
+template<>
+struct Tensor::TypeOf<int32_t> {
+    static constexpr ggml_type value = GGML_TYPE_I32;
+};
+
+template<>
+struct Tensor::TypeOf<int64_t> {
+    static constexpr ggml_type value = GGML_TYPE_I64;
+};

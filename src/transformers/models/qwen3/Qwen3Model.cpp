@@ -16,7 +16,7 @@ Qwen3Model::Qwen3Model(const Qwen3Config& config) : num_hidden_layers_(config.nu
 }
 
 BaseModelOutputWithPast Qwen3Model::forward(
-    ggml_context* ctx,
+    Runtime& runtime,
     std::optional<Tensor> input_ids,
     std::optional<Tensor> attention_mask,
     std::optional<Tensor> position_ids,
@@ -29,7 +29,7 @@ BaseModelOutputWithPast Qwen3Model::forward(
 
     if (!inputs_embeds) {
         auto embed_tokens = std::static_pointer_cast<Embedding>(modules["embed_tokens"]);
-        inputs_embeds = embed_tokens->forward(ctx, input_ids.value());
+        inputs_embeds = embed_tokens->forward(runtime, input_ids.value());
     }
 
     if (use_cache && !past_key_values)
@@ -46,7 +46,7 @@ BaseModelOutputWithPast Qwen3Model::forward(
     hidden_states = inputs_embeds.value();
 
     auto rotary_emb = std::static_pointer_cast<Qwen3RotaryEmbedding>(modules["rotary_emb"]);
-    auto position_embeddings = rotary_emb->forward(ctx, hidden_states, position_ids);
+    auto position_embeddings = rotary_emb->forward(runtime, hidden_states, position_ids);
 
     for (auto i = 0; i < num_hidden_layers_; ++i) {
         auto decoder_layer = std::static_pointer_cast<Qwen3DecoderLayer>(modules["layers." + std::to_string(i)]);
@@ -61,7 +61,7 @@ BaseModelOutputWithPast Qwen3Model::forward(
     }
 
     auto norm = std::static_pointer_cast<Qwen3RMSNorm>(modules["norm"]);
-    hidden_states = norm->forward(ctx, hidden_states);
+    hidden_states = norm->forward(runtime, hidden_states);
 
     return BaseModelOutputWithPast{
         .last_hidden_state = hidden_states,

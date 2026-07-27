@@ -8,7 +8,7 @@ public:
     // GGML supports only last dimension reduction norm
     LayerNorm(int64_t dim, float eps = 1e-5f, bool elementwise_affine = true, bool bias = true);
 
-    Tensor forward(ggml_context* ctx, Tensor x);
+    Tensor forward(Runtime& runtime, Tensor x);
 
 private:
     float eps_;

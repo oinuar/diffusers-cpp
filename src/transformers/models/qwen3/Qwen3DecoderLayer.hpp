@@ -9,7 +9,7 @@ public:
     Qwen3DecoderLayer(const Qwen3Config& config, int layer_idx);
 
     Tensor forward(
-        ggml_context* ctx,
+        Runtime& runtime,
         Tensor hidden_states,
         std::optional<Tensor> attention_mask,
         std::pair<Tensor, Tensor> position_embeddings,

@@ -71,7 +71,7 @@ UNetMidBlock2D::UNetMidBlock2D(
     }
 }
 
-Tensor UNetMidBlock2D::forward(ggml_context* ctx, Tensor hidden_states, std::optional<Tensor> temb) {
+Tensor UNetMidBlock2D::forward(Runtime& runtime, Tensor hidden_states, std::optional<Tensor> temb) {
     auto resnets = std::static_pointer_cast<ModuleList>(modules["resnets"]);
 
     for (auto i = 0; i < resnets->size(); ++i) {
@@ -79,10 +79,10 @@ Tensor UNetMidBlock2D::forward(ggml_context* ctx, Tensor hidden_states, std::opt
             auto attentions = std::static_pointer_cast<ModuleList>(modules["attentions"]);
 
             hidden_states = std::static_pointer_cast<Attention<ScaledDotProductAttention<FlashAttentionOp>>>((*attentions)[i - 1])
-                ->forward(ctx, hidden_states);
+                ->forward(runtime, hidden_states);
         }
 
-        hidden_states = std::static_pointer_cast<ResnetBlock2D<SiLU>>((*resnets)[i])->forward(ctx, hidden_states, temb);
+        hidden_states = std::static_pointer_cast<ResnetBlock2D<SiLU>>((*resnets)[i])->forward(runtime, hidden_states, temb);
     }
 
     return hidden_states;

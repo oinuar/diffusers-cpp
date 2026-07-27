@@ -20,7 +20,7 @@ public:
         int64_t downsample_padding = 1
     );
 
-    Tensor forward(ggml_context* ctx, Tensor hidden_states);
+    Tensor forward(Runtime& runtime, Tensor hidden_states);
 
 private:
     bool add_downsample_;

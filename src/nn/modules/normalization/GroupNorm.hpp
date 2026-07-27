@@ -12,7 +12,7 @@ public:
         bool bias = true
     );
 
-    Tensor forward(ggml_context* ctx, Tensor input);
+    Tensor forward(Runtime& runtime, Tensor input);
 
 private:
     int64_t num_groups_;

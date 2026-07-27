@@ -16,7 +16,7 @@ public:
         bool sample_proj_bias = true
     );
     
-    Tensor forward(ggml_context* ctx, Tensor sample, std::optional<Tensor> condition = std::nullopt);
+    Tensor forward(Runtime& runtime, Tensor sample, std::optional<Tensor> condition = std::nullopt);
 };
 
 #include "diffusers/models/embeddings/TimestepEmbedding.inl"

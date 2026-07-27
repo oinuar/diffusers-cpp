@@ -1,4 +1,5 @@
 #include "diffusers/models/normalization/AdaLayerNormContinuous.hpp"
+#include "ggml/Runtime.hpp"
 #include "nn/Linear.hpp"
 #include "nn/SiLU.hpp"
 #include "nn/modules/normalization/LayerNorm.hpp"
@@ -22,11 +23,11 @@ AdaLayerNormContinuous<NormFn>::AdaLayerNormContinuous(
 }
 
 template <class NormFn>
-Tensor AdaLayerNormContinuous<NormFn>::forward(ggml_context* ctx, Tensor hidden_states, Tensor conditioning_embedding) {
+Tensor AdaLayerNormContinuous<NormFn>::forward(Runtime& runtime, Tensor hidden_states, Tensor conditioning_embedding) {
     auto silu = std::static_pointer_cast<SiLU>(modules["silu"]);
     auto linear = std::static_pointer_cast<Linear>(modules["linear"]);
 
-    auto emb = linear->forward(ctx, silu->forward(ctx, conditioning_embedding));
+    auto emb = linear->forward(runtime, silu->forward(runtime, conditioning_embedding));
     auto chunk = emb.chunk(2, 1);
     auto scale = chunk.at(0);
     auto shift = chunk.at(1);
@@ -34,7 +35,7 @@ Tensor AdaLayerNormContinuous<NormFn>::forward(ggml_context* ctx, Tensor hidden_
     auto it = modules.find("norm");
 
     if (it != std::end(modules))
-        hidden_states = std::static_pointer_cast<NormFn>(it->second)->forward(ctx, hidden_states);
+        hidden_states = std::static_pointer_cast<NormFn>(it->second)->forward(runtime, hidden_states);
 
     hidden_states = hidden_states * (1 + scale)[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}] + shift[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}];
 

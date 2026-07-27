@@ -13,7 +13,7 @@ public:
         bool bias = true
     );
 
-    Tensor forward(ggml_context* ctx, Tensor x);
+    Tensor forward(Runtime& runtime, Tensor x);
 
 public:
     int64_t stride_;

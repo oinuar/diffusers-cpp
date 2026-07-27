@@ -11,7 +11,7 @@ public:
         modules["weight"] = std::make_shared<Parameter>(Tensor::Shape({hidden_size}));
     }
 
-    Tensor forward(ggml_context* ctx, Tensor hidden_states) {
+    Tensor forward(Runtime& runtime, Tensor hidden_states) {
         auto input_dtype = hidden_states.dtype();
 
         hidden_states = hidden_states.to(GGML_TYPE_F32);

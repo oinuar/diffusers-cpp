@@ -6,7 +6,7 @@ Qwen3RotaryEmbedding::Qwen3RotaryEmbedding(const Qwen3Config& config)
 {
 }
 
-std::pair<Tensor, Tensor> Qwen3RotaryEmbedding::forward(ggml_context* ctx, Tensor x, Tensor position_ids) {
+std::pair<Tensor, Tensor> Qwen3RotaryEmbedding::forward(Runtime& runtime, Tensor x, Tensor position_ids) {
     auto inv_freq = 1.0f / (Tensor::arange(0, dim_, 2) / (float)dim_).pow(base_);
 
     auto inv_freq_expanded = inv_freq[{Tensor::Slice::none(), Tensor::Slice::all(), Tensor::Slice::none()}].to(GGML_TYPE_F32);

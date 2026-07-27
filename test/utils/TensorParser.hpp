@@ -7,14 +7,12 @@
 #include <vector>
 #include <cctype>
 #include "./ArgumentParser.hpp"
-
 #include "ggml/Tensor.hpp"
-
-class Context;
+#include "ggml/Runtime.hpp"
 
 template <>
 struct ArgumentParser::parser<Tensor> {
-    parser(Context& ctx, std::vector<std::pair<Tensor, std::vector<float>>>& inputs) : ctx_(ctx), inputs_(inputs) {
+    parser(Runtime& runtime) : runtime_(runtime) {
 
     }
 
@@ -23,21 +21,19 @@ struct ArgumentParser::parser<Tensor> {
 
         try {
             auto [shape, data] = parser.parse();
-            auto tensor = Tensor::empty(*ctx_, shape, GGML_TYPE_F32);
-
-            inputs_.push_back(std::make_pair(tensor, data));
 
             std::cerr << "inferred shape for " << option << ": " << shape.to_string() << std::endl;
 
-            return tensor;
+            return runtime_.create<float>(shape, [data](Tensor, std::mt19937&) {
+                return std::move(data);
+            });
         } catch (const std::runtime_error& error) {
             throw std::runtime_error("invalid argument " + option + ": " + error.what());
         }
     }
 
 private:
-    Context& ctx_;
-    std::vector<std::pair<Tensor, std::vector<float>>>& inputs_;
+    Runtime& runtime_;
 
     class TensorParser {
     public:

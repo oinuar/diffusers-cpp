@@ -34,7 +34,7 @@ public:
     }
 
     std::tuple<Tensor, std::optional<Tensor>> forward(
-        ggml_context* ctx,
+        Runtime& runtime,
         Tensor hidden_states,
         std::optional<Tensor> encoder_hidden_states,
         Tensor temb_mod,
@@ -50,11 +50,11 @@ public:
         auto [mod_shift, mod_scale, mod_gate] = Flux2Modulation::split(temb_mod, 1)[0];
 
         auto norm = std::static_pointer_cast<LayerNorm>(modules["norm"]);
-        auto norm_hidden_states = norm->forward(ctx, hidden_states);
+        auto norm_hidden_states = norm->forward(runtime, hidden_states);
         norm_hidden_states = (1.0f + mod_scale) * norm_hidden_states + mod_shift;
 
         auto attn = std::static_pointer_cast<Flux2ParallelSelfAttention<AttnOp>>(modules["attn"]);
-        auto attn_output = attn->forward(ctx, norm_hidden_states, std::nullopt, image_rotary_emb);
+        auto attn_output = attn->forward(runtime, norm_hidden_states, std::nullopt, image_rotary_emb);
         hidden_states = hidden_states + mod_gate * attn_output;
 
         if (hidden_states.dtype() == GGML_TYPE_F16)

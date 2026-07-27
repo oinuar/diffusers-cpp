@@ -9,7 +9,7 @@ Qwen3ForCausalLM::Qwen3ForCausalLM(const Qwen3Config& config) {
 }
 
 Qwen3CausalLMOutput Qwen3ForCausalLM::forward(
-    ggml_context* ctx,
+    Runtime& runtime,
     std::optional<Tensor> input_ids,
     std::optional<Tensor> attention_mask,
     std::optional<Tensor> position_ids,
@@ -33,7 +33,7 @@ Qwen3CausalLMOutput Qwen3ForCausalLM::forward(
     hidden_states = outputs.last_hidden_state;
 
     auto lm_head = std::static_pointer_cast<Linear>(modules["lm_head"]);
-    auto logits = lm_head->forward(ctx, hidden_states[{Tensor::Slice::all(), Tensor::Slice::range(-logits_to_keep, std::nullopt), Tensor::Slice::all()}]);
+    auto logits = lm_head->forward(runtime, hidden_states[{Tensor::Slice::all(), Tensor::Slice::range(-logits_to_keep, std::nullopt), Tensor::Slice::all()}]);
 
     // TODO: loss function? maybe not needed
 

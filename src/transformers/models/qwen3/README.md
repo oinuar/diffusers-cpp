@@ -11,7 +11,7 @@ C++ port of the Hugging Face diffusers Qwen3 causal language model (text encoder
 
 ### 1. Explicit computation graph context
 
-Python diffusers uses implicit PyTorch autograd context; C++ requires passing `ggml_context* ctx` explicitly to every `forward()`. This is because ggml's graph nodes are non-owning and tied to a context lifetime — the caller must manage arena allocation manually.
+Python diffusers uses implicit PyTorch autograd context; C++ requires passing `Runtime& runtime` explicitly to every `forward()`. This is because ggml's graph nodes are non-owning and tied to a context lifetime — the caller must manage arena allocation manually.
 
 ### 2. KV cache as a dedicated class
 

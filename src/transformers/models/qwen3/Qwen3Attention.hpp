@@ -9,7 +9,7 @@ public:
     Qwen3Attention(const Qwen3Config& config, int layer_idx);
 
     std::pair<Tensor, std::optional<Tensor>> forward(
-        ggml_context* ctx,
+        Runtime& runtime,
         Tensor hidden_states,
         std::pair<Tensor, Tensor> position_embeddings,
         std::optional<Tensor> attention_mask,

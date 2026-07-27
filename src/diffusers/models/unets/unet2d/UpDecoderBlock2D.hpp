@@ -20,7 +20,7 @@ public:
         std::optional<int64_t> temb_channels = std::nullopt
     );
 
-    Tensor forward(ggml_context* ctx, Tensor hidden_states, std::optional<Tensor> temb = std::nullopt);
+    Tensor forward(Runtime& runtime, Tensor hidden_states, std::optional<Tensor> temb = std::nullopt);
 
 private:
     bool add_upsample_;

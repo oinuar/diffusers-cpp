@@ -17,7 +17,7 @@ public:
     Qwen3ForCausalLM(const Qwen3Config& config);
 
     CausalLMOutputWithPast forward(
-        ggml_context* ctx,
+        Runtime& runtime,
         std::optional<Tensor> input_ids = std::nullopt,
         std::optional<Tensor> attention_mask = std::nullopt,
         std::optional<Tensor> position_ids = std::nullopt,

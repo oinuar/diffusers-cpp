@@ -3,9 +3,11 @@
 #include "ggml/Tensor.hpp"
 #include <optional>
 
+class Context;
+
 struct FlashAttentionOp {
     Tensor operator ()(
-        ggml_context* ctx,
+        Context& context,
         Tensor query,
         Tensor key,
         Tensor value,

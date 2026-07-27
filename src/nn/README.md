@@ -25,11 +25,11 @@ Follow these steps when porting a Python diffusers module:
    ```cpp
    modules["name"] = std::make_shared<SubModule>(args...);
    ```
-3. **Implement `forward(ggml_context* ctx, ...)`** — every forward method takes `ctx` as the first parameter and returns a `Tensor`.
+3. **Implement `forward(Runtime& runtime, ...)`** — every forward method takes `ctx` as the first parameter and returns a `Tensor`.
 4. **Call sub-module forward via `static_pointer_cast`**:
    ```cpp
    auto sub = std::static_pointer_cast<SubModule>(modules["name"]);
-   auto result = sub->forward(ctx, input);
+   auto result = sub->forward(runtime, input);
    ```
 5. **Weight loading requires no extra work** — the model's `accept()` is called by the GGUF loader visitor, which traverses all Parameters automatically.
 

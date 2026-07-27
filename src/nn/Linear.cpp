@@ -1,5 +1,6 @@
 #include "nn/Linear.hpp"
 #include "nn/Parameter.hpp"
+#include "ggml/Runtime.hpp"
 
 Linear::Linear(
     int64_t in_features,
@@ -13,23 +14,23 @@ Linear::Linear(
         modules["bias"] = std::make_shared<Parameter>(Tensor::Shape({out_features}));
 }
 
-Tensor Linear::forward(ggml_context* ctx, Tensor x) {
+Tensor Linear::forward(Runtime& runtime, Tensor x) {
     auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward();
 
     // Weight is logically shaped [out_features, in_features] (PyTorch),
     // but stored in GGML's native reversed layout {in_features, out_features}.
     // Since ggml_mul_mat() already performs Aᵀ * B on its first operand,
     // explicitly transposing the weight would transpose it twice.
-    auto y = ggml_mul_mat(ctx, *weight, *x);
+    auto y = ggml_mul_mat(*runtime.context(), *weight, *x);
 
     if (bias_) {
         auto bias = std::static_pointer_cast<Parameter>(modules["bias"])->forward();
 
-        y = ggml_add(ctx, y, *bias);
+        y = ggml_add(*runtime.context(), y, *bias);
     }
 
     Tensor::Shape shape = x.shape();
     shape[shape.rank() - 1] = weight.shape()[0];
 
-    return Tensor(ctx, y, shape);
+    return Tensor(*runtime.context(), y, shape);
 }

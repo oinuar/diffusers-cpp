@@ -1,5 +1,6 @@
 #include "nn/modules/normalization/GroupNorm.hpp"
 #include "nn/Parameter.hpp"
+#include "ggml/Runtime.hpp"
 
 GroupNorm::GroupNorm(int64_t num_groups, int64_t num_channels, float eps, bool affine, bool bias)
     : num_groups_(num_groups),
@@ -22,7 +23,7 @@ GroupNorm::GroupNorm(int64_t num_groups, int64_t num_channels, float eps, bool a
 }
 
 Tensor GroupNorm::forward(
-    ggml_context* ctx,
+    Runtime& runtime,
     Tensor input
 ) {
     auto shape = input.shape();
@@ -51,9 +52,9 @@ Tensor GroupNorm::forward(
 
 
     input = Tensor(
-        ctx,
+        *runtime.context(),
         ggml_norm(
-            ctx,
+            *runtime.context(),
             *input,
             eps_
         ),

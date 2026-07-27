@@ -1,5 +1,6 @@
 #include "diffusers/models/embeddings/TimestepEmbedding.hpp"
 #include "nn/Linear.hpp"
+#include "ggml/Runtime.hpp"
 
 template <class ActFn, class PostActFn>
 TimestepEmbedding<ActFn, PostActFn>::TimestepEmbedding(
@@ -22,11 +23,11 @@ TimestepEmbedding<ActFn, PostActFn>::TimestepEmbedding(
 }
 
 template <class ActFn, class PostActFn>
-Tensor TimestepEmbedding<ActFn, PostActFn>::forward(ggml_context* ctx, Tensor sample, std::optional<Tensor> condition) {
+Tensor TimestepEmbedding<ActFn, PostActFn>::forward(Runtime& runtime, Tensor sample, std::optional<Tensor> condition) {
     if (condition) {
         auto cond_proj = std::static_pointer_cast<Linear>(modules["cond_proj"]);
 
-        sample = sample + cond_proj->forward(ctx, condition.value());
+        sample = sample + cond_proj->forward(runtime, condition.value());
     }
 
     auto linear_1 = std::static_pointer_cast<Linear>(modules["linear_1"]);
@@ -34,10 +35,10 @@ Tensor TimestepEmbedding<ActFn, PostActFn>::forward(ggml_context* ctx, Tensor sa
     auto linear_2 = std::static_pointer_cast<Linear>(modules["linear_2"]);
     auto post_act = std::static_pointer_cast<PostActFn>(modules["post_act"]);
 
-    sample = linear_1->forward(ctx, sample);
-    sample = act->forward(ctx, sample);
-    sample = linear_2->forward(ctx, sample);
-    sample = post_act->forward(ctx, sample);
+    sample = linear_1->forward(runtime, sample);
+    sample = act->forward(runtime, sample);
+    sample = linear_2->forward(runtime, sample);
+    sample = post_act->forward(runtime, sample);
 
     return sample;
 }

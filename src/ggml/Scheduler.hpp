@@ -4,16 +4,16 @@
 #include "Arena.hpp"
 #include "Graph.hpp"
 #include "Context.hpp"
-
+#include "Runtime.hpp"
 #include "ggml.h"
 #include "ggml-backend.h"
-
 #include <vector>
+#include <random>
 
 class Scheduler {
 public:
-    Scheduler(std::vector<ggml_backend_t>&& backends, size_t graph_size = GGML_DEFAULT_GRAPH_SIZE)
-        : backends_(std::move(backends)), arena_(graph_size)
+    Scheduler(std::vector<ggml_backend_t>&& backends, uint64_t seed = std::random_device{}(), size_t graph_size = GGML_DEFAULT_GRAPH_SIZE)
+        : backends_(std::move(backends)), arena_(graph_size), seed_(seed)
     {
         sched_ = ggml_backend_sched_new(backends_.data(), nullptr, backends_.size(), graph_size, false, true);
     }
@@ -31,20 +31,18 @@ public:
 
     Graph plan(Compute& compute) {
         Context ctx(arena_);
+        Runtime runtime(ctx, seed_);
 
         auto gf = ggml_new_graph(*ctx);
-        auto compute_plan = compute.build(ctx);
+        auto compute_plan = compute.build(runtime);
 
-        for (auto& tensor : compute_plan.tensors()) {
-
-            // Materialize tensor if needed
-            if (!tensor.is_contiguous())
-                tensor = tensor.contiguous();
-
-            ggml_set_output(*tensor);
-        }
-
-        return std::move(Graph(gf, sched_, std::move(compute_plan.tensors())));
+        return std::move(Graph(
+            gf,
+            sched_,
+            std::move(runtime.rng_),
+            std::move(runtime.inputs_),
+            std::move(compute_plan.tensors_)
+        ));
     }
 
     Scheduler(Scheduler&) = delete;
@@ -53,4 +51,5 @@ private:
     std::vector<ggml_backend_t> backends_;
     Arena arena_;
     ggml_backend_sched_t sched_;
+    uint64_t seed_;
 };

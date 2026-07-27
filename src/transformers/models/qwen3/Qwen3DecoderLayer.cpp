@@ -14,7 +14,7 @@ Qwen3DecoderLayer::Qwen3DecoderLayer(const Qwen3Config& config, int layer_idx)
 }
 
 Tensor Qwen3DecoderLayer::forward(
-    ggml_context* ctx,
+    Runtime& runtime,
     Tensor hidden_states,
     std::optional<Tensor> attention_mask,
     std::pair<Tensor, Tensor> position_embeddings,
@@ -24,7 +24,7 @@ Tensor Qwen3DecoderLayer::forward(
     auto residual = hidden_states;
 
     auto input_layernorm = std::static_pointer_cast<Qwen3RMSNorm>(modules["input_layernorm"]);
-    hidden_states = input_layernorm->forward(ctx, hidden_states);
+    hidden_states = input_layernorm->forward(runtime, hidden_states);
 
     // Self Attention
     auto self_attn = std::static_pointer_cast<Qwen3Attention>(modules["self_attn"]);
@@ -44,10 +44,10 @@ Tensor Qwen3DecoderLayer::forward(
     residual = hidden_states;
 
     auto post_attention_layernorm = std::static_pointer_cast<Qwen3RMSNorm>(modules["post_attention_layernorm"]);
-    hidden_states = post_attention_layernorm->forward(ctx, hidden_states);
+    hidden_states = post_attention_layernorm->forward(runtime, hidden_states);
 
     auto mlp = std::static_pointer_cast<Qwen3MLP>(modules["mlp"]);
-    hidden_states = residual + mlp->forward(ctx, hidden_states);
+    hidden_states = residual + mlp->forward(runtime, hidden_states);
 
     return hidden_states;
 }

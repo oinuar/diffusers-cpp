@@ -9,5 +9,5 @@ public:
         int64_t zq_channels
     );
 
-    Tensor forward(ggml_context* ctx, Tensor f, Tensor zq);
+    Tensor forward(Runtime& runtime, Tensor f, Tensor zq);
 };

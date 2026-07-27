@@ -19,18 +19,18 @@ public:
             modules["guidance_embedder"] = std::make_shared<TimestepEmbedding<>>(in_channels, embedding_dim, std::nullopt, std::nullopt, bias);
     }
 
-    Tensor forward(ggml_context* ctx, Tensor timestep, std::optional<Tensor> guidance = std::nullopt) {
+    Tensor forward(Runtime& runtime, Tensor timestep, std::optional<Tensor> guidance = std::nullopt) {
         auto time_proj = std::static_pointer_cast<Timesteps>(modules["time_proj"]);
         auto timestep_embedder = std::static_pointer_cast<TimestepEmbedding<>>(modules["timestep_embedder"]);
 
-        auto timesteps_proj = time_proj->forward(ctx, timestep);
-        auto timesteps_emb = timestep_embedder->forward(ctx, timesteps_proj).to(timestep.dtype());
+        auto timesteps_proj = time_proj->forward(runtime, timestep);
+        auto timesteps_emb = timestep_embedder->forward(runtime, timesteps_proj).to(timestep.dtype());
 
         if (guidance_embeds_) {
             auto guidance_embedder = std::static_pointer_cast<TimestepEmbedding<>>(modules["guidance_embedder"]);
 
-            auto guidance_proj = time_proj->forward(ctx, guidance.value());
-            auto guidance_emb = guidance_embedder->forward(ctx, guidance_proj).to(guidance.value().dtype());
+            auto guidance_proj = time_proj->forward(runtime, guidance.value());
+            auto guidance_emb = guidance_embedder->forward(runtime, guidance_proj).to(guidance.value().dtype());
 
             timesteps_emb = timesteps_emb + guidance_emb;
         }

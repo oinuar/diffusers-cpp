@@ -29,35 +29,30 @@ public:
     void compute(Graph& graph) {
         Computation computation(graph);
 
-        for (auto& [tensor, data] : inputs_)
-            computation.load(tensor, data);
-
-        computation.execute();
-
         for (auto& tensor : computation.results()) {
             switch (tensor.dtype()) {
-            case ggml_type_of<float>::value:
+            case Tensor::TypeOf<float>::value:
             {
                 auto data = computation.read<float>(tensor);
                 print_tensor(data, tensor.shape());
                 break;
             }
 
-            case ggml_type_of<int8_t>::value:
+            case Tensor::TypeOf<int8_t>::value:
             {
                 auto data = computation.read<int8_t>(tensor);
                 print_tensor(data, tensor.shape());
                 break;
             }
 
-            case ggml_type_of<int16_t>::value:
+            case Tensor::TypeOf<int16_t>::value:
             {
                 auto data = computation.read<int16_t>(tensor);
                 print_tensor(data, tensor.shape());
                 break;
             }
 
-            case ggml_type_of<int32_t>::value:
+            case Tensor::TypeOf<int32_t>::value:
             {
                 auto data = computation.read<int32_t>(tensor);
                 print_tensor(data, tensor.shape());

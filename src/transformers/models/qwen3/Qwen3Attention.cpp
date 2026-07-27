@@ -41,7 +41,7 @@ Qwen3Attention::Qwen3Attention(const Qwen3Config& config, int layer_idx)
 }
 
 std::pair<Tensor, std::optional<Tensor>> Qwen3Attention::forward(
-    ggml_context* ctx,
+    Runtime& runtime,
     Tensor hidden_states,
     std::pair<Tensor, Tensor> position_embeddings,
     std::optional<Tensor> attention_mask,
@@ -63,9 +63,9 @@ std::pair<Tensor, std::optional<Tensor>> Qwen3Attention::forward(
     auto k_proj = std::static_pointer_cast<Linear>(modules["k_proj"]);
     auto v_proj = std::static_pointer_cast<Linear>(modules["v_proj"]);
 
-    auto query_states = q_norm->forward(ctx, q_proj->forward(ctx, hidden_states).reshape(hidden_shape)).permute({0, 2, 1, 3});
-    auto key_states = k_norm->forward(ctx, k_proj->forward(ctx, hidden_states).reshape(hidden_shape)).permute({0, 2, 1, 3});
-    auto value_states = v_proj->forward(ctx, hidden_states).reshape(hidden_shape).permute({0, 2, 1, 3});
+    auto query_states = q_norm->forward(runtime, q_proj->forward(runtime, hidden_states).reshape(hidden_shape)).permute({0, 2, 1, 3});
+    auto key_states = k_norm->forward(runtime, k_proj->forward(runtime, hidden_states).reshape(hidden_shape)).permute({0, 2, 1, 3});
+    auto value_states = v_proj->forward(runtime, hidden_states).reshape(hidden_shape).permute({0, 2, 1, 3});
 
     auto& [cos, sin] = position_embeddings;
     auto [rotated_query_states, rotated_key_states] = apply_rotary_pos_emb(query_states, key_states, cos, sin);
@@ -106,7 +106,7 @@ std::pair<Tensor, std::optional<Tensor>> Qwen3Attention::forward(
     auto o_proj = std::static_pointer_cast<Linear>(modules["o_proj"]);
 
     attn_output = attn_output.reshape(attn_output_shape);
-    attn_output = o_proj->forward(ctx, attn_output);
+    attn_output = o_proj->forward(runtime, attn_output);
 
     return {attn_output, std::nullopt};
 }

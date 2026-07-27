@@ -1,4 +1,5 @@
 #include "diffusers/models/embeddings/Timesteps.hpp"
+#include "ggml/Runtime.hpp"
 #include <cmath>
 
 Timesteps::Timesteps(
@@ -13,10 +14,10 @@ Timesteps::Timesteps(
         scale(scale)
 {}
 
-Tensor Timesteps::forward(ggml_context* ctx, Tensor timesteps) {
+Tensor Timesteps::forward(Runtime& runtime, Tensor timesteps) {
     const int64_t half_dim = num_channels / 2;
 
-    auto exponent = Tensor::arange(ctx, 0, half_dim);
+    auto exponent = Tensor::arange(*runtime.context(), 0, half_dim);
 
     exponent = exponent * (-std::log(10000.0f) / (half_dim - downscale_freq_shift));
 
@@ -36,7 +37,7 @@ Tensor Timesteps::forward(ggml_context* ctx, Tensor timesteps) {
         out = Tensor::cat({sin_emb, cos_emb}, -1);
 
     if (num_channels % 2 == 1) {
-        auto zeros = Tensor::zeros(ctx, {out.shape()[0], 1}, out.dtype());
+        auto zeros = Tensor::zeros(*runtime.context(), {out.shape()[0], 1}, out.dtype());
         out = Tensor::cat({out, zeros}, -1);
     }
 

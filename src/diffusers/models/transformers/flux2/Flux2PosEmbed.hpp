@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "nn/Module.hpp"
+#include "ggml/Runtime.hpp"
 
 class Flux2PosEmbed : public Module {
 public:
@@ -15,7 +16,7 @@ public:
     }
 
     Tensor forward(
-        ggml_context* ctx,
+        Runtime& runtime,
         Tensor x,
         Tensor position_ids)
     {
@@ -78,7 +79,7 @@ public:
             //   (x0,x1), (x2,x3), ...
             //
             auto rope = ggml_rope_ext(
-                ctx,
+                *runtime.context(),
                 *x_axis,
                 *pos_axis,
                 nullptr,                // no YaRN frequency tensor
@@ -96,7 +97,7 @@ public:
                 0.0f
             );
 
-            rotated_sections.emplace_back(Tensor(ctx, rope, x_axis.shape()));
+            rotated_sections.emplace_back(Tensor(*runtime.context(), rope, x_axis.shape()));
             offset += axis_dim;
         }
 

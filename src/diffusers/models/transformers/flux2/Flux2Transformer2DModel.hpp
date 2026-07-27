@@ -26,7 +26,7 @@ public:
     );
 
     Tensor forward(
-        ggml_context* ctx,
+        Runtime& runtime,
         Tensor hidden_states,
         Tensor encoder_hidden_states,
         Tensor timestep = {},

@@ -4,9 +4,9 @@
 #include "nn/SiLU.hpp"
 
 Qwen3MLP::Qwen3MLP(const Qwen3Config& config) {
-    modules["gate_proj"] = std::make_shared<Linear>(config.hidden_size, config.intermediate_size, config.attention_bias);
-    modules["up_proj"] = std::make_shared<Linear>(config.hidden_size, config.intermediate_size, config.attention_bias);
-    modules["down_proj"] = std::make_shared<Linear>(config.intermediate_size, config.hidden_size, config.attention_bias);
+    modules["gate_proj"] = std::make_shared<Linear>(config.hidden_size, config.intermediate_size, false);
+    modules["up_proj"] = std::make_shared<Linear>(config.hidden_size, config.intermediate_size, false);
+    modules["down_proj"] = std::make_shared<Linear>(config.intermediate_size, config.hidden_size, false);
     modules["act_fn"] = std::make_shared<SiLU>();
 }
 

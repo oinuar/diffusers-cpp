@@ -4,12 +4,69 @@
 #include "nn/RethrowVisitor.hpp"
 
 #include "transformers/models/qwen2/Qwen2TokenizerFast.hpp"
+#include "transformers/models/qwen3/Qwen3RMSNorm.hpp"
+#include "transformers/models/qwen3/Qwen3Config.hpp"
+#include "transformers/models/qwen3/Qwen3MLP.hpp"
+#include "transformers/models/qwen3/Qwen3RotaryEmbedding.hpp"
 
 class TestTransformersCLI : public TestCLI {
 public:
     TestTransformersCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
     virtual Plan build(Runtime& runtime) {
+        if (args_.get(0) == "Qwen3RMSNorm") {
+            auto hidden_size = args_.get_one<int64_t>("--hidden_size");
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+
+            Qwen3RMSNorm model(hidden_size);
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(runtime, hidden_states);
+        }
+
+        if (args_.get(0) == "Qwen3MLP") {
+            auto hidden_size = args_.get_one<int64_t>("--hidden_size");
+            auto intermediate_size = args_.get_one<int64_t>("--intermediate_size");
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+
+            Qwen3Config config;
+            config.hidden_size = hidden_size;
+            config.intermediate_size = intermediate_size;
+
+            Qwen3MLP model(config);
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(runtime, hidden_states);
+        }
+
+        if (args_.get(0) == "Qwen3RotaryEmbedding") {
+            auto head_dim = args_.get_one<int64_t>("--head_dim");
+            auto rope_theta = args_.get_one<float>("--rope_theta");
+            auto x = args_.get_one<Tensor>("--x", {runtime});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {runtime});
+
+            Qwen3Config config;
+            config.head_dim = head_dim;
+            config.rope_theta = rope_theta;
+
+            Qwen3RotaryEmbedding model(config);
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(runtime, x, position_ids);
+        }
+
         throw std::runtime_error("Uknown command: " + args_.get(0));
     }
 

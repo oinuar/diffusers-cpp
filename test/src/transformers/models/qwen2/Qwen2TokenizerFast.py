@@ -5,10 +5,6 @@ import json
 import tempfile
 import os
 
-def create_minimal_qwen2_tokenizer():
-    """Returns the minimal JSON structures for a Qwen2 compatible tokenizer."""
-    
-
 
 class TestTransformersQwen2TokenizerFast(TestCase):
     @classmethod
@@ -118,8 +114,6 @@ class TestTransformersQwen2TokenizerFast(TestCase):
 
         cls.tokenizer_file = json_path
         cls.tokenizer_config = config_path
-
-        cls.tokenizer = Qwen2TokenizerFast.from_pretrained(tmpdir)
 
     @classmethod
     def tearDownClass(cls):
@@ -268,7 +262,6 @@ class TestTransformersQwen2TokenizerFast(TestCase):
         actual = self.cli(
             "Qwen2TokenizerFast_ApplyChatTemplate",
             "--tokenizer_file", self.tokenizer_file,
-            "--tokenize", "false",
             "--add_generation_prompt", "true",
             *sum([["--messages", json.dumps(message)] for message in messages], [])
         )
@@ -298,7 +291,6 @@ class TestTransformersQwen2TokenizerFast(TestCase):
         actual = self.cli(
             "Qwen2TokenizerFast_ApplyChatTemplate",
             "--tokenizer_file", self.tokenizer_file,
-            "--tokenize", "false",
             "--add_generation_prompt", "true",
             *sum([["--messages", json.dumps(message)] for message in messages], [])
         )
@@ -332,7 +324,6 @@ class TestTransformersQwen2TokenizerFast(TestCase):
         actual = self.cli(
             "Qwen2TokenizerFast_ApplyChatTemplate",
             "--tokenizer_file", self.tokenizer_file,
-            "--tokenize", "false",
             "--add_generation_prompt", "true",
             *sum([["--messages", json.dumps(message)] for message in messages], [])
         )

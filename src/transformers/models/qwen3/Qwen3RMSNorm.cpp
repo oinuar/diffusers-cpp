@@ -10,8 +10,8 @@ Tensor Qwen3RMSNorm::forward(Runtime& runtime, Tensor hidden_states) {
     auto input_dtype = hidden_states.dtype();
     
     // Preserve exact Python execution order and type casting
-    auto hidden_states_f32 = hidden_states.to(Tensor::TypeOf<float>::value);
-    auto variance = pow(hidden_states_f32, 2).mean(-1, true);
+    auto hidden_states_f32 = hidden_states.to(GGML_TYPE_F32);
+    auto variance = (hidden_states_f32 * hidden_states_f32).mean(-1, true);
     auto rsqrt_var = rsqrt(variance + eps);
     auto normalized = hidden_states_f32 * rsqrt_var;
     

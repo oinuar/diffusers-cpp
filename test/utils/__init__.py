@@ -7,14 +7,23 @@ import torch
 class TestCase(unittest.TestCase):
     def cli(self, *args: str) -> list:
         cli_bin = os.environ['CLI']
-        print(" ".join([cli_bin] + list(map(lambda x: x if x.startswith("--") else f'"{x}"', [*args]))))
+        #print(" ".join([cli_bin] + list(map(lambda x: x if x.startswith("--") else f'"{x}"', [*args]))))
         result = subprocess.run([cli_bin, *args], capture_output=True, text=True, timeout=30)
         if result.returncode != 0:
             raise RuntimeError(f'{cli_bin} failed (rc={result.returncode}):\n{result.stderr}')
 
         outputs = []
         for line in result.stdout.strip().split('\n'):
-            outputs.append(torch.tensor(ast.literal_eval(line), dtype=torch.float32))
+            value = ast.literal_eval(line)
+
+            # TODO: add dtype to CLI output to make this properly
+            try:
+                outputs.append(torch.tensor(value, dtype=torch.float32))
+                continue
+            except ValueError:
+                pass
+
+            outputs.append(value)
 
         #print(result.stderr)
 

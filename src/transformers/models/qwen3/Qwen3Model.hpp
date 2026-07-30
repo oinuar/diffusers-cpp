@@ -2,28 +2,23 @@
 
 #include "nn/Module.hpp"
 
-class Qwen3Cache;
-
-struct BaseModelOutputWithPast {
-    Tensor last_hidden_state;
-    Qwen3Cache past_key_values;
-    std::optional<Tensor> hidden_states;
-    std::optional<Tensor> attentions;
-};
+struct Qwen3Config;
 
 class Qwen3Model : public Module {
 public:
     Qwen3Model(const Qwen3Config& config);
 
-    BaseModelOutputWithPast forward(
-        Runtime& runtime,
-        std::optional<Tensor> input_ids = std::nullopt,
-        std::optional<Tensor> attention_mask = std::nullopt,
-        std::optional<Tensor> position_ids = std::nullopt,
-        std::optional<Qwen3Cache> past_key_values = std::nullopt,
-        std::optional<Tensor> inputs_embeds = std::nullopt,
-        bool use_cache = false);
+    Tensor forward(Runtime& runtime, std::optional<Tensor> input_ids = std::nullopt, 
+                   std::optional<Tensor> inputs_embeds = std::nullopt, 
+                   std::optional<Tensor> attention_mask = std::nullopt,
+                   std::optional<Tensor> position_ids = std::nullopt,
+                   std::optional<Tensor> past_key_values = std::nullopt,
+                   std::optional<bool> use_cache = std::nullopt);
 
 private:
-    int64_t num_hidden_layers_;
+    int vocab_size;
+    int pad_token_id;
+    int num_hidden_layers;
+    std::vector<std::string> layer_types;
+    bool has_sliding_layers;
 };

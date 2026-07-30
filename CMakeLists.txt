@@ -110,21 +110,7 @@ endif()
 # ggml dependency
 # ---------------------------------------------------------------------------
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
-
-if(NOT TARGET ggml)
-    if(DIFFUSERS_USE_SYSTEM_GGML)
-        find_package(ggml REQUIRED)
-        if(NOT ggml_FOUND)
-            message(FATAL_ERROR "System-installed GGML library not found.")
-        endif()
-        add_library(ggml ALIAS ggml::ggml)
-    else()
-        if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ggml/CMakeLists.txt")
-            message(FATAL_ERROR "ggml submodule not initialized. Run:\n  git submodule update --init")
-        endif()
-        add_subdirectory(ggml)
-    endif()
-endif()
+add_subdirectory(ggml)
 
 # ---------------------------------------------------------------------------
 # stb dependency
@@ -142,6 +128,11 @@ add_library(stb STATIC
 target_link_libraries(stb PUBLIC stbi)
 
 # ---------------------------------------------------------------------------
+# nlohmann/json dependency
+# ---------------------------------------------------------------------------
+add_subdirectory(json)
+
+# ---------------------------------------------------------------------------
 # diffusers library
 # ---------------------------------------------------------------------------
 
@@ -149,7 +140,7 @@ file(GLOB_RECURSE DIFFUSERS_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/diffusers/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/ggml/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/nn/*.cpp"
-    #"${CMAKE_CURRENT_SOURCE_DIR}/src/transformers/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/transformers/*.cpp"
 )
 
 add_library(diffusers STATIC ${DIFFUSERS_SOURCES})
@@ -162,7 +153,7 @@ target_include_directories(diffusers PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/test
 )
 
-target_link_libraries(diffusers PUBLIC ggml stb)
+target_link_libraries(diffusers PUBLIC ggml stb nlohmann_json::nlohmann_json)
 
 target_compile_features(diffusers PUBLIC c_std_11 cxx_std_17)
 
@@ -227,6 +218,13 @@ if(DIFFUSERS_BUILD_TESTS)
     target_include_directories(test-diffusers-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(test-diffusers-cli PRIVATE diffusers)
 
+    add_executable(test-transformers-cli
+        test/utils/transformers-cli/main.cpp
+    )
+
+    target_include_directories(test-transformers-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(test-transformers-cli PRIVATE diffusers)
+
     # Generate an individual ctest entry for each test
     file(
         GLOB_RECURSE TEST_FILES
@@ -256,6 +254,8 @@ if(DIFFUSERS_BUILD_TESTS)
             set(CLI_TARGET test-nn-cli)
         elseif(TEST_FILE MATCHES "^src/diffusers/")
             set(CLI_TARGET test-diffusers-cli)
+        elseif(TEST_FILE MATCHES "^src/transformers/")
+            set(CLI_TARGET test-transformers-cli)
         else()
             message(FATAL_ERROR "No CLI target for ${TEST_FILE}")
         endif()

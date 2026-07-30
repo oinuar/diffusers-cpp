@@ -2,20 +2,14 @@
 
 #include "nn/Module.hpp"
 
-class Qwen3Config;
+struct Qwen3Config;
 
 class Qwen3DecoderLayer : public Module {
 public:
     Qwen3DecoderLayer(const Qwen3Config& config, int layer_idx);
 
-    Tensor forward(
-        Runtime& runtime,
-        Tensor hidden_states,
-        std::optional<Tensor> attention_mask,
-        std::pair<Tensor, Tensor> position_embeddings,
-        std::optional<Qwen3Cache>& past_key_values,
-        bool use_cache);
-
-private:
-    int layer_idx_;
+    Tensor forward(Runtime& runtime, Tensor hidden_states, Tensor position_ids, 
+                   std::optional<Tensor> attention_mask = std::nullopt,
+                   std::optional<Tensor> past_key_values = std::nullopt,
+                   std::optional<bool> use_cache = std::nullopt);
 };

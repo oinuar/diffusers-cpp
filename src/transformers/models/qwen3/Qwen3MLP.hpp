@@ -1,26 +1,12 @@
 #pragma once
 
 #include "nn/Module.hpp"
-#include "nn/Linear.hpp"
-#include "nn/SiLU.hpp"
+
+struct Qwen3Config;
 
 class Qwen3MLP : public Module {
 public:
-    Qwen3MLP(int64_t hidden_size, int64_t intermediate_size) {
-        modules["gate_proj"] = std::make_shared<Linear>(hidden_size, intermediate_size, false);
-        modules["up_proj"] = std::make_shared<Linear>(hidden_size, intermediate_size, false);
-        modules["down_proj"] = std::make_shared<Linear>(intermediate_size, hidden_size, false);
-        modules["act_fn"] = std::make_shared<SiLU>();
-    }
+    Qwen3MLP(const Qwen3Config& config);
 
-    Tensor forward(Runtime& runtime, Tensor x) {
-        auto gate_proj = std::static_pointer_cast<Linear>(modules["gate_proj"]);
-        auto up_proj = std::static_pointer_cast<Linear>(modules["up_proj"]);
-        auto down_proj = std::static_pointer_cast<Linear>(modules["down_proj"]);
-        auto act_fn = std::static_pointer_cast<ActFn>(modules["act_fn"]);
-
-        x = down_proj->forward(runtime, act_fn->forward(runtime, gate_proj->forward(runtime, x)) * up_proj->forward(runtime, x));
-
-        return x;
-    }
+    Tensor forward(Runtime& runtime, Tensor x);
 };

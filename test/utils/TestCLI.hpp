@@ -34,28 +34,28 @@ public:
             case Tensor::TypeOf<float>::value:
             {
                 auto data = computation.read<float>(tensor);
-                print_tensor(data, tensor.shape());
+                print_tensor_like(data, tensor.shape());
                 break;
             }
 
             case Tensor::TypeOf<int8_t>::value:
             {
                 auto data = computation.read<int8_t>(tensor);
-                print_tensor(data, tensor.shape());
+                print_tensor_like(data, tensor.shape());
                 break;
             }
 
             case Tensor::TypeOf<int16_t>::value:
             {
                 auto data = computation.read<int16_t>(tensor);
-                print_tensor(data, tensor.shape());
+                print_tensor_like(data, tensor.shape());
                 break;
             }
 
             case Tensor::TypeOf<int32_t>::value:
             {
                 auto data = computation.read<int32_t>(tensor);
-                print_tensor(data, tensor.shape());
+                print_tensor_like(data, tensor.shape());
                 break;
             }
 
@@ -65,15 +65,12 @@ public:
         }
     }
 
-protected:
-    ArgumentParser args_;
-    std::vector<std::pair<Tensor, std::vector<float>>> inputs_;
+    const ArgumentParser& args() const {
+        return args_;
+    }
 
-    TestCLI(int argc, char** argv) : args_(argc, argv) {}
-
-private:
     template <typename T>
-    void print_tensor(const std::vector<T>& data, const Tensor::Shape& shape) {
+    void print_tensor_like(const std::vector<T>& data, const Tensor::Shape& shape) {
         size_t expected = 1;
         for (auto i = 0; i < shape.rank(); ++i)
             expected *= shape[i];
@@ -86,6 +83,43 @@ private:
         size_t index = 0;
         print_tensor_recursively(data, shape, 0, index);
         std::cout << std::endl;
+    }
+
+protected:
+    ArgumentParser args_;
+    std::vector<std::pair<Tensor, std::vector<float>>> inputs_;
+
+    TestCLI(int argc, char** argv) : args_(argc, argv) {}
+
+private:
+    void print_escaped_string(const std::string& value)
+    {
+        std::cout << '"';
+
+        for (char c : value) {
+            switch (c) {
+            case '"':
+                std::cout << "\\\"";
+                break;
+            case '\\':
+                std::cout << "\\\\";
+                break;
+            case '\n':
+                std::cout << "\\n";
+                break;
+            case '\r':
+                std::cout << "\\r";
+                break;
+            case '\t':
+                std::cout << "\\t";
+                break;
+            default:
+                std::cout << c;
+                break;
+            }
+        }
+
+        std::cout << '"';
     }
 
     template <typename T>
@@ -102,7 +136,11 @@ private:
             // Last dimension: print elements
             for (auto i = 0; i < shape[dim]; ++i)
             {
-                std::cout << data[index++];
+                if constexpr (std::is_same_v<T, std::string>)
+                    print_escaped_string(data[index++]);
+                else
+                    std::cout << data[index++];
+
                 if (i + 1 != shape[dim])
                     std::cout << ", ";
             }

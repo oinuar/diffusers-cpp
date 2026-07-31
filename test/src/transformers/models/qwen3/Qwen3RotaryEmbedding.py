@@ -10,7 +10,6 @@ class TestTransformersQwen3RotaryEmbedding(TestCase):
             head_dim=4,
             num_attention_heads=2,
             max_position_embeddings=128,
-            rope_theta=10000.0,
         )
 
         pos_embed = Qwen3RotaryEmbedding(config)
@@ -41,7 +40,6 @@ class TestTransformersQwen3RotaryEmbedding(TestCase):
         actual_q = self.cli(
             "Qwen3RotaryEmbedding",
             "--head_dim", "4",
-            "--rope_theta", "10000",
             "--x", str(q.tolist()),
             "--position_ids", str(position_ids.tolist()),
         )
@@ -49,7 +47,6 @@ class TestTransformersQwen3RotaryEmbedding(TestCase):
         actual_k = self.cli(
             "Qwen3RotaryEmbedding",
             "--head_dim", "4",
-            "--rope_theta", "10000",
             "--x", str(k.tolist()),
             "--position_ids", str(position_ids.tolist()),
         )

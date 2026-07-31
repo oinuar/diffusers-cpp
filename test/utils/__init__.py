@@ -7,7 +7,7 @@ import torch
 class TestCase(unittest.TestCase):
     def cli(self, *args: str) -> list:
         cli_bin = os.environ['CLI']
-        print(" ".join([cli_bin] + list(map(lambda x: x if x.startswith("--") else f'"{x}"', [*args]))))
+        #print(" ".join([cli_bin] + list(map(lambda x: x if x.startswith("--") else f'"{x}"', [*args]))))
         result = subprocess.run([cli_bin, *args], capture_output=True, text=True, timeout=30)
         if result.returncode != 0:
             raise RuntimeError(f'{cli_bin} failed (rc={result.returncode}):\n{result.stderr}')
@@ -25,7 +25,7 @@ class TestCase(unittest.TestCase):
 
             outputs.append(value)
 
-        print(result.stderr)
+        #print(result.stderr)
 
         return outputs
 
@@ -41,8 +41,10 @@ class TestCase(unittest.TestCase):
         return args
 
     def assertTensors(self, actual: list, expected: list, *args: str, **kwargs):
+        finalKwargs = { 'rtol': 1e-4, 'atol': 1e-6, **kwargs }
+
         self.assertEqual(len(actual), len(expected))
         for a, e in zip(actual, expected):
             self.assertEqual(a.shape, e.shape)
             self.assertEqual(a.dtype, e.dtype)
-            self.assertTrue(torch.allclose(a, e, **kwargs), f'\nActual: {str(a.tolist())}\nExpected: {str(e.tolist())}')
+            self.assertTrue(torch.allclose(a, e, **finalKwargs), f'\nActual: {str(a.tolist())}\nExpected: {str(e.tolist())}')

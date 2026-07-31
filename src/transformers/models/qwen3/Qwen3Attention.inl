@@ -56,13 +56,18 @@ Tensor Qwen3Attention<AttnOp>::forward(
     // 1. Projections and reshaping to (batch, seq_len, num_heads, head_dim) -> [B, S, H, D]
     auto query_states = q_proj->forward(runtime, hidden_states).reshape(hidden_shape);
     auto key_states = k_proj->forward(runtime, hidden_states).reshape(hidden_shape);
-    auto value_states = v_proj->forward(runtime, hidden_states).reshape(hidden_shape).transpose(1, 2);
+    auto value_states = v_proj->forward(runtime, hidden_states).reshape(hidden_shape);
 
     // 2. Apply Q/K normalization
-    query_states = q_norm->forward(runtime, query_states).transpose(1, 2);
-    key_states = k_norm->forward(runtime, key_states).transpose(1, 2);
+    query_states = q_norm->forward(runtime, query_states);
+    key_states = k_norm->forward(runtime, key_states);
 
-    // 3. RoPE calculation
+    // 3. Transpose to SDPA layout
+    query_states = query_states.transpose(1, 2);
+    key_states = key_states.transpose(1, 2);
+    value_states = value_states.transpose(1, 2);
+
+    // 4. RoPE calculation
     query_states = rotary_emb.forward(runtime, query_states, position_ids);
     key_states = rotary_emb.forward(runtime, key_states, position_ids);
 
@@ -75,7 +80,7 @@ Tensor Qwen3Attention<AttnOp>::forward(
     AttnOp attn_op;
     auto attn_output = attn_op(runtime, query_states, key_states, value_states, attention_mask, pow(head_dim, -0.5));
 
-    // 5. Reshape and output projection
+    // 5. Transpose back, reshape and output projection
     auto attn_output_reshaped = attn_output.transpose(1, 2).reshape({batch_size, seq_len, -1});
     
     return o_proj->forward(runtime, attn_output_reshaped);

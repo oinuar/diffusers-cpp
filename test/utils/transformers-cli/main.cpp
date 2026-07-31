@@ -51,14 +51,13 @@ public:
         }
 
         if (args_.get(0) == "Qwen3RotaryEmbedding") {
-            auto head_dim = args_.get_one<int64_t>("--head_dim");
-            auto rope_theta = args_.get_one<float>("--rope_theta");
-            auto x = args_.get_one<Tensor>("--x", {runtime});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {runtime});
 
             Qwen3Config config;
-            config.head_dim = head_dim;
-            config.rope_theta = rope_theta;
+            config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
+            config.rope_theta = args_.get_optional<int64_t>("--rope_theta").value_or(config.rope_theta);
+
+            auto x = args_.get_one<Tensor>("--x", {runtime});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {runtime});
 
             Qwen3RotaryEmbedding model(config);
 

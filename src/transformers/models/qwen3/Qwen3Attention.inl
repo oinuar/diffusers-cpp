@@ -62,12 +62,7 @@ Tensor Qwen3Attention<AttnOp>::forward(
     query_states = q_norm->forward(runtime, query_states);
     key_states = k_norm->forward(runtime, key_states);
 
-    // 3. Transpose to SDPA layout
-    query_states = query_states.transpose(1, 2);
-    key_states = key_states.transpose(1, 2);
-    value_states = value_states.transpose(1, 2);
-
-    // 4. RoPE calculation
+    // 3. RoPE calculation
     query_states = rotary_emb.forward(runtime, query_states, position_ids);
     key_states = rotary_emb.forward(runtime, key_states, position_ids);
 
@@ -81,7 +76,7 @@ Tensor Qwen3Attention<AttnOp>::forward(
     auto attn_output = attn_op(runtime, query_states, key_states, value_states, attention_mask, pow(head_dim, -0.5));
 
     // 5. Transpose back, reshape and output projection
-    auto attn_output_reshaped = attn_output.transpose(1, 2).reshape({batch_size, seq_len, -1});
+    auto attn_output_reshaped = attn_output.reshape({batch_size, seq_len, -1});
     
     return o_proj->forward(runtime, attn_output_reshaped);
 }

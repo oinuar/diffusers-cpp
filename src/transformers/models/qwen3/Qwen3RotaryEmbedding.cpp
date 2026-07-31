@@ -16,13 +16,9 @@ Tensor Qwen3RotaryEmbedding::forward(
     if (position_ids.dtype() != GGML_TYPE_I32)
         position_ids = position_ids.to(GGML_TYPE_I32);
 
-    // The input x from Python has logical shape [batch, heads, seq_len, head_dim].
-    // In GGML (column-major), this is stored as ne = [head_dim, seq_len, heads, batch].
-    // However, ggml_rope_ext asserts that ne[2] == position_ids->ne[0] (which is seq_len).
-    // To satisfy this, we must swap the 'seq_len' (dim 2) and 'heads' (dim 1) dimensions.
-    // Logical permutation {0, 2, 1, 3} changes the shape to [batch, seq_len, heads, head_dim],
-    // which in GGML becomes ne = [head_dim, heads, seq_len, batch], correctly putting seq_len at ne[2].
-    x = x.permute({0, 2, 1, 3}).contiguous();
+    // GGML RoPE expects position IDs to be a 1D tensor (vector).
+    if (!ggml_is_vector(*position_ids))
+        position_ids = position_ids.flatten();
 
     auto rope = ggml_rope_ext(
         *runtime.context(),
@@ -37,10 +33,5 @@ Tensor Qwen3RotaryEmbedding::forward(
         0.0f, 1.0f, 0.0f, 0.0f // ext_factor, attn_factor=1.0, beta_fast, beta_slow
     );
 
-    // Wrap the ggml_tensor result back into our Tensor abstraction.
-    // Its current logical shape is [batch, seq_len, heads, head_dim].
-    x = Tensor(*runtime.context(), rope, x.shape());
-
-    // Permute back to the original logical shape [batch, heads, seq_len, head_dim]
-    return x.permute({0, 2, 1, 3});
+    return Tensor(*runtime.context(), rope, x.shape());
 }

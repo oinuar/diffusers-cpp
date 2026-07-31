@@ -11,7 +11,8 @@ public:
         Tensor query,
         Tensor key,
         Tensor value,
-        std::optional<Tensor> attention_mask = std::nullopt
+        std::optional<Tensor> attention_mask = std::nullopt,
+        std::optional<float> scale = std::nullopt
     ) {
         // Diffusers attention processor contract:
         // [B, S, H, D]
@@ -27,7 +28,8 @@ public:
             query,
             key,
             value,
-            attention_mask
+            attention_mask,
+            scale
         );
 
         // Back to Diffusers layout:

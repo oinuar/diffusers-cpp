@@ -78,7 +78,7 @@ public:
             auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {runtime});
             auto layer_idx = args_.get_one<int>("--layer_idx");
 
-            Qwen3Attention<FlashAttentionOp> model(config, layer_idx);
+            Qwen3Attention<ScaledDotProductAttention<FlashAttentionOp>> model(config, layer_idx);
             Qwen3RotaryEmbedding rotary_emb(config);
 
             CreateParametersVisitor create_parameters(runtime, args_);

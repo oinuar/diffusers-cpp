@@ -25,7 +25,7 @@ class TestCase(unittest.TestCase):
 
             outputs.append(value)
 
-        #print(result.stderr)
+        print(result.stderr)
 
         return outputs
 
@@ -40,9 +40,9 @@ class TestCase(unittest.TestCase):
 
         return args
 
-    def assertTensors(self, actual: list, expected: list, *args: str):
+    def assertTensors(self, actual: list, expected: list, *args: str, **kwargs):
         self.assertEqual(len(actual), len(expected))
         for a, e in zip(actual, expected):
             self.assertEqual(a.shape, e.shape)
             self.assertEqual(a.dtype, e.dtype)
-            self.assertTrue(torch.allclose(a, e, rtol=1e-4, atol=1e-6), f'\nActual: {str(a.tolist())}\nExpected: {str(e.tolist())}')
+            self.assertTrue(torch.allclose(a, e, **kwargs), f'\nActual: {str(a.tolist())}\nExpected: {str(e.tolist())}')

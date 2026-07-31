@@ -122,7 +122,7 @@ public:
 
             FlashAttentionOp attention;
 
-            return attention(runtime.context(), q, k, v, mask);
+            return attention(runtime, q, k, v, mask);
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));

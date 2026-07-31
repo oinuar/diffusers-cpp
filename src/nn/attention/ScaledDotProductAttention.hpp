@@ -23,7 +23,7 @@ public:
         AttnBackend backend;
 
         auto hidden_states = backend(
-            runtime.context(),
+            runtime,
             query,
             key,
             value,

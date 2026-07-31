@@ -3,18 +3,19 @@
 #include "nn/Module.hpp"
 
 struct Qwen3Config;
+class Qwen3RotaryEmbedding;
 
 template <class AttnOp>
 class Qwen3Attention : public Module {
 public:
     Qwen3Attention(const Qwen3Config& config, int layer_idx);
 
-    Tensor forward(Runtime& runtime, Tensor hidden_states, Tensor position_ids, 
+    Tensor forward(Runtime& runtime, Qwen3RotaryEmbedding& rotary_emb,
+                   Tensor hidden_states, Tensor position_ids, 
                    std::optional<Tensor> attention_mask = std::nullopt, 
                    std::optional<Tensor> past_key_values = std::nullopt);
 
 private:
-    Qwen3Config config;
     int layer_idx;
     int head_dim;
     int num_key_value_groups;

@@ -17,7 +17,6 @@ public:
 
 private:
     int vocab_size;
-    int pad_token_id;
     int num_hidden_layers;
     std::vector<std::string> layer_types;
     bool has_sliding_layers;

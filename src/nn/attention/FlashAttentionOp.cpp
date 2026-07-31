@@ -1,14 +1,15 @@
 #include "nn/attention/FlashAttentionOp.hpp"
-#include "ggml/Context.hpp"
+#include "ggml/Runtime.hpp"
 
 Tensor FlashAttentionOp::operator ()(
-    Context& ctx,
+    Runtime& runtime,
     Tensor q,
     Tensor k,
     Tensor v,
-    std::optional<Tensor> mask)
+    std::optional<Tensor> mask,
+    std::optional<float> scaling)
 {
-    float scale = 1.0f / std::sqrt((float)q.shape()[-1]);
+    float scale = scaling.value_or(1.0f / std::sqrt((float)q.shape()[-1]));
 
     /*
      * ggml_flash_attn_ext() requires the mask to:
@@ -77,9 +78,9 @@ Tensor FlashAttentionOp::operator ()(
      * the output of ggml_flash_attn_ext().
      */
     auto attn = Tensor(
-        *ctx,
+        *runtime.context(),
         ggml_flash_attn_ext(
-            *ctx,
+            *runtime.context(),
             *q,
             *k,
             *v,

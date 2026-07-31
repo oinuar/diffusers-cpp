@@ -2,13 +2,13 @@
 #include "transformers/models/qwen3/Qwen3Config.hpp"
 #include "transformers/models/qwen3/Qwen3DecoderLayer.hpp"
 #include "transformers/models/qwen3/Qwen3RMSNorm.hpp"
+#include "transformers/models/qwen3/Qwen3RotaryEmbedding.hpp"
 #include "nn/ModuleList.hpp"
 #include "nn/Embedding.hpp"
 #include "ggml/Runtime.hpp"
 
 Qwen3Model::Qwen3Model(const Qwen3Config& config) {
     this->vocab_size = config.vocab_size;
-    this->pad_token_id = config.pad_token_id;
     this->num_hidden_layers = config.num_hidden_layers;
     this->layer_types = config.layer_types;
     
@@ -21,7 +21,7 @@ Qwen3Model::Qwen3Model(const Qwen3Config& config) {
     }
 
     modules["embed_tokens"] = std::make_shared<Embedding>(config.vocab_size, config.hidden_size, config.pad_token_id);
-    
+
     auto layers = std::make_shared<ModuleList>(config.num_hidden_layers);
     modules["layers"] = layers;
     for (int i = 0; i < config.num_hidden_layers; ++i) {
@@ -29,6 +29,10 @@ Qwen3Model::Qwen3Model(const Qwen3Config& config) {
     }
 
     modules["norm"] = std::make_shared<Qwen3RMSNorm>(config.hidden_size, config.rms_norm_eps);
+
+    // We put rotary_emb here to match Python module structure, and pass it
+    // down to lower modules where it is actually used
+    modules["rotary_emb"] = std::make_shared<Qwen3RotaryEmbedding>(config);
 }
 
 Tensor Qwen3Model::forward(
@@ -60,11 +64,13 @@ Tensor Qwen3Model::forward(
     } else {
         // Preserve Python logic: position_ids = torch.arange(seq_len) + past_seen_tokens
         // Assuming past_seen_tokens is 0 if past_key_values is not provided
-        int past_seen_tokens = 0; // Simplified for porting; would query past_key_values if available
+        float past_seen_tokens = 0; // Simplified for porting; would query past_key_values if available
         pos_ids = Tensor::arange(*runtime.context(), 0, seq_len);
         pos_ids = pos_ids + past_seen_tokens;
         pos_ids = pos_ids.unsqueeze(0);
     }
+
+    auto rotary_emb = std::static_pointer_cast<Qwen3RotaryEmbedding>(modules["rotary_emb"]);
 
     auto layers = std::static_pointer_cast<ModuleList>(modules["layers"]);
     for (auto i = 0; i < layers->size(); ++i) {
@@ -77,7 +83,7 @@ Tensor Qwen3Model::forward(
             layer_mask = attention_mask.value();
         }
 
-        hidden_states = layer->forward(runtime, hidden_states, pos_ids, layer_mask, past_key_values, use_cache);
+        hidden_states = layer->forward(runtime, *rotary_emb, hidden_states, pos_ids, layer_mask, past_key_values, use_cache);
     }
 
     auto norm = std::static_pointer_cast<Qwen3RMSNorm>(modules["norm"]);

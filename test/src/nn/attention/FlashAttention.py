@@ -214,3 +214,20 @@ class TestFlashAttention(TestCase):
         )
 
         self.assertTensors(actual, [expected])
+
+    def test_gqa(self):
+        q = torch.randn(1, 4, 5, 8)
+        k = torch.randn(1, 2, 5, 8)
+        v = torch.randn(1, 2, 5, 8)
+
+        with sdpa_kernel(backends=[SDPBackend.FLASH_ATTENTION]):
+            expected = F.scaled_dot_product_attention(q, k, v, enable_gqa=True)
+
+        actual = self.cli(
+            "FlashAttention",
+            "--q", str(q.tolist()),
+            "--k", str(k.tolist()),
+            "--v", str(v.tolist()),
+        )
+
+        self.assertTensors(actual, [expected])

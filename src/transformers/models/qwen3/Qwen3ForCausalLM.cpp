@@ -3,6 +3,20 @@
 #include "transformers/models/qwen3/Qwen3Model.hpp"
 #include "nn/Module.hpp"
 #include "nn/Linear.hpp"
+#include "nn/RethrowVisitor.hpp"
+#include "ggml/GGUFLoaderVisitor.hpp"
+
+Qwen3ForCausalLM Qwen3ForCausalLM::from_pretrained(Backend& loader_backend, Qwen3Config&& config, const std::filesystem::path& path) {
+    Qwen3ForCausalLM model(config);
+
+    GGUFLoaderVisitor loader(loader_backend, path);
+    RethrowVisitor visitor(loader);
+
+    model.accept(visitor);
+    visitor.rethrow();
+
+    return std::move(model);
+}
 
 Qwen3ForCausalLM::Qwen3ForCausalLM(const Qwen3Config& config) {
     this->vocab_size = config.vocab_size;

@@ -20,7 +20,7 @@ Qwen3Model::Qwen3Model(const Qwen3Config& config) {
         }
     }
 
-    modules["embed_tokens"] = std::make_shared<Embedding>(config.vocab_size, config.hidden_size, config.pad_token_id);
+    modules["embed_tokens"] = std::make_shared<Embedding>(config.hidden_size, config.vocab_size, config.pad_token_id);
 
     auto layers = std::make_shared<ModuleList>(config.num_hidden_layers);
     modules["layers"] = layers;

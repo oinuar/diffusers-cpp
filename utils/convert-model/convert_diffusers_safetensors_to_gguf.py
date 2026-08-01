@@ -99,7 +99,7 @@ def load_hf_model(path):
     Loads ALL tensors from a Diffusers sharded checkpoint using index file.
     """
 
-    index_file = path / "diffusion_pytorch_model.safetensors.index.json"
+    index_file = path / "model.safetensors.index.json"
 
     if not index_file.exists():
         raise FileNotFoundError(
@@ -119,7 +119,7 @@ def load_hf_model(path):
 
     for shard_file, tensor_names in shard_map.items():
         shard_path = path / shard_file
-        yield from load_safetensors(shard_path, tensor_names)
+        yield from load_safetensors_model(shard_path, tensor_names)
 
 
 def load_model(path):
@@ -161,7 +161,7 @@ def convert(input_path: Path, output_path: Path, architecture: str, quant_type: 
 
         converted += 1
 
-        print(f"WRITE {name} ({source_type}) -> {target_name} ({dest_type.name}) {tensor.shape}")
+        print(f"CONVERT {name} ({source_type}) -> {target_name} ({dest_type.name}) {tensor.shape}")
 
     print("Writing GGUF file...")
     writer.write_header_to_file()

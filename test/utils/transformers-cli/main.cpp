@@ -11,6 +11,7 @@
 #include "transformers/models/qwen3/Qwen3MLP.hpp"
 #include "transformers/models/qwen3/Qwen3RotaryEmbedding.hpp"
 #include "transformers/models/qwen3/Qwen3Attention.hpp"
+#include "transformers/models/qwen3/Qwen3DecoderLayer.hpp"
 
 class TestTransformersCLI : public TestCLI {
 public:
@@ -32,13 +33,11 @@ public:
         }
 
         if (args_.get(0) == "Qwen3MLP") {
-            auto hidden_size = args_.get_one<int64_t>("--hidden_size");
-            auto intermediate_size = args_.get_one<int64_t>("--intermediate_size");
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
-
             Qwen3Config config;
-            config.hidden_size = hidden_size;
-            config.intermediate_size = intermediate_size;
+            config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
+            config.intermediate_size = args_.get_optional<int64_t>("--intermediate_size").value_or(config.intermediate_size);
+
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
 
             Qwen3MLP model(config);
 
@@ -51,7 +50,6 @@ public:
         }
 
         if (args_.get(0) == "Qwen3RotaryEmbedding") {
-
             Qwen3Config config;
             config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
             config.rope_theta = args_.get_optional<int64_t>("--rope_theta").value_or(config.rope_theta);
@@ -66,7 +64,6 @@ public:
 
         if (args_.get(0) == "Qwen3Attention") {
             Qwen3Config config;
-            
             config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
             config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
             config.num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.num_attention_heads);
@@ -87,6 +84,53 @@ public:
             visitor.rethrow();
 
             return model.forward(runtime, rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
+        }
+
+        if (args_.get(0) == "Qwen3Attention") {
+            Qwen3Config config;
+            config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
+            config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
+            config.num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.num_attention_heads);
+            config.num_key_value_heads = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.num_key_value_heads);
+
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {runtime});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {runtime});
+            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {runtime});
+            auto layer_idx = args_.get_one<int>("--layer_idx");
+
+            Qwen3Attention<ScaledDotProductAttention<FlashAttentionOp>> model(config, layer_idx);
+            Qwen3RotaryEmbedding rotary_emb(config);
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(runtime, rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
+        }
+
+        if (args_.get(0) == "Qwen3DecoderLayer") {
+            Qwen3Config config;
+            config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
+            config.intermediate_size = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.intermediate_size);
+            config.num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.num_attention_heads);
+            config.num_key_value_heads = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.num_key_value_heads);
+            config.max_position_embeddings = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.max_position_embeddings);
+
+            auto layer_idx = args_.get_one<int>("--layer_idx");
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {runtime});
+
+            Qwen3DecoderLayer model(config, layer_idx);
+            Qwen3RotaryEmbedding rotary_emb(config);
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(runtime, rotary_emb, hidden_states, position_ids);
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));

@@ -3,8 +3,11 @@
 #include <vector>
 #include <string>
 #include <optional>
+#include <filesystem>
 
 struct Qwen3Config {
+    static Qwen3Config from_file(const std::filesystem::path& path);
+
     int64_t vocab_size = 151936;
     int64_t hidden_size = 4096;
     int64_t intermediate_size = 22016;

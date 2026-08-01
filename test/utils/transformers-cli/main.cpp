@@ -12,6 +12,7 @@
 #include "transformers/models/qwen3/Qwen3RotaryEmbedding.hpp"
 #include "transformers/models/qwen3/Qwen3Attention.hpp"
 #include "transformers/models/qwen3/Qwen3DecoderLayer.hpp"
+#include "transformers/models/qwen3/Qwen3Model.hpp"
 
 class TestTransformersCLI : public TestCLI {
 public:
@@ -113,7 +114,7 @@ public:
         if (args_.get(0) == "Qwen3DecoderLayer") {
             Qwen3Config config;
             config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
-            config.intermediate_size = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.intermediate_size);
+            config.intermediate_size = args_.get_optional<int64_t>("--intermediate_size").value_or(config.intermediate_size);
             config.num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.num_attention_heads);
             config.num_key_value_heads = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.num_key_value_heads);
             config.max_position_embeddings = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.max_position_embeddings);
@@ -131,6 +132,37 @@ public:
             visitor.rethrow();
 
             return model.forward(runtime, rotary_emb, hidden_states, position_ids);
+        }
+
+        if (args_.get(0) == "Qwen3Model") {
+            Qwen3Config config;
+            config.vocab_size = args_.get_optional<int64_t>("--vocab_size").value_or(config.vocab_size);
+            config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
+            config.intermediate_size = args_.get_optional<int64_t>("--intermediate_size").value_or(config.intermediate_size);
+            config.num_hidden_layers = args_.get_optional<int64_t>("--num_hidden_layers").value_or(config.num_hidden_layers);
+            config.num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.num_attention_heads);
+            config.num_key_value_heads = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.num_key_value_heads);
+            config.attention_bias = args_.get_optional<int64_t>("--attention_bias").value_or(config.attention_bias);
+            config.rope_theta = args_.get_optional<int64_t>("--rope_theta").value_or(config.rope_theta);
+            config.max_position_embeddings = args_.get_optional<int64_t>("--max_position_embeddings").value_or(config.max_position_embeddings);
+            config.pad_token_id = args_.get_optional<int64_t>("--pad_token_id");
+            config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
+
+            auto input_ids = args_.get_optional<Tensor>("--input_ids", {runtime});
+            auto input_embeds = args_.get_optional<Tensor>("--input_embeds", {runtime});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {runtime});
+            auto position_ids = args_.get_optional<Tensor>("--position_ids", {runtime});
+            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {runtime});
+            auto use_cache = args_.get_optional<bool>("--past_key_values");
+
+            Qwen3Model model(config);
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(runtime, input_ids, input_embeds, attention_mask, position_ids, past_key_values, use_cache);
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));

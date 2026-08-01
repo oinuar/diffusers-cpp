@@ -20,4 +20,5 @@ private:
     int num_hidden_layers;
     std::vector<std::string> layer_types;
     bool has_sliding_layers;
+    std::optional<int64_t> sliding_window;
 };

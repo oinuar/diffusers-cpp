@@ -3,7 +3,7 @@ name: port
 description: This skill provides steps for translating Python library modules into idiomatic C++ while preserving behavior, structure, and numerical correctness. The Python implementation should be treated as the specification. The goal is to produce a C++ implementation that behaves identically, not one that merely produces similar results.
 ---
 
-# Porting Diffusers Classes to C++
+# Porting Python library modules to C++
 
 This skill provides steps for translating Python library modules into idiomatic C++ while preserving behavior, structure, and numerical correctness.
 

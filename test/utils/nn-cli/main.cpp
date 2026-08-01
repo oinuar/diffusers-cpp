@@ -5,6 +5,7 @@
 
 #include "nn/Linear.hpp"
 #include "nn/SiLU.hpp"
+#include "nn/Embedding.hpp"
 #include "nn/modules/normalization/RMSNorm.hpp"
 #include "nn/modules/normalization/LayerNorm.hpp"
 #include "nn/modules/normalization/GroupNorm.hpp"
@@ -123,6 +124,22 @@ public:
             FlashAttentionOp attention;
 
             return attention(runtime, q, k, v, mask);
+        }
+
+        if (args_.get(0) == "Embedding") {
+            auto num_embeddings = args_.get_one<int64_t>("--num_embeddings");
+            auto embedding_dim = args_.get_one<int64_t>("--embedding_dim");
+            auto padding_idx = args_.get_optional<int64_t>("--padding_idx");
+            auto input = args_.get_one<Tensor>("--input", {runtime});
+
+            Embedding model(num_embeddings, embedding_dim, padding_idx);
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(runtime, input);
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));

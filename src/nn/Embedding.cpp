@@ -27,23 +27,23 @@ Embedding::Embedding(int64_t num_embeddings, int64_t embedding_dim, std::optiona
 Tensor Embedding::forward(Runtime& runtime, Tensor input) {
     auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward();
 
-    // Zero out padding row
-    if (padding_idx_.has_value()) {
-        int64_t idx = *padding_idx_;
+    if (padding_idx_) {
         std::vector<Tensor> slices;
 
-        if (idx > 0)
-            slices.push_back(weight[{Tensor::Slice::range(0, idx)}]);
+        // Rows on the left
+        if (*padding_idx_ > 0)
+            slices.push_back(weight[{Tensor::Slice::range(0, *padding_idx_)}]);
 
+        // Zeroed middle row
         slices.push_back(Tensor::zeros(*runtime.context(), {1, embedding_dim_}));
 
-        if (idx + 1 < num_embeddings_)
-            slices.push_back(weight[{Tensor::Slice::range(idx + 1, num_embeddings_)}]);
+        // Rows on the right
+        if (*padding_idx_ + 1 < num_embeddings_)
+            slices.push_back(weight[{Tensor::Slice::range(*padding_idx_ + 1, num_embeddings_)}]);
 
         weight = Tensor::cat(slices, 0);
     }
 
-    // Save original input shape before flattening
     auto input_shape = input.shape();
 
     // ggml_get_rows expects int32 indices
@@ -54,7 +54,7 @@ Tensor Embedding::forward(Runtime& runtime, Tensor input) {
     if (!ggml_is_vector(*input))
         input = input.flatten();
 
-    auto lookup_result_ggml = ggml_get_rows(
+    auto lookup_result = ggml_get_rows(
         *runtime.context(),
         *weight,
         *input
@@ -68,5 +68,5 @@ Tensor Embedding::forward(Runtime& runtime, Tensor input) {
 
     output_shape[input_shape.rank()] = embedding_dim_;
 
-    return Tensor(*runtime.context(), lookup_result_ggml, output_shape);
+    return Tensor(*runtime.context(), lookup_result).reshape(output_shape);
 }

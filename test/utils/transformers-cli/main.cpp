@@ -13,6 +13,7 @@
 #include "transformers/models/qwen3/Qwen3Attention.hpp"
 #include "transformers/models/qwen3/Qwen3DecoderLayer.hpp"
 #include "transformers/models/qwen3/Qwen3Model.hpp"
+#include "transformers/models/qwen3/Qwen3ForCausalLM.hpp"
 
 class TestTransformersCLI : public TestCLI {
 public:
@@ -163,6 +164,45 @@ public:
             visitor.rethrow();
 
             return model.forward(runtime, input_ids, input_embeds, attention_mask, position_ids, past_key_values, use_cache);
+        }
+
+        if (args_.get(0) == "Qwen3ForCausalLM") {
+            Qwen3Config config;
+            config.vocab_size = args_.get_optional<int64_t>("--vocab_size").value_or(config.vocab_size);
+            config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
+            config.intermediate_size = args_.get_optional<int64_t>("--intermediate_size").value_or(config.intermediate_size);
+            config.num_hidden_layers = args_.get_optional<int64_t>("--num_hidden_layers").value_or(config.num_hidden_layers);
+            config.num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.num_attention_heads);
+            config.num_key_value_heads = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.num_key_value_heads);
+            config.max_position_embeddings = args_.get_optional<int64_t>("--max_position_embeddings").value_or(config.max_position_embeddings);
+
+            auto input_ids = args_.get_optional<Tensor>("--input_ids", {runtime});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {runtime});
+            auto position_ids = args_.get_optional<Tensor>("--position_ids", {runtime});
+            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {runtime});
+            auto inputs_embeds = args_.get_optional<Tensor>("--inputs_embeds", {runtime});
+            auto labels = args_.get_optional<Tensor>("--labels", {runtime});
+            auto use_cache = args_.get_optional<bool>("--use_cache");
+            auto logits_to_keep = args_.get_optional<int>("--logits_to_keep").value_or(0);
+            
+            Qwen3ForCausalLM model(config);
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            return model.forward(
+                runtime,
+                input_ids,
+                attention_mask,
+                position_ids,
+                past_key_values,
+                inputs_embeds,
+                labels,
+                use_cache,
+                logits_to_keep
+            );
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));

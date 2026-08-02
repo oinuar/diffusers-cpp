@@ -1,7 +1,6 @@
 from utils import TestCase
 import torch
-from transformers import Qwen3Config
-from transformers.models.qwen3.modeling_qwen3 import Qwen3RotaryEmbedding, apply_rotary_pos_emb
+from transformers.models.qwen3.modeling_qwen3 import Qwen3Config, Qwen3RotaryEmbedding, apply_rotary_pos_emb
 
 class TestTransformersQwen3RotaryEmbedding(TestCase):
     def test_default(self):

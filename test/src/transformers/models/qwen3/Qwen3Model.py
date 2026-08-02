@@ -1,7 +1,6 @@
 from utils import TestCase
 import torch
-from transformers import Qwen3Config
-from transformers.models.qwen3.modeling_qwen3 import Qwen3Model
+from transformers.models.qwen3.modeling_qwen3 import Qwen3Config, Qwen3Model
 
 class TestTransformersQwen3Model(TestCase):
     def test(self):

@@ -1,8 +1,7 @@
 from utils import TestCase
 import torch
 from torch.nn.attention import SDPBackend, sdpa_kernel
-from transformers import Qwen3Config
-from transformers.models.qwen3.modeling_qwen3 import Qwen3DecoderLayer, Qwen3RotaryEmbedding
+from transformers.models.qwen3.modeling_qwen3 import Qwen3Config, Qwen3DecoderLayer, Qwen3RotaryEmbedding
 
 class TestTransformersQwen3DecoderLayer(TestCase):
     def test(self):

@@ -18,9 +18,33 @@ static std::string join_path(const std::vector<std::string>& path) {
     });
 }
 
-GGUFLoaderVisitor::GGUFLoaderVisitor(Backend& backend, const std::filesystem::path& path)
-    : ctx_(nullptr), gguf_ctx_(nullptr), buffer_(nullptr), file_(path, std::ifstream::in | std::ifstream::binary), lookup_()
+static std::optional<std::filesystem::path> find_first_gguf(const std::filesystem::path& path)
 {
+    if (!std::filesystem::exists(path))
+        return std::nullopt;
+
+    if (!std::filesystem::is_directory(path))
+        return path;
+
+    for (const auto& entry : std::filesystem::directory_iterator(path))
+    {
+        if (entry.is_regular_file() && entry.path().extension() == ".gguf")
+            return entry.path();
+    }
+
+    return std::nullopt;
+}
+
+GGUFLoaderVisitor::GGUFLoaderVisitor(Backend& backend, const std::filesystem::path& path)
+    : ctx_(nullptr), gguf_ctx_(nullptr), buffer_(nullptr), file_(), lookup_()
+{
+    auto gguf_path = find_first_gguf(path);
+
+    if (!gguf_path)
+        throw std::runtime_error("No such GGUF file in path: " + path.string());
+
+    file_.open(*gguf_path, std::ifstream::in | std::ifstream::binary);
+
     gguf_ctx_ = gguf_init_from_file(path.c_str(), {
         /*.no_alloc   =*/ true,
         /*.ctx        =*/ &ctx_,

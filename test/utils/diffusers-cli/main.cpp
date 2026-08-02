@@ -211,45 +211,32 @@ public:
         }
 
         if (args_.get(0) == "AutoencoderKLFlux2") {
-            auto in_channels = args_.get_optional<int64_t>("--in_channels").value_or(3);
-            auto out_channels = args_.get_optional<int64_t>("--out_channels").value_or(3);
+            AutoencoderKLFlux2::Config config;
+
+            config.in_channels = args_.get_optional<int64_t>("--in_channels").value_or(config.in_channels);
+            config.out_channels = args_.get_optional<int64_t>("--out_channels").value_or(config.out_channels);
             auto block_out_channels = args_.get_many<int64_t>("--block_out_channels");
-            auto layers_per_block = args_.get_optional<int64_t>("--layers_per_block").value_or(2);
-            auto latent_channels = args_.get_optional<int64_t>("--latent_channels").value_or(32);
-            auto norm_num_groups = args_.get_optional<int64_t>("--norm_num_groups").value_or(32);
-            auto sample_size = args_.get_optional<int64_t>("--sample_size").value_or(1024);
-            auto force_upcast = args_.get_optional<bool>("--force_upcast").value_or(true);
-            auto use_quant_conv = args_.get_optional<bool>("--use_quant_conv").value_or(true);
-            auto use_post_quant_conv = args_.get_optional<bool>("--use_post_quant_conv").value_or(true);
-            auto mid_block_add_attention = args_.get_optional<bool>("--mid_block_add_attention").value_or(true);
-            auto batch_norm_eps = args_.get_optional<float>("--batch_norm_eps").value_or(1e-4f);
-            auto batch_norm_momentum = args_.get_optional<float>("--batch_norm_momentum").value_or(0.1f);
-            auto patch_size = std::make_tuple(
-                args_.get_optional<int64_t>("--patch_size-0").value_or(2),
-                args_.get_optional<int64_t>("--patch_size-1").value_or(2)
+            config.layers_per_block = args_.get_optional<int64_t>("--layers_per_block").value_or(config.layers_per_block);
+            config.latent_channels = args_.get_optional<int64_t>("--latent_channels").value_or(config.latent_channels);
+            config.norm_num_groups = args_.get_optional<int64_t>("--norm_num_groups").value_or(config.norm_num_groups);
+            config.sample_size = args_.get_optional<int64_t>("--sample_size").value_or(config.sample_size);
+            config.force_upcast = args_.get_optional<bool>("--force_upcast").value_or(config.force_upcast);
+            config.use_quant_conv = args_.get_optional<bool>("--use_quant_conv").value_or(config.use_quant_conv);
+            config.use_post_quant_conv = args_.get_optional<bool>("--use_post_quant_conv").value_or(config.use_post_quant_conv);
+            config.mid_block_add_attention = args_.get_optional<bool>("--mid_block_add_attention").value_or(config.mid_block_add_attention);
+            config.batch_norm_eps = args_.get_optional<float>("--batch_norm_eps").value_or(config.batch_norm_eps);
+            config.batch_norm_momentum = args_.get_optional<float>("--batch_norm_momentum").value_or(config.batch_norm_momentum);
+            config.patch_size = std::make_tuple(
+                args_.get_optional<int64_t>("--patch_size-0").value_or(std::get<0>(config.patch_size)),
+                args_.get_optional<int64_t>("--patch_size-1").value_or(std::get<1>(config.patch_size))
             );
             auto sample = args_.get_one<Tensor>("--sample", {runtime});
             auto sample_posterior = args_.get_optional<bool>("--sample_posterior").value_or(false);
 
-            if (block_out_channels.empty())
-                block_out_channels = {128, 256, 512, 512};
+            if (!block_out_channels.empty())
+                config.block_out_channels = block_out_channels;
 
-            AutoencoderKLFlux2 model(
-                in_channels,
-                out_channels,
-                block_out_channels,
-                layers_per_block,
-                latent_channels,
-                norm_num_groups,
-                sample_size,
-                force_upcast,
-                use_quant_conv,
-                use_post_quant_conv,
-                mid_block_add_attention,
-                batch_norm_eps,
-                batch_norm_momentum,
-                patch_size
-            );
+            AutoencoderKLFlux2 model(config);
 
             CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);
@@ -709,20 +696,22 @@ public:
         }
 
         if (args_.get(0) == "Flux2Transformer2DModel") {
-            auto patch_size = args_.get_optional<int64_t>("--patch_size").value_or(1);
-            auto in_channels = args_.get_optional<int64_t>("--in_channels").value_or(128);
-            auto out_channels = args_.get_optional<int64_t>("--out_channels");
-            auto num_layers = args_.get_optional<int64_t>("--num_layers").value_or(8);
-            auto num_single_layers = args_.get_optional<int64_t>("--num_single_layers").value_or(48);
-            auto attention_head_dim = args_.get_optional<int64_t>("--attention_head_dim").value_or(128);
-            auto num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(48);
-            auto joint_attention_dim = args_.get_optional<int64_t>("--joint_attention_dim").value_or(15360);
-            auto timestep_guidance_channels = args_.get_optional<int64_t>("--timestep_guidance_channels").value_or(256);
-            auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(3.0f);
+            Flux2Transformer2DModel::Config config;
+
+            config.patch_size = args_.get_optional<int64_t>("--patch_size").value_or(config.patch_size);
+            config.in_channels = args_.get_optional<int64_t>("--in_channels").value_or(config.in_channels);
+            config.out_channels = args_.get_optional<int64_t>("--out_channels");
+            config.num_layers = args_.get_optional<int64_t>("--num_layers").value_or(config.num_layers);
+            config.num_single_layers = args_.get_optional<int64_t>("--num_single_layers").value_or(config.num_single_layers);
+            config.attention_head_dim = args_.get_optional<int64_t>("--attention_head_dim").value_or(config.attention_head_dim);
+            config.num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.num_attention_heads);
+            config.joint_attention_dim = args_.get_optional<int64_t>("--joint_attention_dim").value_or(config.joint_attention_dim);
+            config.timestep_guidance_channels = args_.get_optional<int64_t>("--timestep_guidance_channels").value_or(config.timestep_guidance_channels);
+            config.mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(config.mlp_ratio);
             auto axes_dims_rope = args_.get_many<int64_t>("--axes_dims_rope");
-            auto rope_theta = args_.get_optional<int64_t>("--rope_theta").value_or(2000);
-            auto eps = args_.get_optional<float>("--eps").value_or(1e-6f);
-            auto guidance_embeds = args_.get_optional<bool>("--guidance_embeds").value_or(true);
+            config.rope_theta = args_.get_optional<int64_t>("--rope_theta").value_or(config.rope_theta);
+            config.eps = args_.get_optional<float>("--eps").value_or(config.eps);
+            config.guidance_embeds = args_.get_optional<bool>("--guidance_embeds").value_or(config.guidance_embeds);
 
             auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
             auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {runtime});
@@ -733,25 +722,10 @@ public:
             auto num_ref_tokens = args_.get_optional<int64_t>("--num_ref_tokens").value_or(0);
             auto ref_fixed_timestep = args_.get_optional<float>("--ref_fixed_timestep").value_or(0.0f);
 
-            if (axes_dims_rope.empty())
-                axes_dims_rope = std::vector<int64_t>{32, 32, 32, 32};
+            if (!axes_dims_rope.empty())
+                config.axes_dims_rope = axes_dims_rope;
 
-            Flux2Transformer2DModel model(
-                patch_size,
-                in_channels,
-                out_channels,
-                num_layers,
-                num_single_layers,
-                attention_head_dim,
-                num_attention_heads,
-                joint_attention_dim,
-                timestep_guidance_channels,
-                mlp_ratio,
-                axes_dims_rope,
-                rope_theta,
-                eps,
-                guidance_embeds
-            );
+            Flux2Transformer2DModel model(config);
 
             CreateParametersVisitor create_parameters(runtime, args_);
             RethrowVisitor visitor(create_parameters);

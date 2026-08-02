@@ -1,6 +1,29 @@
 #include "diffusers/models/autoencoders/AutoencoderKLFlux2.hpp"
 #include "diffusers/models/autoencoders/vae/Encoder.hpp"
 #include "diffusers/models/autoencoders/vae/Decoder.hpp"
+#include <fstream>
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
+
+AutoencoderKLFlux2::AutoencoderKLFlux2(const AutoencoderKLFlux2::Config& config) : AutoencoderKLFlux2(
+    config.in_channels,
+    config.out_channels,
+    config.block_out_channels,
+    config.layers_per_block,
+    config.latent_channels,
+    config.norm_num_groups,
+    config.sample_size,
+    config.force_upcast,
+    config.use_quant_conv,
+    config.use_post_quant_conv,
+    config.mid_block_add_attention,
+    config.batch_norm_eps,
+    config.batch_norm_momentum,
+    config.patch_size
+) {
+
+}
 
 AutoencoderKLFlux2::AutoencoderKLFlux2(
     int64_t in_channels,
@@ -100,4 +123,68 @@ Tensor AutoencoderKLFlux2::decode(Runtime& runtime, Tensor z) {
     auto dec = decoder->forward(runtime, z);
 
     return dec;
+}
+
+
+template <typename T>
+void read(const json& j, const char* key, T& value) {
+    if (!j.contains(key) || j[key].is_null())
+        return;
+
+    value = j[key].get<T>();
+}
+
+template <typename T>
+void read(const json& j, const char* key, std::optional<T>& value) {
+    if (!j.contains(key))
+        return;
+
+    if (j[key].is_null())
+        value.reset();
+    else
+        value = j[key].get<T>();
+}
+
+AutoencoderKLFlux2::Config AutoencoderKLFlux2::Config::from_file(const std::filesystem::path& path) {
+    std::ifstream file(path);
+
+    if (!file.is_open())
+        throw std::runtime_error("Failed to open configuration file: " + path.string());
+
+    json j;
+    file >> j;
+
+    Config cfg;
+
+    read(j, "in_channels", cfg.in_channels);
+    read(j, "out_channels", cfg.out_channels);
+
+    read(j, "block_out_channels", cfg.block_out_channels);
+
+    read(j, "layers_per_block", cfg.layers_per_block);
+    read(j, "latent_channels", cfg.latent_channels);
+    read(j, "norm_num_groups", cfg.norm_num_groups);
+    read(j, "sample_size", cfg.sample_size);
+
+    read(j, "force_upcast", cfg.force_upcast);
+    read(j, "use_quant_conv", cfg.use_quant_conv);
+    read(j, "use_post_quant_conv", cfg.use_post_quant_conv);
+    read(j, "mid_block_add_attention", cfg.mid_block_add_attention);
+
+    read(j, "batch_norm_eps", cfg.batch_norm_eps);
+    read(j, "batch_norm_momentum", cfg.batch_norm_momentum);
+
+    if (j.contains("patch_size") && !j["patch_size"].is_null()) {
+        const auto& p = j["patch_size"];
+        if (!p.is_array() || p.size() != 2) {
+            throw std::runtime_error("patch_size must be an array of length 2");
+        }
+
+        cfg.patch_size = std::make_tuple(
+            p[0].get<int64_t>(),
+            p[1].get<int64_t>()
+        );
+    }
+
+    return cfg;
 }

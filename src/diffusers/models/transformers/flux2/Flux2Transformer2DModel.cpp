@@ -9,29 +9,27 @@
 #include "nn/attention/ScaledDotProductAttention.hpp"
 #include "nn/attention/FlashAttentionOp.hpp"
 #include "ggml/GGUFLoaderVisitor.hpp"
+#include <nlohmann/json.hpp>
 
-Flux2Transformer2DModel Flux2Transformer2DModel::from_pretrained(Backend& loader_backend, const std::string& path) {
-    Flux2Transformer2DModel model(
-        1,
-        128,
-        std::nullopt,
-        8,
-        24,
-        128,
-        32,
-        12288,
-        256,
-        3.0,
-        {32, 32, 32, 32},
-        2000,
-        1e-6,
-        false
-    );
+using json = nlohmann::json;
 
-    GGUFLoaderVisitor loader(loader_backend, path);
-    model.accept(loader);
+Flux2Transformer2DModel::Flux2Transformer2DModel(const Flux2Transformer2DModel::Config& config) : Flux2Transformer2DModel(
+    config.patch_size,
+    config.in_channels,
+    config.out_channels,
+    config.num_layers,
+    config.num_single_layers,
+    config.attention_head_dim,
+    config.num_attention_heads,
+    config.joint_attention_dim,
+    config.timestep_guidance_channels,
+    config.mlp_ratio,
+    config.axes_dims_rope,
+    config.rope_theta,
+    config.eps,
+    config.guidance_embeds
+) {
 
-    return std::move(model);
 }
 
 Flux2Transformer2DModel::Flux2Transformer2DModel(
@@ -230,4 +228,57 @@ Tensor Flux2Transformer2DModel::forward(
     auto output = proj_out->forward(runtime, hidden_states);
 
     return output;
+}
+
+
+template <typename T>
+void read(const json& j, const char* key, T& value) {
+    if (!j.contains(key) || j[key].is_null())
+        return;
+
+    value = j[key].get<T>();
+}
+
+template <typename T>
+void read(const json& j, const char* key, std::optional<T>& value) {
+    if (!j.contains(key))
+        return;
+
+    if (j[key].is_null())
+        value.reset();
+    else
+        value = j[key].get<T>();
+}
+
+Flux2Transformer2DModel::Config Flux2Transformer2DModel::Config::from_file(const std::filesystem::path& path) {
+    std::ifstream file(path);
+
+    if (!file.is_open())
+        throw std::runtime_error("Failed to open configuration file: " + path.string());
+
+    json j;
+    file >> j;
+
+    Flux2Transformer2DModel::Config cfg;
+
+    read(j, "patch_size", cfg.patch_size);
+    read(j, "in_channels", cfg.in_channels);
+    read(j, "out_channels", cfg.out_channels);
+
+    read(j, "num_layers", cfg.num_layers);
+    read(j, "num_single_layers", cfg.num_single_layers);
+
+    read(j, "attention_head_dim", cfg.attention_head_dim);
+    read(j, "num_attention_heads", cfg.num_attention_heads);
+    read(j, "joint_attention_dim", cfg.joint_attention_dim);
+    read(j, "timestep_guidance_channels", cfg.timestep_guidance_channels);
+
+    read(j, "mlp_ratio", cfg.mlp_ratio);
+    read(j, "axes_dims_rope", cfg.axes_dims_rope);
+
+    read(j, "rope_theta", cfg.rope_theta);
+    read(j, "eps", cfg.eps);
+    read(j, "guidance_embeds", cfg.guidance_embeds);
+
+    return cfg;
 }

@@ -1,24 +1,26 @@
 #pragma once
 
-#include "Graph.hpp"
+#include "ggml/Runtime.hpp"
+#include "ggml/Scheduler.hpp"
+#include "ggml/Graph.hpp"
 #include "ggml.h"
 #include "ggml-backend.h"
 #include <vector>
 
 class Computation {
 public:
-    Computation(Graph& graph) : graph_(graph) {
-        ggml_backend_sched_reset(graph.sched_);
-        ggml_backend_sched_alloc_graph(graph.sched_, graph.gf_);
+    explicit Computation(Graph& graph) : graph_(graph) {
+        ggml_backend_sched_reset(*graph.scheduler());
+        ggml_backend_sched_alloc_graph(*graph.scheduler(), *graph);
 
-        for (auto& [tensor, initializer] : graph_.initializers_)
-            load(tensor, initializer(tensor, graph.rng_));
+        for (auto& [tensor, initializer] : graph.inputs())
+            load(tensor, graph.initialize(tensor, initializer));
 
-        ggml_backend_sched_graph_compute(graph_.sched_, graph_.gf_);
+        ggml_backend_sched_graph_compute(*graph.scheduler(), *graph);
     }
 
     const std::vector<Tensor>& results() const {
-        return graph_.tensors_;
+        return graph_.tensors();
     }
 
     template<class T>

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "ggml/Compute.hpp"
 #include "ggml/Graph.hpp"
 #include "ggml/Computation.hpp"
 #include "ggml/Context.hpp"
@@ -9,8 +8,19 @@
 #include "./ArgumentParser.hpp"
 #include <iostream>
 
-class TestCLI : public Compute {
+class TestCLI {
 public:
+    class Plan {
+    public:
+        Plan(Tensor tensor) : tensors_({tensor}) {}
+        Plan(std::vector<Tensor>&& tensors) : tensors_(tensors) {}
+
+    private:
+        std::vector<Tensor> tensors_;
+
+        friend class TestCLI;
+    };
+
     int main() {
         ggml_time_init();
         ggml_log_set([](ggml_log_level, const char* text, void*) { std::cerr << text; }, nullptr);
@@ -19,13 +29,46 @@ public:
 
         Backend cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
         Scheduler scheduler({*cpu});
+        Runtime runtime(scheduler);
 
-        auto graph = scheduler.plan(*this);
+        auto plan = build(runtime);
+
+        Graph graph(runtime, std::move(plan.tensors_));
+
         compute(graph);
 
         return EXIT_SUCCESS;
     }
 
+    virtual Plan build(Runtime& runtime) = 0;
+
+    const ArgumentParser& args() const {
+        return args_;
+    }
+
+    template <typename T>
+    void print_tensor_like(const std::vector<T>& data, const Tensor::Shape& shape) {
+        size_t expected = 1;
+        for (auto i = 0; i < shape.rank(); ++i)
+            expected *= shape[i];
+
+        if (expected != data.size())
+            throw std::runtime_error("tensor data size does not match shape");
+
+        std::cerr << "output shape: " << shape.to_string() << std::endl;
+
+        size_t index = 0;
+        print_tensor_recursively(data, shape, 0, index);
+        std::cout << std::endl;
+    }
+
+protected:
+    ArgumentParser args_;
+    std::vector<std::pair<Tensor, std::vector<float>>> inputs_;
+
+    TestCLI(int argc, char** argv) : args_(argc, argv) {}
+
+private:
     void compute(Graph& graph) {
         Computation computation(graph);
 
@@ -65,33 +108,6 @@ public:
         }
     }
 
-    const ArgumentParser& args() const {
-        return args_;
-    }
-
-    template <typename T>
-    void print_tensor_like(const std::vector<T>& data, const Tensor::Shape& shape) {
-        size_t expected = 1;
-        for (auto i = 0; i < shape.rank(); ++i)
-            expected *= shape[i];
-
-        if (expected != data.size())
-            throw std::runtime_error("tensor data size does not match shape");
-
-        std::cerr << "output shape: " << shape.to_string() << std::endl;
-
-        size_t index = 0;
-        print_tensor_recursively(data, shape, 0, index);
-        std::cout << std::endl;
-    }
-
-protected:
-    ArgumentParser args_;
-    std::vector<std::pair<Tensor, std::vector<float>>> inputs_;
-
-    TestCLI(int argc, char** argv) : args_(argc, argv) {}
-
-private:
     void print_escaped_string(const std::string& value)
     {
         std::cout << '"';

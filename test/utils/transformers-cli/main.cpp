@@ -239,11 +239,12 @@ int main(int argc, char** argv) {
     if (cli.args().get(0) == "Qwen2TokenizerFast_Encode") {
         auto tokenizer_file = cli.args().get_one<std::string>("--tokenizer_file");
         auto text = cli.args().get_one<std::string>("--text");
+        auto max_length = cli.args().get_optional<int>("--max_length").value_or(0);
         auto add_special_tokens = cli.args().get_optional<bool>("--add_special_tokens").value_or(true);
 
         Qwen2TokenizerFast tokenizer(tokenizer_file);
 
-        auto tokens = tokenizer.encode(text, add_special_tokens);
+        auto tokens = tokenizer.encode(text, max_length, add_special_tokens);
 
         cli.print_tensor_like(tokens, Tensor::Shape{(int64_t)tokens.size()});
         return EXIT_SUCCESS;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ggml/Context.hpp"
+#include "ggml/Scheduler.hpp"
 #include "ggml/Tensor.hpp"
 #include <functional>
 #include <vector>
@@ -12,8 +13,8 @@ public:
     template<typename T>
     using Initializer = std::function<std::vector<T>(Tensor, std::mt19937&)>;
 
-    explicit Runtime(Context& context, uint64_t seed)
-        : context_(context), rng_(seed) {}
+    explicit Runtime(Scheduler& scheduler, uint64_t seed = std::random_device{}())
+        : context_(scheduler.arena()), scheduler_(scheduler), rng_(seed) {}
 
     template <class T>
     Tensor create(const Tensor::Shape& shape, const Initializer<T>& initializer) {
@@ -43,9 +44,10 @@ public:
     Runtime& operator =(const Runtime&) = delete;
 
 private:
-    Context& context_;
+    Context context_;
+    Scheduler& scheduler_;
     std::mt19937 rng_;
     std::vector<std::pair<Tensor, Initializer<std::byte>>> inputs_;
 
-    friend class Scheduler;
+    friend class Graph;
 };

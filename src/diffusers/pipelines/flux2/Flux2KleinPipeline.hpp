@@ -62,8 +62,10 @@ private:
 
     Tensor prepare_latents(Runtime& runtime, int batch, int packed_h, int packed_w);
 
-    Tensor prepare_img_ids(Runtime& runtime, int packed_h, int packed_w);
+    Tensor unpack_latents(Tensor packed, int channels, int packed_h, int packed_w);
 
+    Tensor prepare_img_ids(Runtime& runtime, int packed_h, int packed_w);
+    
     Tensor prepare_txt_ids(Runtime& runtime, int seq_len);
 
     void prepare_timesteps(PipelineState& state, const GenerationOptions& options);

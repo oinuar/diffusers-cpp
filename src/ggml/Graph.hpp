@@ -1,19 +1,16 @@
 #pragma once
 
 #include "ggml/Tensor.hpp"
+#include "ggml/Runtime.hpp"
 #include "ggml.h"
 #include "ggml-backend.h"
 #include <vector>
 #include <random>
 
-class Runtime;
-
 class Graph {
 public:
-    using Initializers = std::vector<std::pair<Tensor, std::function<std::vector<std::byte>(Tensor, std::mt19937&)>>>;
-    
-    Graph(ggml_cgraph* gf, ggml_backend_sched_t sched, std::mt19937&& rng, Initializers&& initializers, std::vector<Tensor>&& tensors)
-        : gf_(gf), sched_(sched), rng_(rng), initializers_(initializers), tensors_(tensors)
+    Graph(Runtime& runtime, std::vector<Tensor>&& tensors)
+        : runtime_(runtime), gf_(ggml_new_graph(*runtime.context())), tensors_(tensors)
     {
         for (auto& tensor : tensors_) {
             // Materialize tensor if needed
@@ -26,7 +23,7 @@ public:
     }
 
     Graph(Graph&& other)
-        : gf_(other.gf_), sched_(other.sched_), rng_(std::move(other.rng_)), initializers_(std::move(other.initializers_)), tensors_(std::move(other.tensors_))
+        : runtime_(other.runtime_), gf_(other.gf_), tensors_(std::move(other.tensors_))
     {
         other.gf_ = nullptr;
     }
@@ -35,15 +32,27 @@ public:
         return gf_;
     }
 
+    std::vector<std::byte> initialize(Tensor tensor, const Runtime::Initializer<std::byte>& initializer) {
+        return std::move(initializer(tensor, runtime_.rng_));
+    }
+
+    std::vector<std::pair<Tensor, Runtime::Initializer<std::byte>>>& inputs() {
+        return runtime_.inputs_;
+    }
+
+    std::vector<Tensor>& tensors() {
+        return tensors_;
+    }
+
+    Scheduler& scheduler() {
+        return runtime_.scheduler_;
+    }
+
     Graph(Graph&) = delete;
     Graph& operator =(const Graph&) = delete;
 
 private:
+    Runtime& runtime_;
     ggml_cgraph* gf_;
-    ggml_backend_sched_t sched_;
-    std::mt19937 rng_;
-    Initializers initializers_;
     std::vector<Tensor> tensors_;
-
-    friend class Computation;
 };

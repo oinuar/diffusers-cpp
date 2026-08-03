@@ -15,15 +15,13 @@ public:
         std::string content;
     };
 
-    struct TokenizerOutput {
-        std::vector<int> input_ids;
-        std::vector<int> attention_mask;  // 1 for real tokens, 0 for padding
-        size_t num_real_tokens;            // count before padding
-    };
-
     explicit Qwen2TokenizerFast(const std::filesystem::path& tokenizer_file);
 
-    TokenizerOutput encode(const std::string& text, int max_length, bool add_special_tokens = true) const;
+    std::vector<int> encode(const std::string& text,
+                            int max_length = 0,
+                            bool add_special_tokens = true,
+                            std::vector<int>* attention_mask = nullptr,
+                            size_t* num_real_tokens = nullptr) const;
 
     std::string decode(const std::vector<int>& ids,
                        bool skip_special_tokens = true) const;
@@ -34,6 +32,7 @@ public:
     int vocab_size()   const { return static_cast<int>(vocab_.size()); }
     int eos_token_id() const { return eos_token_id_; }
     int unk_token_id() const { return unk_token_id_; }
+    // int pad_token_id() const { return pad_token_id_; }
 
 private:
     // BPE with priority queue optimization

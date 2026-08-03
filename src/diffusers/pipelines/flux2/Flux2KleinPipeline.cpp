@@ -1,7 +1,9 @@
+#if 0
 #include "diffusers/pipelines/flux2/Flux2KleinPipeline.hpp"
 #include "nn/RethrowVisitor.hpp"
 #include "ggml/GGUFLoaderVisitor.hpp"
 #include "ggml/Runtime.hpp"
+#include "ggml/Computation.hpp"
 #include "transformers/models/qwen3/Qwen3Config.hpp"
 #include <algorithm>
 #include <chrono>
@@ -45,33 +47,14 @@ Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(Backend& loader_backend, 
     return std::move(pipeline);
 }
 
-namespace {
-
 // Mirrors diffusers `calculate_shift` for FlowMatchEulerDiscreteScheduler
 // with use_dynamic_shifting.
-float calculate_shift(float image_seq_len, float base_seq_len, float max_seq_len,
+static float calculate_shift(float image_seq_len, float base_seq_len, float max_seq_len,
                       float base_shift, float max_shift) {
     const float m = (max_shift - base_shift) / (max_seq_len - base_seq_len);
     const float b = base_shift - m * base_seq_len;
     return m * image_seq_len + b;
 }
-
-// Graph-native 2x2 unpack, pure 4D.
-//
-//   packed: ne (4C, N, B), N = packed_h * packed_w
-//   result: ne (2pw, 2ph, C, B)   (torch: (B, C, 2ph, 2pw))
-//
-Tensor unpack_latents(Tensor packed, int channels, int packed_h, int packed_w) {
-    const int64_t C = channels;
-    const int64_t B = packed.shape()[2];
-
-    Tensor t = packed.reshape({2 * C, 2, packed_w, packed_h * B});
-    t = t.permute(/*axes=*/{0, 2, 1, 3});   // swap p1 <-> x
-    t = t.contiguous();
-    return t.reshape({C, 2 * packed_w, 2 * packed_h, B});
-}
-
-} // namespace
 
 std::pair<Tensor, Tensor>
 Flux2KleinPipeline::encode_prompt(Runtime& runtime, const std::string& prompt, const GenerationOptions& options) {
@@ -121,6 +104,21 @@ Tensor Flux2KleinPipeline::prepare_latents(Runtime& runtime, int batch, int pack
         });
 }
 
+// Graph-native 2x2 unpack, pure 4D.
+//
+//   packed: ne (4C, N, B), N = packed_h * packed_w
+//   result: ne (2pw, 2ph, C, B)   (torch: (B, C, 2ph, 2pw))
+//
+Tensor Flux2KleinPipeline::unpack_latents(Tensor packed, int channels, int packed_h, int packed_w) {
+    const int64_t C = channels;
+    const int64_t B = packed.shape()[2];
+
+    Tensor t = packed.reshape({2 * C, 2, packed_w, packed_h * B});
+    t = t.permute(/*axes=*/{0, 2, 1, 3});   // swap p1 <-> x
+    t = t.contiguous();
+    return t.reshape({C, 2 * packed_w, 2 * packed_h, B});
+}
+
 Tensor Flux2KleinPipeline::prepare_img_ids(Runtime& runtime, int packed_h, int packed_w) {
     return runtime.create<float>({3, int64_t(packed_h) * packed_w},
         [=](Tensor, std::mt19937&) {
@@ -164,7 +162,7 @@ Tensor Flux2KleinPipeline::repeat_batch(const Tensor& t, int batch) {
     return executor_.execute(rt, t.repeat(shape));   // persistent result
 }
 
-PipelineState Flux2KleinPipeline::prepare(Runtime& runtime, const std::string& prompt, const GenerationOptions& options) {
+Flux2KleinPipeline::PipelineState Flux2KleinPipeline::prepare(Runtime& runtime, const std::string& prompt, const GenerationOptions& options) {
     PipelineState state;
 
     if (options.height % config_.vae_scale_factor != 0 ||
@@ -259,9 +257,11 @@ std::vector<Image> Flux2KleinPipeline::generate(Runtime& runtime,
 
     // denoising loop: a NEW graph every iteration.
     for (size_t i = 0; i < state.timesteps.size(); ++i) {
+        Tensor next = build_step(runtime, state, state.timesteps[i]);
+        Computation computation(next);
+
         const auto t0 = std::chrono::steady_clock::now();
 
-        Tensor next = build_step(runtime, state, state.timesteps[i]);
         state.latents = executor_.execute(runtime, next);              // sync point
 
         // `next`'s nodes lived in `rt`'s arena; execute() handed back
@@ -287,3 +287,4 @@ std::vector<Image> Flux2KleinPipeline::generate(Runtime& runtime,
     std::cerr << "[flux2-klein] done (" << total << " ms)\n";
     return images;
 }
+#endif

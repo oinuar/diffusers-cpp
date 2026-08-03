@@ -37,7 +37,7 @@ Tensor Timesteps::forward(Runtime& runtime, Tensor timesteps) {
         out = Tensor::cat({sin_emb, cos_emb}, -1);
 
     if (num_channels % 2 == 1) {
-        auto zeros = Tensor::zeros(*runtime.context(), {out.shape()[0], 1}, out.dtype());
+        auto zeros = Tensor::zeros(*runtime.context(), {out.shape()[0], 1});
         out = Tensor::cat({out, zeros}, -1);
     }
 

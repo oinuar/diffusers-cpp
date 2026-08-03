@@ -15,10 +15,15 @@ public:
         std::string content;
     };
 
+    struct TokenizerOutput {
+        std::vector<int> input_ids;
+        std::vector<int> attention_mask;  // 1 for real tokens, 0 for padding
+        size_t num_real_tokens;            // count before padding
+    };
+
     explicit Qwen2TokenizerFast(const std::filesystem::path& tokenizer_file);
 
-    std::vector<int> encode(const std::string& text,
-                            bool add_special_tokens = true) const;
+    TokenizerOutput encode(const std::string& text, int max_length, bool add_special_tokens = true) const;
 
     std::string decode(const std::vector<int>& ids,
                        bool skip_special_tokens = true) const;

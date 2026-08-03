@@ -354,8 +354,12 @@ std::vector<int> Qwen2TokenizerFast::bpe_encode_token(const std::string& token) 
     return ids;
 }
 
-std::vector<int> Qwen2TokenizerFast::encode(const std::string& text,
-                                        bool add_special_tokens) const {
+// In qwen2_tokenizer_fast.cpp
+Qwen2TokenizerFast::TokenizerOutput Qwen2TokenizerFast::encode(
+    const std::string& text,
+    int max_length,
+    bool add_special_tokens) const {
+    
     std::vector<std::pair<std::string, bool>> segments;
     size_t i = 0;
     while (i < text.size()) {
@@ -386,9 +390,6 @@ std::vector<int> Qwen2TokenizerFast::encode(const std::string& text,
         } else {
             for (const std::string& pt : pre_tokenize(seg.first)) {
                 std::string processed_pt = pt;
-                // Only add prefix space if add_prefix_space_ is true AND 
-                // we're not at the very beginning of the sequence (ids is not empty)
-                // OR if the previous token ended with whitespace
                 if (add_prefix_space_ && !processed_pt.empty() && processed_pt[0] != ' ' && !ids.empty()) {
                     processed_pt = " " + processed_pt;
                 }
@@ -402,7 +403,26 @@ std::vector<int> Qwen2TokenizerFast::encode(const std::string& text,
         }
     }
 
-    return ids;
+    // Store count before truncation/padding
+    size_t num_real_tokens = ids.size();
+    
+    // Truncate if exceeding max_length
+    if (max_length > 0 && ids.size() > static_cast<size_t>(max_length)) {
+        ids.resize(max_length);
+        num_real_tokens = max_length;
+    }
+
+    // Build attention mask and pad to max_length
+    std::vector<int> attention_mask(num_real_tokens, 1);
+    
+    // Right-padding (standard for causal models)
+    if (max_length > 0 && ids.size() < static_cast<size_t>(max_length)) {
+        size_t pad_count = max_length - ids.size();
+        ids.resize(max_length, pad_token_id_); //     int pad_token_id_ = 151643;  // typical Qwen pad token, adjust per your vocab TODO: read from config
+        attention_mask.resize(max_length, 0);
+    }
+
+    return TokenizerOutput{std::move(ids), std::move(attention_mask), num_real_tokens};
 }
 
 std::string Qwen2TokenizerFast::decode(const std::vector<int>& ids,

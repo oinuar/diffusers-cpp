@@ -17,7 +17,7 @@ public:
 
     template <class T>
     Tensor create(const Tensor::Shape& shape, const Initializer<T>& initializer) {
-        auto tensor = Tensor::empty(*context_, shape, Tensor::TypeOf<T>::value);
+        auto tensor = Tensor::empty<T>(*context_, shape);
 
         inputs_.push_back({tensor, [initializer](Tensor tensor, std::mt19937& rng) {
             auto values = initializer(tensor, rng);

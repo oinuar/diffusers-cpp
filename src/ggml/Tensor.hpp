@@ -256,52 +256,54 @@ public:
         return clone();
     }
 
-
     /** @brief Creates an uninitialized tensor with the given shape and type. */
-    static Tensor empty(
+    template <typename T> static Tensor empty(
         ggml_context* ctx,
-        const Shape& shape,
-        ggml_type type = GGML_TYPE_F32)
+        const Shape& shape)
     {
         // GGML does not support 0d tensors, let's fake it with 1d tensor
         if (shape.rank() == 0)
-            return Tensor(ctx, ggml_new_tensor_1d(ctx, type, 1), shape);
+            return Tensor(ctx, ggml_new_tensor_1d(ctx, TypeOf<T>::value, 1), shape);
 
-        return Tensor(ctx, ggml_new_tensor(ctx, type, shape.rank(), shape.data()), shape);
+        return Tensor(ctx, ggml_new_tensor(ctx, TypeOf<T>::value, shape.rank(), shape.data()), shape);
     }
 
     /** @brief Creates a scalar tensor filled with the given value. */
     static Tensor scalar(
         ggml_context* ctx,
-        float value,
-        ggml_type type = GGML_TYPE_F32)
+        float value)
     {
-        auto tensor = empty(ctx, {}, type);
+        auto tensor = empty<float>(ctx, {});
         tensor.t_ = ggml_fill_inplace(tensor.ctx_, tensor.t_, value);
 
+        return tensor;
+    }
+
+    /** @brief Creates a filled tensor with the given value, shape and type. */
+    template <typename T> static Tensor full(
+        ggml_context* ctx,
+        const Shape& shape,
+        const T& value)
+    {
+        auto tensor = empty<T>(ctx, shape);
+        tensor.t_ = ggml_fill_inplace(ctx, tensor.t_, (float)value);
         return tensor;
     }
 
     /** @brief Creates a zero-filled tensor with the given shape and type. */
     static Tensor zeros(
         ggml_context* ctx,
-        const Shape& shape,
-        ggml_type type = GGML_TYPE_F32)
+        const Shape& shape)
     {
-        auto tensor = empty(ctx, shape, type);
-        tensor.t_ = ggml_fill_inplace(ctx, tensor.t_, 0.0f);
-        return tensor;
+        return full(ctx, shape, 0.0f);
     }
 
     /** @brief Creates a one-filled tensor with the given shape and type. */
     static Tensor ones(
         ggml_context* ctx,
-        const Shape& shape,
-        ggml_type type = GGML_TYPE_F32)
+        const Shape& shape)
     {
-        auto tensor = empty(ctx, shape, type);
-        tensor.t_ = ggml_fill_inplace(ctx, tensor.t_, 1.0f);
-        return tensor;
+        return full(ctx, shape, 1.0f);
     }
 
     static Tensor arange(

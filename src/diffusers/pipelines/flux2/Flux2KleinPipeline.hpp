@@ -14,6 +14,7 @@
 
 class Backend;
 class Runtime;
+class Scheduler;
 
 class Flux2KleinPipeline {
 public:
@@ -37,6 +38,7 @@ public:
         std::vector<float> sigmas;
         int latent_height = 0;         // VAE latent pixels (= 2 * packed grid h)
         int latent_width = 0;
+        float timestep;
     };
     
     Flux2KleinPipeline from_pretrained(Backend& loader_backend, const std::filesystem::path& path);
@@ -49,7 +51,7 @@ public:
           scheduler_(), text_encoder_(std::move(text_encoder)),
           tokenizer_(std::move(tokenizer)) {}
 
-    std::vector<Image> generate(Runtime& runtime, 
+    std::vector<Image> generate(Scheduler& scheduler, 
                                 const std::string& prompt,
                                 const GenerationOptions& options);
 
@@ -72,13 +74,12 @@ private:
 
     Tensor repeat_batch(const Tensor& t, int batch);
 
-    Tensor build_step(Runtime& rt, const PipelineState& state, float timestep);
+    Tensor build_step(Runtime& rt, const PipelineState& state);
 
     Tensor build_decode(Runtime& rt, const PipelineState& state,
                         const GenerationOptions& options);
 
-    std::vector<Image> latents_to_images(const Tensor& decoded, int batch,
-                                         int height, int width);
+    std::vector<Image> latents_to_images(std::vector<float>&& data, int batch, int height, int width);
 
     Flux2Transformer2DModel transformer_;
     AutoencoderKLFlux2 vae_;

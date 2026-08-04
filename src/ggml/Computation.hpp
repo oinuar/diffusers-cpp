@@ -13,8 +13,8 @@ public:
         ggml_backend_sched_reset(*graph.scheduler());
         ggml_backend_sched_alloc_graph(*graph.scheduler(), *graph);
 
-        for (auto& [tensor, initializer] : graph.inputs())
-            load(tensor, graph.initialize(tensor, initializer));
+        for (auto& [tensor, provider] : graph.inputs())
+            load(tensor, graph.provide(tensor, provider));
 
         ggml_backend_sched_graph_compute(*graph.scheduler(), *graph);
     }
@@ -56,7 +56,7 @@ public:
 private:
     Graph& graph_;
 
-    void load(Tensor& tensor, const std::vector<std::byte>& bytes) {
+    void load(const Tensor& tensor, const std::vector<std::byte>& bytes) {
         if (bytes.size() != ggml_nbytes(*tensor))
             throw std::invalid_argument("load(): data size mismatch: expected " + std::to_string(bytes.size()) + ", but got " + std::to_string(ggml_nbytes(*tensor)));
 

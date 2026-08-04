@@ -42,8 +42,8 @@ static Tensor create_causal_mask(
 ) {
     const float neg_inf = -std::numeric_limits<float>::infinity();
 
-    auto mask = runtime.create<float>(Tensor::Shape({1, 1, seq_len, target_len}),
-        [=](Tensor, std::mt19937&) {
+    auto mask = runtime.create<float>({1, 1, seq_len, target_len},
+        [=](std::mt19937&) {
             std::vector<float> mask;
             mask.reserve(seq_len * target_len);
 

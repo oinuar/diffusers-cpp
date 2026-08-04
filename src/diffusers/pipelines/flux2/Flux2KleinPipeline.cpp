@@ -3,6 +3,7 @@
 #include "nn/RethrowVisitor.hpp"
 #include "ggml/GGUFLoaderVisitor.hpp"
 #include "ggml/Runtime.hpp"
+#include "ggml/Scheduler.hpp"
 #include "ggml/Computation.hpp"
 #include "transformers/models/qwen3/Qwen3Config.hpp"
 #include <algorithm>
@@ -58,17 +59,20 @@ static float calculate_shift(float image_seq_len, float base_seq_len, float max_
 
 std::pair<Tensor, Tensor>
 Flux2KleinPipeline::encode_prompt(Runtime& runtime, const std::string& prompt, const GenerationOptions& options) {
-    auto tokenized = tokenizer_.encode(prompt, options.max_sequence_length, false);
+    std::vector<int> mask;
+    size_t num_real_tokens;
+
+    auto tokens = tokenizer_.encode(prompt, options.max_sequence_length, false, &mask, &num_real_tokens);
     
-    auto input_ids = runtime.create<int32_t>({(int64_t)tokenized.input_ids.size(), 1},
+    auto input_ids = runtime.create<int32_t>({(int64_t)tokens.size(), 1},
         [=](Tensor, std::mt19937&) {
-            return tokenized.input_ids;
+            return std::move(tokens);
         });
 
     // Upload attention mask as float directly for masking operations
-    auto attention_mask = runtime.create<float>({(int64_t)tokenized.attention_mask.size(), 1},
+    auto attention_mask = runtime.create<float>({(int64_t)mask.size(), 1},
         [=](Tensor, std::mt19937&) {
-            return std::move(std::vector<float>(tokenized.attention_mask.begin(), tokenized.attention_mask.end()));
+            return std::move(std::vector<float>(mask.begin(), mask.end()));
         });
 
     // Pass attention_mask to text encoder 
@@ -81,7 +85,7 @@ Flux2KleinPipeline::encode_prompt(Runtime& runtime, const std::string& prompt, c
     auto masked_embeds = prompt_embeds * mask_expanded;
     auto summed = masked_embeds.sum(/*axis=*/1);  // (hidden, 1, B)
 
-    auto divisor = tokenized.num_real_tokens > 0 ? (float)tokenized.num_real_tokens : 1.0f;
+    auto divisor = num_real_tokens > 0 ? (float)num_real_tokens : 1.0f;
     auto pooled = summed / divisor;
 
     // One graph, two outputs
@@ -156,10 +160,10 @@ void Flux2KleinPipeline::prepare_timesteps(PipelineState& state,
 
 Tensor Flux2KleinPipeline::repeat_batch(const Tensor& t, int batch) {
     if (batch <= 1) return t;
-    Runtime rt;
+
     auto shape = t.shape();
-    shape.back() = batch;                    // batch is the slowest dim (ne[ndim-1])
-    return executor_.execute(rt, t.repeat(shape));   // persistent result
+    shape[-1] = batch;                    // batch is the slowest dim (ne[ndim-1])
+    return t.repeat(shape);
 }
 
 Flux2KleinPipeline::PipelineState Flux2KleinPipeline::prepare(Runtime& runtime, const std::string& prompt, const GenerationOptions& options) {
@@ -188,22 +192,28 @@ Flux2KleinPipeline::PipelineState Flux2KleinPipeline::prepare(Runtime& runtime, 
     return state;
 }
 
-Tensor Flux2KleinPipeline::build_step(Runtime& rt, const PipelineState& state,
-                                      float timestep) {
-    Tensor t = Tensor::full(*rt.context(), {1}, timestep);
-    Tensor guidance = Tensor::full(*rt.context(), {1}, 0.0f); // TODO: check if config.guidance_embeds is true
+Tensor Flux2KleinPipeline::build_step(Runtime& rt, const PipelineState& state) {
+    auto t = rt.create<float>({1}, [&](Tensor, std::mt19937&) {
+        return std::vector<float>({state.timestep});
+    });
 
-    Tensor noise_pred = transformer_.forward(rt,
+    auto guidance = Tensor::full(*rt.context(), {1}, 0.0f); // TODO: check if config.guidance_embeds is true
+
+    auto noise_pred = transformer_.forward(rt,
         /*hidden_states=*/          state.latents,
-        /*timestep=*/               t,
-        /*guidance=*/               guidance,
         /*encoder_hidden_states=*/  state.prompt_embeds,
-        /*pooled_projections=*/     state.pooled_prompt_embeds,
+        /*timestep=*/               t,
         /*img_ids=*/                state.img_ids,
-        /*txt_ids=*/                state.txt_ids);
+        /*txt_ids=*/                state.txt_ids,
+        /*guidance=*/               guidance,
+        /*pooled_projections=*/     state.pooled_prompt_embeds /* TODO: where is this? */);
 
-    // Bakes dt = sigma_next - sigma into the graph; advances step_index.
-    return scheduler_.step(rt, noise_pred, state.latents);
+    // Bakes dt = sigma_next - sigma into the graph; advances step_index.    
+    auto dt = rt.create<float>({1}, [&](Tensor, std::mt19937&) {
+        return std::vector<float>({scheduler_.step(state.timestep)});
+    });
+
+    return scheduler_.integrate(dt, noise_pred, state.latents);
 }
 
 Tensor Flux2KleinPipeline::build_decode(Runtime& rt, const PipelineState& state,
@@ -219,9 +229,7 @@ Tensor Flux2KleinPipeline::build_decode(Runtime& rt, const PipelineState& state,
 }
 
 // decoded: ne (W, H, 3, B), float, contiguous; converts CHW planes -> HWC uint8
-std::vector<Image> Flux2KleinPipeline::latents_to_images(const Tensor& decoded, int batch, int height, int width) {
-    std::vector<float> data = executor_.read<float>(decoded);
-
+std::vector<Image> Flux2KleinPipeline::latents_to_images(std::vector<float>&& data, int batch, int height, int width) {
     std::vector<Image> images;
     images.reserve(batch);
 
@@ -248,38 +256,44 @@ std::vector<Image> Flux2KleinPipeline::latents_to_images(const Tensor& decoded, 
     return images;
 }
 
-std::vector<Image> Flux2KleinPipeline::generate(Runtime& runtime, 
-                                                const std::string& prompt,
+std::vector<Image> Flux2KleinPipeline::generate(Scheduler& scheduler, const std::string& prompt,
                                                 const GenerationOptions& options) {
     const auto t_start = std::chrono::steady_clock::now();
 
-    PipelineState state = prepare(runtime, prompt, options);
+    // denoising loop
+    std::vector<float> latents;
+    {
+        Runtime runtime(scheduler);
+        PipelineState state = prepare(runtime, prompt, options);
+        Graph denoise(runtime, {build_step(runtime, state)});
 
-    // denoising loop: a NEW graph every iteration.
-    for (size_t i = 0; i < state.timesteps.size(); ++i) {
-        Tensor next = build_step(runtime, state, state.timesteps[i]);
-        Computation computation(next);
+        for (size_t i = 0; i < state.timesteps.size(); ++i) {
+            const auto t0 = std::chrono::steady_clock::now();
 
-        const auto t0 = std::chrono::steady_clock::now();
+            Computation computation(denoise);
+            state.latents = computation.results().at(0);
 
-        state.latents = executor_.execute(runtime, next);              // sync point
+            const double ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - t0).count();
+            std::cerr << "[flux2-klein] step " << (i + 1) << "/" << state.timesteps.size()
+                    << "  t=" << state.timesteps[i] << "  (" << ms << " ms)\n";
 
-        // `next`'s nodes lived in `rt`'s arena; execute() handed back
-        // a persistent copy, so `rt` may die at the end of this iteration.
-
-        const double ms = std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now() - t0).count();
-        std::cerr << "[flux2-klein] step " << (i + 1) << "/" << state.timesteps.size()
-                  << "  t=" << state.timesteps[i] << "  (" << ms << " ms)\n";
+            if (i == state.timesteps.size() - 1)
+                latents = std::move(computation.read<float>(state.latents));
+        }
     }
 
-    // decode: same pattern, one graph, one sync point.
+    // decode latents to images
     std::vector<Image> images;
     {
-        Tensor decoded = build_decode(runtime, state, options);
-        decoded = executor_.execute(runtime, decoded);
-        images = latents_to_images(decoded, options.num_images_per_prompt,
-                                   options.height, options.width);
+        Runtime runtime(scheduler);
+        Graph denoise(runtime, {build_decode(runtime, latents, options)});
+        Computation computation(denoise);
+
+        auto decoded = computation.results().at(0);
+        auto data = computation.read<float>(decoded);
+
+        images = latents_to_images(std::move(data), options.num_images_per_prompt, options.height, options.width);
     }
 
     const double total = std::chrono::duration<double, std::milli>(

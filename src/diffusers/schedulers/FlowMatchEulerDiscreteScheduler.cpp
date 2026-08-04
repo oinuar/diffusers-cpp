@@ -130,28 +130,24 @@ void FlowMatchEulerDiscreteScheduler::reset_step_index() {
     step_index = 0;
 }
 
-std::vector<Tensor> FlowMatchEulerDiscreteScheduler::step(
-    Runtime& runtime,
-    const Tensor& model_output,
-    int timestep,
-    const Tensor& sample,
-    bool return_dict
-) {
+float FlowMatchEulerDiscreteScheduler::step(int timestep) {
     init_step_index(timestep);
 
     float sigma = sigmas[step_index];
     float sigma_next = sigmas[step_index + 1];
     float dt = sigma_next - sigma;
-
-    Tensor prev_sample = sample + dt * model_output;
-
-    step_index++;
-
-    if (return_dict) {
-        // In a full implementation, this would return a structured Output type.
-        // Returning a vector of 1 element acts as the tuple proxy matching the Python fallback.
-        return {prev_sample};
-    }
     
-    return {prev_sample};
+    ++step_index;
+
+    return dt;
+}
+
+Tensor FlowMatchEulerDiscreteScheduler::integrate(
+    const Tensor& model_output,
+    const Tensor& sample,
+    float dt
+) {
+    auto prev_sample = sample + dt * model_output;
+
+    return prev_sample;
 }

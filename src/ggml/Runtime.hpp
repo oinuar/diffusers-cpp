@@ -11,25 +11,46 @@
 class Runtime {
 public:
     template<typename T>
-    using Initializer = std::function<std::vector<T>(Tensor, std::mt19937&)>;
+    using Provider = std::function<std::vector<T>(std::mt19937&)>;
+
+    struct TensorInputHash {
+        std::size_t operator()(const Tensor& t) const noexcept {
+            return std::hash<ggml_tensor*>()(*t);
+        }
+    };
+
+    struct TensorInputEqual {
+        bool operator()(const Tensor& a, const Tensor& b) const noexcept {
+            return *a == *b;
+        }
+    };
+
+    typedef std::unordered_map<Tensor, Provider<std::byte>, TensorInputHash, TensorInputEqual> Inputs;
 
     explicit Runtime(Scheduler& scheduler, uint64_t seed = std::random_device{}())
         : context_(scheduler.arena()), scheduler_(scheduler), rng_(seed) {}
 
     template <class T>
-    Tensor create(const Tensor::Shape& shape, const Initializer<T>& initializer) {
-        auto tensor = Tensor::empty<T>(*context_, shape);
+    Tensor create(const Tensor::Shape& shape, const Provider<T>& provider) {
+        auto tensor = Tensor::empty<T>(*context(), shape);
+        bind(tensor, provider);
+        return tensor;
+    }
 
-        inputs_.push_back({tensor, [initializer](Tensor tensor, std::mt19937& rng) {
-            auto values = initializer(tensor, rng);
+    template <class T>
+    void bind(Tensor tensor, const Provider<T>& provider) {
+        inputs_[tensor] = [provider](std::mt19937& rng) {
+            auto values = provider(rng);
 
             std::vector<std::byte> bytes(values.size() * sizeof(T));
             std::memcpy(bytes.data(), values.data(), bytes.size());
 
             return std::move(bytes);
-        }});
+        };
+    }
 
-        return tensor;
+    void unbind(Tensor tensor) {
+        inputs_.erase(tensor);
     }
 
     Context& context() {
@@ -47,7 +68,7 @@ private:
     Context context_;
     Scheduler& scheduler_;
     std::mt19937 rng_;
-    std::vector<std::pair<Tensor, Initializer<std::byte>>> inputs_;
+    Inputs inputs_;
 
     friend class Graph;
 };

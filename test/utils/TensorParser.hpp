@@ -24,7 +24,7 @@ struct ArgumentParser::parser<Tensor> {
 
             std::cerr << "inferred shape for " << option << ": " << shape.to_string() << std::endl;
 
-            return runtime_.create<float>(shape, [data](Tensor, std::mt19937&) {
+            return runtime_.create<float>(shape, [data](std::mt19937&) {
                 return std::move(data);
             });
         } catch (const std::runtime_error& error) {

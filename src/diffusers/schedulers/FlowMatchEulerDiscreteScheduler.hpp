@@ -30,12 +30,12 @@ public:
 
     std::vector<int> get_timesteps() const;
 
-    std::vector<Tensor> step(
-        Runtime& runtime,
+    float step(int timestep);
+
+    Tensor integrate(
         const Tensor& model_output,
-        int timestep,
         const Tensor& sample,
-        bool return_dict = false
+        float dt
     );
 
     void reset_step_index();

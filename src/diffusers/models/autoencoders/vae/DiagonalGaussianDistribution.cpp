@@ -26,8 +26,10 @@ DiagonalGaussianDistribution::DiagonalGaussianDistribution(
 }
 
 Tensor DiagonalGaussianDistribution::sample(Runtime& runtime) {
-    auto sample = runtime.create<float>(mean_.shape(), [](Tensor tensor, std::mt19937& rng) {
-        std::vector<float> data(tensor.numel());
+    auto numel = mean_.numel();
+
+    auto sample = runtime.create<float>(mean_.shape(), [=](std::mt19937& rng) {
+        std::vector<float> data(numel);
         std::normal_distribution<float> dist(0.0f, 1.0f);
 
         for (auto& x : data)

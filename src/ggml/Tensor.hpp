@@ -212,6 +212,11 @@ public:
         return t_->type;
     }
 
+    /** @brief Returns the tensor context. */
+    ggml_context* context() const {
+        return ctx_;
+    }
+
     /** @brief Returns true if tensor is valid; otherwise returns false. */
     operator bool() const {
         return ctx_ != nullptr && t_ != nullptr;
@@ -371,6 +376,11 @@ public:
     /** @brief Casts a tensor to type `type`. */
     Tensor to(ggml_type type) const {
         return Tensor(ctx_, ggml_cast(ctx_, t_, type), shape_);
+    }
+
+    /** @brief Transports tensor to a context `ctx`. */
+    Tensor to(ggml_context* ctx) const {
+        return Tensor(ctx, ggml_dup(ctx, t_), shape_);
     }
 
     Tensor operator -() const {

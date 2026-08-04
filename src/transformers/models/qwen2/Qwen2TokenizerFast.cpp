@@ -359,7 +359,7 @@ std::vector<int> Qwen2TokenizerFast::encode(
     const std::string& text,
     int max_length,
     bool add_special_tokens,
-    std::vector<int>* attention_mask,
+    std::vector<int>* mask,
     size_t* num_real_tokens) const
 {
     std::vector<std::pair<std::string, bool>> segments;
@@ -418,14 +418,14 @@ std::vector<int> Qwen2TokenizerFast::encode(
         *num_real_tokens = real_tokens;
 
     // Build attention mask and pad to max_length
-    if (attention_mask) {
-        *attention_mask = std::vector<int>(real_tokens, 1);
+    if (mask) {
+        *mask = std::vector<int>(real_tokens, 1);
         
         // Right-padding (standard for causal models)
         if (max_length > 0 && ids.size() < static_cast<size_t>(max_length)) {
             size_t pad_count = max_length - ids.size();
             ids.resize(max_length, 151643 /*pad_token_id_*/); // TODO: read from config
-            attention_mask->resize(max_length, 0);
+            mask->resize(max_length, 0);
         }
     }
     

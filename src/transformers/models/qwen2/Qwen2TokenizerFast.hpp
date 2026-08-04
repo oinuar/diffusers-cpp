@@ -20,7 +20,7 @@ public:
     std::vector<int> encode(const std::string& text,
                             int max_length = 0,
                             bool add_special_tokens = true,
-                            std::vector<int>* attention_mask = nullptr,
+                            std::vector<int>* mask = nullptr,
                             size_t* num_real_tokens = nullptr) const;
 
     std::string decode(const std::vector<int>& ids,

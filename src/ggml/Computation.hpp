@@ -14,7 +14,7 @@ public:
         ggml_backend_sched_alloc_graph(*graph.scheduler(), *graph);
 
         for (auto& [tensor, provider] : graph.inputs())
-            load(tensor, graph.provide(tensor, provider));
+            load(tensor, graph.provide(provider));
 
         ggml_backend_sched_graph_compute(*graph.scheduler(), *graph);
     }
@@ -26,7 +26,7 @@ public:
     template<class T>
     std::vector<T> read(const Tensor& tensor)
     {
-        constexpr auto expected = Tensor::TypeOf<T>::value;
+        constexpr auto expected = Tensor::DType<T>::value;
 
         if (tensor.dtype() != expected)
             throw std::invalid_argument("read(): dtype mismatch: expected " + std::string(ggml_type_name(expected)) + ", but got " + std::string(ggml_type_name(tensor.dtype())));

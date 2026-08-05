@@ -65,13 +65,13 @@ Flux2KleinPipeline::encode_prompt(Runtime& runtime, const std::string& prompt, c
     auto tokens = tokenizer_.encode(prompt, options.max_sequence_length, false, &mask, &num_real_tokens);
     
     auto input_ids = runtime.create<int32_t>({(int64_t)tokens.size(), 1},
-        [=](Tensor, std::mt19937&) {
+        [=](std::mt19937&) {
             return std::move(tokens);
         });
 
     // Upload attention mask as float directly for masking operations
     auto attention_mask = runtime.create<float>({(int64_t)mask.size(), 1},
-        [=](Tensor, std::mt19937&) {
+        [=](std::mt19937&) {
             return std::move(std::vector<float>(mask.begin(), mask.end()));
         });
 
@@ -99,7 +99,7 @@ Tensor Flux2KleinPipeline::prepare_latents(Runtime& runtime, int batch, int pack
     // Sampling noise directly in packed layout is equivalent to diffusers'
     // randn(B, C, 2h, 2w) + _pack_latents — packing is a pure permutation.
     return runtime.create<float>({token_dim, int64_t(packed_h) * packed_w, batch},
-        [=](Tensor, std::mt19937& rng) {
+        [=](std::mt19937& rng) {
             std::vector<float> noise(count);
             std::normal_distribution<float> normal(0.0f, 1.0f);
             for (float& v : noise) v = normal(rng);
@@ -125,7 +125,7 @@ Tensor Flux2KleinPipeline::unpack_latents(Tensor packed, int channels, int packe
 
 Tensor Flux2KleinPipeline::prepare_img_ids(Runtime& runtime, int packed_h, int packed_w) {
     return runtime.create<float>({3, int64_t(packed_h) * packed_w},
-        [=](Tensor, std::mt19937&) {
+        [=](std::mt19937&) {
             std::vector<float> ids(size_t(packed_h) * packed_w * 3, 0.0f);
 
             for (int y = 0; y < packed_h; ++y)
@@ -193,7 +193,7 @@ Flux2KleinPipeline::PipelineState Flux2KleinPipeline::prepare(Runtime& runtime, 
 }
 
 Tensor Flux2KleinPipeline::build_step(Runtime& rt, const PipelineState& state) {
-    auto t = rt.create<float>({1}, [&](Tensor, std::mt19937&) {
+    auto t = rt.create<float>({1}, [&](std::mt19937&) {
         return std::vector<float>({state.timestep});
     });
 
@@ -209,11 +209,13 @@ Tensor Flux2KleinPipeline::build_step(Runtime& rt, const PipelineState& state) {
         /*pooled_projections=*/     state.pooled_prompt_embeds /* TODO: where is this? */);
 
     // Bakes dt = sigma_next - sigma into the graph; advances step_index.    
-    auto dt = rt.create<float>({1}, [&](Tensor, std::mt19937&) {
+    auto dt = rt.create<float>({1}, [&](std::mt19937&) {
         return std::vector<float>({scheduler_.step(state.timestep)});
     });
 
-    return scheduler_.integrate(dt, noise_pred, state.latents);
+    auto next_latents = scheduler_.integrate(noise_pred, state.latents, dt);
+
+    return next_latents.copy(state.latents);
 }
 
 Tensor Flux2KleinPipeline::build_decode(Runtime& rt, const PipelineState& state,
@@ -256,8 +258,7 @@ std::vector<Image> Flux2KleinPipeline::latents_to_images(std::vector<float>&& da
     return images;
 }
 
-std::vector<Image> Flux2KleinPipeline::generate(Scheduler& scheduler, const std::string& prompt,
-                                                const GenerationOptions& options) {
+std::vector<Image> Flux2KleinPipeline::generate(Scheduler& scheduler, const std::string& prompt, const GenerationOptions& options) {
     const auto t_start = std::chrono::steady_clock::now();
 
     // denoising loop
@@ -271,15 +272,14 @@ std::vector<Image> Flux2KleinPipeline::generate(Scheduler& scheduler, const std:
             const auto t0 = std::chrono::steady_clock::now();
 
             Computation computation(denoise);
-            state.latents = computation.results().at(0);
+
+            // unbind state.latents to not use initializer in next step
+            runtime.unbind(state.latents);
 
             const double ms = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - t0).count();
             std::cerr << "[flux2-klein] step " << (i + 1) << "/" << state.timesteps.size()
                     << "  t=" << state.timesteps[i] << "  (" << ms << " ms)\n";
-
-            if (i == state.timesteps.size() - 1)
-                latents = std::move(computation.read<float>(state.latents));
         }
     }
 

@@ -127,10 +127,12 @@ Tensor Flux2Transformer2DModel::forward(
     auto num_txt_tokens = encoder_hidden_states.shape()[1];
 
     // 1. Calculate timestep embedding and modulation parameters
-    timestep = timestep.to(hidden_states.dtype()) * 1000.0f;
+    timestep = (timestep * 1000.0f).to(hidden_states.dtype());
 
-    if (guidance)
-        guidance = guidance->to(hidden_states.dtype()) * 1000.0f;
+    if (guidance) {
+        guidance = *guidance * 1000.0f;
+        guidance = guidance->to(hidden_states.dtype());
+    }
 
     auto time_guidance_embed = std::static_pointer_cast<Flux2TimestepGuidanceEmbeddings>(modules["time_guidance_embed"]);
 

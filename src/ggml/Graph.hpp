@@ -32,7 +32,7 @@ public:
         return gf_;
     }
 
-    std::vector<std::byte> provide(Tensor tensor, const Runtime::Provider<std::byte>& provider) {
+    std::vector<std::byte> provide(const Runtime::Provider<std::byte>& provider) {
         return std::move(provider(runtime_.rng_));
     }
 

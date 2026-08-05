@@ -37,7 +37,7 @@ Tensor AdaLayerNormContinuous<NormFn>::forward(Runtime& runtime, Tensor hidden_s
     if (it != std::end(modules))
         hidden_states = std::static_pointer_cast<NormFn>(it->second)->forward(runtime, hidden_states);
 
-    hidden_states = hidden_states * (1 + scale)[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}] + shift[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}];
+    hidden_states = hidden_states * (1.0f + scale)[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}] + shift[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}];
 
     return hidden_states;
 }

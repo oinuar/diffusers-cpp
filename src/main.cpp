@@ -1,5 +1,7 @@
 #include "ggml/Backend.hpp"
+#include "ggml/Runtime.hpp"
 #include "ggml/Scheduler.hpp"
+#include "ggml/Computation.hpp"
 #include "ggml/GGUFLoaderVisitor.hpp"
 #include "nn/RethrowVisitor.hpp"
 #include "diffusers/models/transformers/flux2/Flux2Transformer2DModel.hpp"
@@ -16,6 +18,38 @@ int main() {
     ggml_backend_load_all();
 
     Backend cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+    Scheduler scheduler({*cpu});
+    Runtime runtime(scheduler);
+
+    auto counter = Tensor::empty<int32_t>(*runtime.context(), {1});
+
+    // initial value
+    runtime.bind<int32_t>(counter, [](std::mt19937&) {
+        return std::vector<int32_t>({42});
+    });
+
+    // counter + 1
+    auto next_counter = counter + (int32_t)1;
+    next_counter = next_counter.copy(counter);
+    
+    Graph graph(runtime, {next_counter});
+    std::vector<int32_t> result;
+
+    // count to +10
+    for (auto i = 0; i < 10; ++i) {
+        Computation computation(graph);
+
+        // unbind counter from initialization
+        runtime.unbind(counter);
+
+        // read results on the last step
+        if (i == 10 - 1)
+            result = computation.read<int32_t>(counter);
+    }
+
+    // print results
+    for (auto& x : result)
+        std::cout << "result: " << x << std::endl;
 
     /*std::filesystem::path path("../utils/convert-model/flux2-vae.gguf");
 
@@ -26,7 +60,7 @@ int main() {
     vae.accept(visitor);
     visitor.rethrow();*/
 
-    Qwen3ForCausalLM::from_pretrained(cpu, Qwen3Config::from_file("../utils/convert-model/text-encoder/config.json"), "../utils/convert-model/qwen3.gguf");
+    //Qwen3ForCausalLM::from_pretrained(cpu, Qwen3Config::from_file("../utils/convert-model/text-encoder/config.json"), "../utils/convert-model/qwen3.gguf");
 
     return 0;
 }

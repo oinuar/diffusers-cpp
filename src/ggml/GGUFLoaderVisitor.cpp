@@ -8,8 +8,6 @@
 #include <fstream>
 #include <numeric>
 
-#include <iostream>
-
 static std::string join_path(const std::vector<std::string>& path) {
     return std::accumulate(std::begin(path), std::end(path), std::string(""), [](const std::string& acc, const std::string& x) {
         if (acc.empty())
@@ -89,7 +87,7 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
 
     std::vector<std::byte> buf(ggml_nbytes(tensor));
 
-    std::cout << "LOAD " << it->first.c_str() << " " << parameter.shape().to_string() << std::endl;
+    // std::cout << "LOAD " << it->first.c_str() << " " << parameter.shape().to_string() << std::endl;
 
     file_.seekg(offs, file_.beg);
     

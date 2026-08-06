@@ -22,21 +22,16 @@ public:
     );
 
     void set_timesteps(
-        Runtime& runtime,
         int num_inference_steps,
         float mu = 0.0f,
         std::optional<std::vector<float>> sigmas_override = std::nullopt
     );
 
-    std::vector<int> get_timesteps() const;
+    const std::vector<int>& get_timesteps() const;
 
-    float step(int timestep);
+    float step();
 
-    Tensor integrate(
-        const Tensor& model_output,
-        const Tensor& sample,
-        float dt
-    );
+    Tensor integrate(const Tensor& model_output, const Tensor& sample, float dt);
 
     void reset_step_index();
 
@@ -57,5 +52,4 @@ private:
 
     float sigma_to_t(float sigma) const;
     float time_shift(float mu, float sigma_val, float t_val) const;
-    void init_step_index(int timestep);
 };

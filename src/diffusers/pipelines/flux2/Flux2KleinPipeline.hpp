@@ -19,28 +19,16 @@ class Scheduler;
 class Flux2KleinPipeline {
 public:
     struct GenerationOptions {
+        std::string prompt;
         int height = 1024;
         int width = 1024;
         int num_inference_steps = 4;      // Klein default (distilled)
         float guidance_scale = 0.0f;      // unused: Klein is guidance-distilled
         int num_images_per_prompt = 1;
         uint64_t seed = 0;                // 0 -> std::random_device
-        int max_sequence_length = 512;
+        size_t max_sequence_length = 512;
     };
 
-    struct PipelineState {
-        Tensor prompt_embeds;          // (hidden, seq, B)
-        Tensor pooled_prompt_embeds;   // (hidden, 1, B)
-        Tensor latents;                // (token_dim, N_img, B) packed
-        Tensor img_ids;                // (3, N_img)
-        Tensor txt_ids;                // (3, seq)
-        std::vector<float> timesteps;
-        std::vector<float> sigmas;
-        int latent_height = 0;         // VAE latent pixels (= 2 * packed grid h)
-        int latent_width = 0;
-        float timestep;
-    };
-    
     Flux2KleinPipeline from_pretrained(Backend& loader_backend, const std::filesystem::path& path);
 
     Flux2KleinPipeline(Flux2Transformer2DModel&& transformer,
@@ -51,35 +39,10 @@ public:
           scheduler_(), text_encoder_(std::move(text_encoder)),
           tokenizer_(std::move(tokenizer)) {}
 
-    std::vector<Image> generate(Scheduler& scheduler, 
-                                const std::string& prompt,
-                                const GenerationOptions& options);
+    std::vector<Image> generate(Scheduler& scheduler, const GenerationOptions& options);
 
 private:
-    PipelineState prepare(Runtime& runtime, const std::string& prompt, const GenerationOptions& options);
-
-    std::pair<Tensor, Tensor> encode_prompt(Runtime& runtime, 
-                                            const std::string& prompt,
-                                            const GenerationOptions& options);
-
-    Tensor prepare_latents(Runtime& runtime, int batch, int packed_h, int packed_w);
-
-    Tensor unpack_latents(Tensor packed, int channels, int packed_h, int packed_w);
-
-    Tensor prepare_img_ids(Runtime& runtime, int packed_h, int packed_w);
-    
-    Tensor prepare_txt_ids(Runtime& runtime, int seq_len);
-
-    void prepare_timesteps(PipelineState& state, const GenerationOptions& options);
-
-    Tensor repeat_batch(const Tensor& t, int batch);
-
-    Tensor build_step(Runtime& rt, const PipelineState& state);
-
-    Tensor build_decode(Runtime& rt, const PipelineState& state,
-                        const GenerationOptions& options);
-
-    std::vector<Image> latents_to_images(std::vector<float>&& data, int batch, int height, int width);
+    std::pair<Tensor, Tensor> encode_prompt(Runtime& runtime, const std::string& prompt, size_t max_sequence_length);
 
     Flux2Transformer2DModel transformer_;
     AutoencoderKLFlux2 vae_;

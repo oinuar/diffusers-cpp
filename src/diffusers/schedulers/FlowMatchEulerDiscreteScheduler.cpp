@@ -35,7 +35,6 @@ float FlowMatchEulerDiscreteScheduler::time_shift(float mu, float sigma_val, flo
 }
 
 void FlowMatchEulerDiscreteScheduler::set_timesteps(
-    Runtime& runtime,
     int num_inference_steps,
     float mu,
     std::optional<std::vector<float>> sigmas_override
@@ -100,39 +99,19 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps(
     } else {
         sigmas.push_back(0.0f);
     }
+
+    reset_step_index();
 }
 
-std::vector<int> FlowMatchEulerDiscreteScheduler::get_timesteps() const {
+const std::vector<int>& FlowMatchEulerDiscreteScheduler::get_timesteps() const {
     return timesteps;
-}
-
-void FlowMatchEulerDiscreteScheduler::init_step_index(int timestep) {
-    // Exact match lookup
-    for (size_t i = 0; i < timesteps.size(); ++i) {
-        if (timesteps[i] == timestep) {
-            step_index = i;
-            return;
-        }
-    }
-    
-    // Fallback: find closest match (preserves robustness of Python's index finding)
-    int min_diff = std::numeric_limits<int>::max();
-    for (size_t i = 0; i < timesteps.size(); ++i) {
-        int diff = std::abs(timesteps[i] - timestep);
-        if (diff < min_diff) {
-            min_diff = diff;
-            step_index = i;
-        }
-    }
 }
 
 void FlowMatchEulerDiscreteScheduler::reset_step_index() {
     step_index = 0;
 }
 
-float FlowMatchEulerDiscreteScheduler::step(int timestep) {
-    init_step_index(timestep);
-
+float FlowMatchEulerDiscreteScheduler::step() {
     float sigma = sigmas[step_index];
     float sigma_next = sigmas[step_index + 1];
     float dt = sigma_next - sigma;

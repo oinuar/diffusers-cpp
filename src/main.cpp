@@ -17,8 +17,9 @@ int main() {
 
     ggml_backend_load_all();
 
+    Backend gpu(GGML_BACKEND_DEVICE_TYPE_GPU);
     Backend cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-    Scheduler scheduler({*cpu});
+    Scheduler scheduler({*gpu, *cpu});
     Runtime runtime(scheduler);
 
     auto counter = Tensor::empty<int32_t>(*runtime.context(), {1});
@@ -29,7 +30,7 @@ int main() {
     });
 
     // counter + 1
-    auto next_counter = counter + (int32_t)1;
+    auto next_counter = counter + 1;
     next_counter = next_counter.copy(counter);
     
     Graph graph(runtime, {next_counter});

@@ -39,7 +39,7 @@ public:
           scheduler_(), text_encoder_(std::move(text_encoder)),
           tokenizer_(std::move(tokenizer)) {}
 
-    std::vector<Image> generate(Scheduler& scheduler, const GenerationOptions& options);
+    std::vector<Image> operator ()(Scheduler& scheduler, const GenerationOptions& options);
 
 private:
     std::pair<Tensor, Tensor> encode_prompt(Runtime& runtime, const std::string& prompt, size_t max_sequence_length);

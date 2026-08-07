@@ -46,7 +46,7 @@ static Tensor repeat_batch(const Tensor& t, int batch) {
     if (batch <= 1) return t;
 
     auto shape = t.shape();
-    shape[-1] = batch;                    // batch is the slowest dim (ne[ndim-1])
+    shape[0] = batch;
     return t.repeat(shape);
 }
 
@@ -57,13 +57,13 @@ Flux2KleinPipeline::encode_prompt(Runtime& runtime, const std::string& prompt, s
 
     auto tokens = tokenizer_.encode(prompt, max_sequence_length, false, &mask, &num_real_tokens);
     
-    auto input_ids = runtime.create<int32_t>({(int64_t)tokens.size(), 1},
+    auto input_ids = runtime.create<int32_t>({1, (int64_t)tokens.size()},
         [=](std::mt19937&) {
             return std::move(tokens);
         });
 
     // Upload attention mask as float directly for masking operations
-    auto attention_mask = runtime.create<float>({(int64_t)mask.size(), 1},
+    auto attention_mask = runtime.create<float>({1, (int64_t)mask.size()},
         [=](std::mt19937&) {
             return std::move(std::vector<float>(mask.begin(), mask.end()));
         });
@@ -72,11 +72,11 @@ Flux2KleinPipeline::encode_prompt(Runtime& runtime, const std::string& prompt, s
     auto prompt_embeds = text_encoder_.forward(runtime, input_ids, attention_mask);
     
     // Masked mean pooling over sequence dimension (axis=1)
-    // prompt_embeds: (hidden, seq, B)
-    // attention_mask: (seq, 1) - needs broadcast to (1, seq, B)
-    auto mask_expanded = attention_mask.unsqueeze(/*axis=*/0);  // (1, seq, 1)
+    // prompt_embeds: (B, seq, hidden)
+    // attention_mask: (1, seq) - needs broadcast to (B, seq, 1)
+    auto mask_expanded = attention_mask.unsqueeze(/*axis=*/-1);  // (1, seq, 1)
     auto masked_embeds = prompt_embeds * mask_expanded;
-    auto summed = masked_embeds.sum(/*axis=*/1);  // (hidden, 1, B)
+    auto summed = masked_embeds.sum(/*axis=*/1);  // (B, 1, hidden)
 
     auto divisor = num_real_tokens > 0 ? (float)num_real_tokens : 1.0f;
     auto pooled = summed / divisor;
@@ -86,7 +86,7 @@ Flux2KleinPipeline::encode_prompt(Runtime& runtime, const std::string& prompt, s
 }
 
 static Tensor prepare_img_ids(Runtime& runtime, int packed_h, int packed_w) {
-    return runtime.create<float>({3, int64_t(packed_h) * packed_w},
+    return runtime.create<float>({int64_t(packed_h) * packed_w, 3},
         [=](std::mt19937&) {
             std::vector<float> ids(size_t(packed_h) * packed_w * 3, 0.0f);
 
@@ -103,7 +103,7 @@ static Tensor prepare_img_ids(Runtime& runtime, int packed_h, int packed_w) {
 }
 
 static Tensor prepare_txt_ids(Runtime& runtime, int seq_len) {
-    return Tensor::zeros(*runtime.context(), {3, seq_len});
+    return Tensor::zeros(*runtime.context(), {seq_len, 3});
 }
 
 // Mirrors diffusers `calculate_shift` for FlowMatchEulerDiscreteScheduler
@@ -119,9 +119,14 @@ static Tensor noisy_latents(Runtime& runtime, int batch, int packed_h, int packe
     const int64_t token_dim = int64_t(config_.num_latent_channels) * 4; // C * 2 * 2
     const size_t count = size_t(batch) * packed_h * packed_w * token_dim;
 
-    // Sampling noise directly in packed layout is equivalent to diffusers'
-    // randn(B, C, 2h, 2w) + _pack_latents — packing is a pure permutation.
-    return runtime.create<float>({token_dim, int64_t(packed_h) * packed_w, batch},
+    // Diffusers creates:
+    //   noise: (B, C, 2*packed_h, 2*packed_w)
+    // then _pack_latents() converts it to:
+    //   (B, packed_h*packed_w, C*4)
+    //
+    // Since packing is only a permutation of elements, we can sample directly
+    // in the packed representation.
+    return runtime.create<float>({batch, int64_t(packed_h) * packed_w, token_dim},
         [=](std::mt19937& rng) {
             std::vector<float> noise(count);
             std::normal_distribution<float> normal(0.0f, 1.0f);
@@ -131,22 +136,81 @@ static Tensor noisy_latents(Runtime& runtime, int batch, int packed_h, int packe
         });
 }
 
-// Graph-native 2x2 unpack, pure 4D.
+// Graph-native 2x2 unpack.
 //
-//   packed: ne (4C, N, B), N = packed_h * packed_w
-//   result: ne (2pw, 2ph, C, B)   (torch: (B, C, 2ph, 2pw))
+// Input:
+//   packed: (B, ph*pw, 4C)
+//
+// Output:
+//   (B, C, 2ph, 2pw)
+//
+// Equivalent to:
+//
+//   latents = latents.reshape(B, ph, pw, C, 2, 2)
+//   latents = latents.permute(0, 3, 1, 4, 2, 5)
+//   latents = latents.reshape(B, C, 2ph, 2pw)
 //
 static Tensor unpack_latents(Tensor packed, int channels, int packed_h, int packed_w) {
+    const int64_t B = packed.shape()[0];
+    const int64_t N = packed.shape()[1];
     const int64_t C = channels;
-    const int64_t B = packed.shape()[2];
 
-    Tensor t = packed.reshape({2 * C, 2, packed_w, packed_h * B});
-    t = t.permute(/*axes=*/{0, 2, 1, 3});   // swap p1 <-> x
-    t = t.contiguous();
-    return t.reshape({C, 2 * packed_w, 2 * packed_h, B});
+    if (N != packed_h * packed_w)
+        throw std::invalid_argument("unpack_latents(): invalid packed shape");
+
+    // packed: (B, N, 4C)
+    // N = packed_h * packed_w
+
+    auto t = packed.permute({0, 2, 1}).contiguous();
+    // t: (B, 4C, N)
+
+    t = t.reshape({
+        B,
+        2 * C,
+        2,
+        N
+    });
+    // q = (c * 2 + dy) * 2 + dx
+    // t: (B, c*2+dy, dx, N)
+
+    t = t.permute({0, 1, 3, 2}).contiguous();
+    // t: (B, c*2+dy, N, dx)
+
+    t = t.reshape({
+        B,
+        2 * C,
+        packed_h,
+        2 * packed_w
+    });
+    // n*2 + dx = (y*pw + x)*2 + dx
+    //          = y * (2*pw) + (2*x + dx)
+    // t: (B, c*2+dy, y, X), where X = 2*x + dx
+
+    t = t.reshape({
+        B * C,
+        2,
+        packed_h,
+        2 * packed_w
+    });
+    // c*2+dy is split into c merged with B, and dy
+    // t: (B*C, dy, y, X)
+
+    t = t.permute({0, 2, 1, 3}).contiguous();
+    // t: (B*C, y, dy, X)
+
+    t = t.reshape({
+        B,
+        C,
+        2 * packed_h,
+        2 * packed_w
+    });
+    // y*2*W + dy*W + X = (2*y + dy) * W + X
+    // t: (B, C, Y, X), where Y = 2*y + dy, X = 2*x + dx
+
+    return t;
 }
 
-// decoded: ne (W, H, 3, B), float, contiguous; converts CHW planes -> HWC uint8
+// decoded: (B,3,H,W), float, contiguous; converts CHW planes -> HWC uint8
 static std::vector<Image> latents_to_images(std::vector<float>&& data, int batch, int height, int width) {
     std::vector<Image> images;
     images.reserve(batch);
@@ -175,7 +239,7 @@ static std::vector<Image> latents_to_images(std::vector<float>&& data, int batch
     return images;
 }
 
-std::vector<Image> Flux2KleinPipeline::generate(Scheduler& scheduler, const GenerationOptions& options) {
+std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, const GenerationOptions& options) {
     if (options.height % config_.vae_scale_factor != 0 ||
         options.width % config_.vae_scale_factor != 0)
         throw std::runtime_error("height/width must be divisible by vae_scale_factor");
@@ -187,9 +251,7 @@ std::vector<Image> Flux2KleinPipeline::generate(Scheduler& scheduler, const Gene
     const int packed_h = latent_height / 2;
     const int packed_w = latent_width / 2;
 
-    const auto t_start = std::chrono::steady_clock::now();
-
-    // Embeds
+    // 1. Generate text and image embeds
     std::vector<float> prompt_embeds_data, pooled_prompt_embeds_data, img_ids_data;
     std::vector<int32_t> txt_ids_data;
     Tensor::Shape prompt_embeds_shape, pooled_prompt_embeds_shape, img_ids_shape, txt_ids_shape;
@@ -204,10 +266,10 @@ std::vector<Image> Flux2KleinPipeline::generate(Scheduler& scheduler, const Gene
         auto txt_ids = prepare_txt_ids(runtime, options.max_sequence_length);
 
         Graph graph(runtime, {
-            prompt_embeds,          // (hidden, seq, B
-            pooled_prompt_embeds,   // (hidden, 1, B)
-            img_ids,                // (3, N_img)
-            txt_ids                 // (3, seq)
+            prompt_embeds,          // (B, seq, hidden)
+            pooled_prompt_embeds,   // (B, 1, hidden)
+            img_ids,                // (N_img, 3)
+            txt_ids                 // (seq, 3)
         });
 
         Computation computation(graph);
@@ -222,7 +284,7 @@ std::vector<Image> Flux2KleinPipeline::generate(Scheduler& scheduler, const Gene
         txt_ids_shape = txt_ids.shape();
     }
 
-    // Setup timesteps
+    // 2. Setup timesteps
     {
         auto mu = 0.0f;
 
@@ -236,7 +298,7 @@ std::vector<Image> Flux2KleinPipeline::generate(Scheduler& scheduler, const Gene
         scheduler_.set_timesteps(options.num_inference_steps, mu);
     }
 
-    // Denoising
+    // 3. Denoise in latent space
     std::vector<float> latents_data;
     Tensor::Shape latents_shape;
     {
@@ -316,7 +378,7 @@ std::vector<Image> Flux2KleinPipeline::generate(Scheduler& scheduler, const Gene
         }
     }
 
-    // Decode
+    // 4. Decode latents to pixels
     std::vector<Image> images;
     {
         Runtime runtime(scheduler);
@@ -331,7 +393,7 @@ std::vector<Image> Flux2KleinPipeline::generate(Scheduler& scheduler, const Gene
         z = z / config_.vae_scaling_factor;
         z = z + config_.vae_shift_factor;
 
-        auto decoded = vae_.decode(runtime, z);   // (W, H, 3, B)
+        auto decoded = vae_.decode(runtime, z);    // (B, 3, H, W)
 
         Graph graph(runtime, {decoded});
         Computation computation(graph);

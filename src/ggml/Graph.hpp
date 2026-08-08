@@ -36,7 +36,7 @@ public:
         return std::move(provider(runtime_.rng_));
     }
 
-    Runtime::Inputs& inputs() {
+    Runtime::Inputs inputs() {
         return runtime_.inputs_;
     }
 

@@ -33,17 +33,20 @@ public:
     template <class T>
     Tensor create(const Tensor::Shape& shape, const Provider<T>& provider) {
         auto tensor = Tensor::empty<T>(*context(), shape);
-        bind(tensor, provider);
+        bind(tensor, provider, true);
         return tensor;
     }
 
     template <class T>
-    void bind(Tensor tensor, const Provider<T>& provider) {
-        inputs_[tensor] = [provider](std::mt19937& rng) {
+    void bind(Tensor tensor, const Provider<T>& provider, bool once = false) {
+        inputs_[tensor] = [this, tensor, provider, once](std::mt19937& rng) {
             auto values = provider(rng);
 
             std::vector<std::byte> bytes(values.size() * sizeof(T));
             std::memcpy(bytes.data(), values.data(), bytes.size());
+
+            if (once)
+                this->unbind(tensor);
 
             return std::move(bytes);
         };

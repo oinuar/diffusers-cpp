@@ -496,13 +496,6 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, const G
 
             Computation computation(denoise);
 
-            // Unbind inputs because those are carried
-            // over by the computation now
-            runtime.unbind(prompt_embeds);
-            runtime.unbind(img_ids);
-            runtime.unbind(txt_ids);
-            runtime.unbind(latents);
-
             // Extract latents from the last denoising step
             if (i == scheduler_.get_timesteps().size() - 1) {
                 latents_data = computation.read<float>(latents);

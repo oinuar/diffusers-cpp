@@ -39,14 +39,26 @@ public:
     Tensor decode(Runtime& runtime, Tensor z);
 
     Tensor forward(Runtime& runtime, Tensor sample, bool sample_posterior = false);
-
-    const std::vector<int64_t>& block_out_channels() const { return block_out_channels_; }
-
+    
     const BatchNorm2d& bn() const;
+
+    int64_t scale_factor() const {
+        return 1LL << (block_out_channels_.size() - 1);
+    }
+
+    int64_t latent_channels() const {
+        return latent_channels_;
+    }
+
+    float batch_norm_eps() const {
+        return batch_norm_eps_;
+    }
 
 private:
     bool use_quant_conv_;
     bool use_post_quant_conv_;
+    int64_t latent_channels_;
+    float batch_norm_eps_;
     std::vector<int64_t> block_out_channels_;
 
     AutoencoderKLFlux2(

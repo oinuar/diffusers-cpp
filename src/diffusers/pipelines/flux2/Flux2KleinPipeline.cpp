@@ -75,14 +75,14 @@ Flux2KleinPipeline::encode_prompt(Runtime& runtime, int batch, const std::string
     auto input_ids = runtime.create<int32_t>({batch, (int64_t)tokens.size()},
         [=](std::mt19937&) {
             std::vector<int32_t> ids(size_t(batch) * tokens.size());
-            for(int b=0; b<batch; ++b) std::copy(tokens.begin(), tokens.end(), ids.begin() + b * tokens.size());
+            for (auto b=0; b<batch; ++b) std::copy(tokens.begin(), tokens.end(), ids.begin() + b * tokens.size());
             return std::move(ids);
         });
 
     auto attention_mask = runtime.create<float>({batch, (int64_t)mask.size()},
         [=](std::mt19937&) {
             std::vector<float> m(size_t(batch) * mask.size());
-            for(int b=0; b<batch; ++b) std::copy(mask.begin(), mask.end(), m.begin() + b * mask.size());
+            for (auto b=0; b<batch; ++b) std::copy(mask.begin(), mask.end(), m.begin() + b * mask.size());
             return std::move(m);
         });
 
@@ -111,7 +111,7 @@ Flux2KleinPipeline::encode_prompt(Runtime& runtime, int batch, const std::string
     auto l27 = hidden_states[27];
 
     // Stack along a new dimension (axis=1) -> (B, 3, seq, hidden)
-    auto stacked = runtime.stack({l9, l18, l27}, /*axis=*/1);
+    auto stacked = Tensor::stack({l9, l18, l27}, /*axis=*/1);
     
     // Permute to (B, seq, 3, hidden)
     auto permuted = stacked.permute({0, 2, 1, 3});
@@ -246,19 +246,19 @@ static Tensor unpack_latents(Tensor packed, int channels, int packed_h, int pack
     return t;
 }
 
-// Graph-native 2x2 unpack.
+// Graph-native 2x2 pack.
 //
 // Input:
-//   packed: (B, ph*pw, 4C)
+//   latents: (B, C, 2ph, 2pw)
 //
 // Output:
-//   (B, C, 2ph, 2pw)
+//   (B, ph*pw, 4C)
 //
 // Equivalent to:
 //
-//   latents = latents.reshape(B, ph, pw, C, 2, 2)
-//   latents = latents.permute(0, 3, 1, 4, 2, 5)
-//   latents = latents.reshape(B, C, 2ph, 2pw)
+//   latents = latents.reshape(B, C, ph, 2, pw, 2)
+//   latents = latents.permute(0, 2, 4, 1, 3, 5)
+//   latents = latents.reshape(B, ph*pw, 4C)
 //
 static Tensor pack_latents(Tensor latents, int channels, int packed_h, int packed_w) {
     const int64_t B = latents.shape()[0];
@@ -353,14 +353,14 @@ static Tensor image_to_tensor(Runtime& runtime, const Image& img) {
 }
 
 std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, const GenerationOptions& options) {
-    if (options.height % config_.vae_scale_factor != 0 ||
-        options.width % config_.vae_scale_factor != 0)
-        throw std::runtime_error("height/width must be divisible by vae_scale_factor");
+    if (options.height % vae_.scale_factor() != 0 ||
+        options.width % vae_.scale_factor() != 0)
+        throw std::runtime_error("height/width must be divisible by VAE's scale factor");
 
     auto seed = options.seed.value_or(std::random_device{}());
 
-    auto latent_height = 2 * (options.height / (config_.vae_scale_factor * 2));
-    auto latent_width  = 2 * (options.width  / (config_.vae_scale_factor * 2));
+    auto latent_height = 2 * (options.height / (vae_.scale_factor() * 2));
+    auto latent_width  = 2 * (options.width  / (vae_.scale_factor() * 2));
 
     const int packed_h = latent_height / 2;
     const int packed_w = latent_width / 2;
@@ -398,8 +398,6 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, const G
             image_seq_len += num_ref_tokens;
         }
 
-        const auto mu = compute_empirical_mu(image_seq_len, options.num_inference_steps);
-
         auto mu = compute_empirical_mu(image_seq_len, options.num_inference_steps);
         scheduler_.set_timesteps(options.num_inference_steps, mu);
     }
@@ -414,7 +412,7 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, const G
         auto prompt_embeds = runtime.create<float>(prompt_embeds_shape, [&](std::mt19937&) { return std::move(prompt_embeds_data); });
         auto img_ids = runtime.create<float>(img_ids_shape, [&](std::mt19937&) { return std::move(img_ids_data); });
         auto txt_ids = runtime.create<float>(txt_ids_shape, [&](std::mt19937&) { return std::move(txt_ids_data); });
-        auto latents = noisy_latents(runtime, batch, packed_h, packed_w, config_.num_latent_channels);
+        auto latents = noisy_latents(runtime, batch, packed_h, packed_w, vae_.latent_channels());
 
         Tensor image_latents_concat;
         Tensor image_latent_ids_concat;
@@ -426,11 +424,11 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, const G
                 auto dist = vae_.encode(runtime, img_tensor);
                 
                 // Pack (2x2 patchify + flatten)
-                auto patched = pack_latents(dist.mode(), config_.num_latent_channels, packed_h, packed_w);
+                auto patched = pack_latents(dist.mode(), vae_.latent_channels(), packed_h, packed_w);
                 
                 // BN normalize
                 auto bn_mean = vae_.bn().running_mean()->reshape({1, -1, 1, 1});
-                auto bn_std = sqrt(vae_.bn().running_var()->reshape({1, -1, 1, 1}) + config_.batch_norm_eps);
+                auto bn_std = sqrt(vae_.bn().running_var()->reshape({1, -1, 1, 1}) + vae_.batch_norm_eps());
                 patched = (patched - bn_mean) / bn_std;
                 
                 packed_imgs.push_back(patched);
@@ -524,11 +522,11 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, const G
             return std::move(latents_data);
         });
 
-        auto z = unpack_latents(latents, config_.num_latent_channels, packed_h, packed_w);
+        auto z = unpack_latents(latents, vae_.latent_channels(), packed_h, packed_w);
 
         // BN Unnormalize before VAE decode
         auto bn_mean = vae_.bn().running_mean()->reshape({1, -1, 1, 1});
-        auto bn_std = sqrt(vae_.bn().running_var()->reshape({1, -1, 1, 1}) + config_.batch_norm_eps);
+        auto bn_std = sqrt(vae_.bn().running_var()->reshape({1, -1, 1, 1}) + vae_.batch_norm_eps());
         z = z * bn_std + bn_mean;
 
         auto decoded = vae_.decode(runtime, z);    // (B, 3, H, W)

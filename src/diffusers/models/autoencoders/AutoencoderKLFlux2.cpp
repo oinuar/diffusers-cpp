@@ -42,7 +42,10 @@ AutoencoderKLFlux2::AutoencoderKLFlux2(
     float batch_norm_momentum,
     std::tuple<int64_t, int64_t> patch_size
 ) : use_quant_conv_(use_quant_conv),
-    use_post_quant_conv_(use_post_quant_conv)
+    use_post_quant_conv_(use_post_quant_conv),
+    latent_channels_(latent_channels),
+    batch_norm_eps_(batch_norm_eps),
+    block_out_channels_(block_out_channels)
 {
     modules["encoder"] = std::make_shared<Encoder>(
         in_channels,

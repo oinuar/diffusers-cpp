@@ -102,6 +102,30 @@ Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
     return Tensor(ctx, tensor, shape);
 }
 
+Tensor Tensor::stack(const std::vector<Tensor>& tensors, int64_t dim) {
+    if (tensors.empty())
+        throw std::invalid_argument("stack(): expected at least one tensor");
+
+    const int64_t rank = tensors[0].ndim();
+
+    // stack adds a new dimension, so valid insertion positions are
+    // [-rank-1, rank].
+    dim = normalize_dim("stack()", dim, rank, true);
+
+    std::vector<Tensor> expanded;
+    expanded.reserve(tensors.size());
+
+    for (const auto& tensor : tensors) {
+        if (tensor.shape() != tensors[0].shape())
+            throw std::invalid_argument(
+                "stack(): all tensors must have the same shape");
+
+        expanded.push_back(tensor.unsqueeze(dim));
+    }
+
+    return Tensor::cat(expanded, dim);
+}
+
 Tensor Tensor::reshape(const Shape& shape) const {
     throw_if_not_valid();
 
@@ -548,6 +572,39 @@ Tensor Tensor::expand(const Shape& new_shape) const {
         ctx_,
         ggml_repeat(ctx_, src.t_, target),
         new_shape);
+}
+
+Tensor Tensor::repeat(const Shape& repeats) const {
+    throw_if_not_valid();
+
+    const int64_t rank = ndim();
+
+    if (repeats.rank() != rank)
+        throw std::invalid_argument(
+            "repeat(): number of repeat dimensions must match tensor rank");
+
+    Shape out(rank);
+
+    for (int64_t i = 0; i < rank; ++i) {
+        if (repeats[i] < 0)
+            throw std::invalid_argument(
+                "repeat(): repeat dimensions must be non-negative");
+
+        if (shape_[i] == 0)
+            out[i] = 0;
+        else
+            out[i] = shape_[i] * repeats[i];
+    }
+
+    // GGML repeat requires the target tensor to describe the
+    // desired output shape.
+    auto target = Tensor::zeros(ctx_, out).to(dtype());
+
+    return Tensor(
+        ctx_,
+        ggml_repeat(ctx_, *clone(), *target),
+        out
+    );
 }
 
 Tensor Tensor::sum(int64_t dim, bool keepdim) const {

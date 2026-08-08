@@ -48,6 +48,13 @@ public:
             return Tensor::cat(tensors, dim);
         }
 
+        if (args_.get(0) == "stack") {
+            auto tensors = args_.get_many<Tensor>("--tensor", {runtime});
+            auto dim = args_.get_one<int>("--dim");
+
+            return Tensor::stack(tensors, dim);
+        }
+
 
         if (args_.get(0) == "reshape") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
@@ -107,6 +114,13 @@ public:
             auto new_shape = args_.get_one<Tensor::Shape>("--new-shape");
 
             return self.expand(new_shape);
+        }
+
+        if (args_.get(0) == "repeat") {
+            auto self = args_.get_one<Tensor>("--this", {runtime});
+            auto repeats = args_.get_one<Tensor::Shape>("--repeats");
+
+            return self.repeat(repeats);
         }
 
         if (args_.get(0) == "chunk") {

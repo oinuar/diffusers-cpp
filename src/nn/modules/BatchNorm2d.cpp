@@ -1,11 +1,7 @@
 #include "nn/modules/BatchNorm2d.hpp"
 #include "nn/Parameter.hpp"
 
-BatchNorm2d::BatchNorm2d(
-    int64_t num_features,
-    float eps = 1e-5f,
-    float momentum = 0.1f
-)
+BatchNorm2d::BatchNorm2d(int64_t num_features, float eps, float momentum)
     : eps_(eps),
       momentum_(momentum)
 {

@@ -323,6 +323,8 @@ public:
     /** @brief Concatenates a list of tensors along the given dimension `dim`. */
     static Tensor cat(const std::vector<Tensor>& tensors, int dim);
 
+    /** @brief Stacks a list of tensors along the given dimension `dim`. */
+    static Tensor stack(const std::vector<Tensor>& tensors, int64_t dim);
 
     /** @brief Reshapes the tensor to a new shape.
      *
@@ -361,6 +363,8 @@ public:
     Tensor narrow(int64_t dim, int64_t start, int64_t length) const;
 
     Tensor expand(const Shape& new_shape) const;
+
+    Tensor repeat(const Shape& repeats) const;
 
     /** @brief Chunks a tensor into `n` roughly equal pieces along dimension `dim`. */
     std::vector<Tensor> chunk(int n, int64_t dim = 0) const;

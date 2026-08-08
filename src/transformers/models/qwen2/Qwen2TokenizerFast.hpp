@@ -27,7 +27,8 @@ public:
                        bool skip_special_tokens = true) const;
 
     std::string apply_chat_template(const std::vector<Message>& messages,
-                                    bool add_generation_prompt = true) const;
+                                    bool add_generation_prompt = true,
+                                    bool enable_thinking = false) const;
 
     int vocab_size()   const { return static_cast<int>(vocab_.size()); }
     int eos_token_id() const { return eos_token_id_; }

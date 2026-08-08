@@ -1,6 +1,7 @@
 #include "diffusers/models/autoencoders/AutoencoderKLFlux2.hpp"
 #include "diffusers/models/autoencoders/vae/Encoder.hpp"
 #include "diffusers/models/autoencoders/vae/Decoder.hpp"
+#include "nn/modules/BatchNorm2d.hpp"
 #include <fstream>
 #include <nlohmann/json.hpp>
 
@@ -60,6 +61,15 @@ AutoencoderKLFlux2::AutoencoderKLFlux2(
         layers_per_block,
         norm_num_groups,
         mid_block_add_attention
+    );
+
+    const auto patch_h = std::get<0>(patch_size);
+    const auto patch_w = std::get<1>(patch_size);
+    
+    modules["bn"] = std::make_shared<BatchNorm2d>(
+        patch_h * patch_w * latent_channels,
+        batch_norm_eps,
+        batch_norm_momentum
     );
 
     if (use_quant_conv_)
@@ -125,6 +135,9 @@ Tensor AutoencoderKLFlux2::decode(Runtime& runtime, Tensor z) {
     return dec;
 }
 
+const BatchNorm2d& AutoencoderKLFlux2::bn() const {
+    return *std::static_pointer_cast<BatchNorm2d>(modules.at("bn"));
+}
 
 template <typename T>
 void read(const json& j, const char* key, T& value) {

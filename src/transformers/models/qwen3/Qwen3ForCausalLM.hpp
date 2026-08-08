@@ -2,6 +2,7 @@
 
 #include "nn/Module.hpp"
 #include <filesystem>
+#include <unordered_map>
 
 class Backend;
 struct Qwen3Config;
@@ -20,7 +21,8 @@ public:
                    std::optional<Tensor> inputs_embeds = std::nullopt,
                    std::optional<Tensor> labels = std::nullopt,
                    std::optional<bool> use_cache = std::nullopt,
-                   int logits_to_keep = 0);
+                   int logits_to_keep = 0,
+                   std::unordered_map<size_t, Tensor>* extract_hidden_states_by_layer = nullptr);
 
 private:
     int vocab_size;

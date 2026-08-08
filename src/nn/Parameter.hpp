@@ -22,6 +22,20 @@ public:
         tensor_ = tensor;
     }
 
+    Tensor operator *() const {
+        if (!tensor_)
+            throw std::runtime_error("Undefined tensor Parameter: not set");
+
+        return tensor_;
+    }
+
+    const Tensor* operator ->() const {
+        if (!tensor_)
+            throw std::runtime_error("Undefined tensor Parameter: not set");
+
+        return &tensor_;
+    }
+
     const Tensor::Shape& shape() const {
         return shape_;
     }

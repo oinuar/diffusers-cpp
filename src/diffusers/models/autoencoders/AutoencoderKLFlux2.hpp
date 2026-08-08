@@ -4,6 +4,8 @@
 #include "diffusers/models/autoencoders/vae/DiagonalGaussianDistribution.hpp"
 #include <filesystem>
 
+class BatchNorm2d;
+
 class AutoencoderKLFlux2 : public Module {
 public:
     struct Config {
@@ -39,6 +41,8 @@ public:
     Tensor forward(Runtime& runtime, Tensor sample, bool sample_posterior = false);
 
     const std::vector<int64_t>& block_out_channels() const { return block_out_channels_; }
+
+    const BatchNorm2d& bn() const;
 
 private:
     bool use_quant_conv_;

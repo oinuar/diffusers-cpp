@@ -17,49 +17,18 @@ int main() {
 
     ggml_backend_load_all();
 
-    Backend gpu(GGML_BACKEND_DEVICE_TYPE_GPU);
     Backend cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-    Scheduler scheduler({*gpu, *cpu});
+    Scheduler scheduler({*cpu});
     Runtime runtime(scheduler);
 
-    auto counter = Tensor::empty<int32_t>(*runtime.context(), {1});
-
-    // initial value
-    runtime.bind<int32_t>(counter, [](std::mt19937&) {
-        return std::vector<int32_t>({42});
-    });
-
-    // counter + 1
-    auto next_counter = counter + 1;
-    next_counter = next_counter.copy(counter);
-    
-    Graph graph(runtime, {next_counter});
-    std::vector<int32_t> result;
-
-    // count to +10
-    for (auto i = 0; i < 10; ++i) {
-        Computation computation(graph);
-
-        // unbind counter from initialization
-        runtime.unbind(counter);
-
-        // read results on the last step
-        if (i == 10 - 1)
-            result = computation.read<int32_t>(counter);
-    }
-
-    // print results
-    for (auto& x : result)
-        std::cout << "result: " << x << std::endl;
-
-    /*std::filesystem::path path("../utils/convert-model/flux2-vae.gguf");
-
-    AutoencoderKLFlux2 vae;
+    AutoencoderKLFlux2 vae(AutoencoderKLFlux2::Config::from_file("../utils/convert-model/vae/config.json"));
+    std::filesystem::path path("../utils/convert-model/vae/flux2-vae.gguf");
 
     GGUFLoaderVisitor loader(cpu, path);
     RethrowVisitor visitor(loader);
     vae.accept(visitor);
-    visitor.rethrow();*/
+    loader.validate();
+    visitor.rethrow();
 
     //Qwen3ForCausalLM::from_pretrained(cpu, Qwen3Config::from_file("../utils/convert-model/text-encoder/config.json"), "../utils/convert-model/qwen3.gguf");
 

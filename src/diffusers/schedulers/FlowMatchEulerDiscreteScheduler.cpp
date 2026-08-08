@@ -124,7 +124,7 @@ float FlowMatchEulerDiscreteScheduler::step() {
 Tensor FlowMatchEulerDiscreteScheduler::integrate(
     const Tensor& model_output,
     const Tensor& sample,
-    float dt
+    const Tensor& dt
 ) {
     auto prev_sample = sample + dt * model_output;
 

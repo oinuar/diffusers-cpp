@@ -458,17 +458,24 @@ std::string Qwen2TokenizerFast::decode(const std::vector<int>& ids,
 }
 
 std::string Qwen2TokenizerFast::apply_chat_template(const std::vector<Qwen2TokenizerFast::Message>& messages,
-                                                bool add_generation_prompt) const {
+                                                bool add_generation_prompt, bool enable_thinking) const {
     std::string out;
-    if (messages.empty()) return out;
 
-    bool first = true;
-    for (const auto& m : messages) {
+    if (messages.empty())
+        return out;
+
+    for (const auto& m : messages)
         out += "<|im_start|>" + m.role + "\n" + m.content + "<|im_end|>\n";
-    }
+
     if (add_generation_prompt) {
-        out += "<|im_start|>assistant\n";
+        out += "<|im_start|>assistant<think>";
+
+        if (!enable_thinking)
+            out += "</think>";
+
+        out += '\n';
     }
+
     return out;
 }
 

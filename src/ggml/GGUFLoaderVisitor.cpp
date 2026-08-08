@@ -65,6 +65,20 @@ GGUFLoaderVisitor::~GGUFLoaderVisitor() {
     gguf_free(gguf_ctx_);
 }
 
+void GGUFLoaderVisitor::validate() const {
+    std::string message;
+
+    for (auto& [name, _] : lookup_) {
+        if (!message.empty())
+            message += "\n";
+
+        message += "  - Tensor exists in checkpoint but was not loaded: " + name;
+    }
+
+    if (!message.empty())
+        throw std::runtime_error("Error while validating the checkpoint:\n" + message);
+}
+
 void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> path) {
     auto model_path = join_path(path);
     auto it = lookup_.find(model_path);
@@ -72,8 +86,11 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
     if (it == std::end(lookup_))
         throw std::runtime_error("Error while loading Tensor '" + model_path + "': Tensor not found");
 
-    auto& tensor_id = it->second;
-    auto tensor = ggml_get_tensor(ctx_, it->first.c_str());
+    auto tensor_name = it->first;
+    auto tensor_id = it->second;
+    lookup_.erase(it);
+
+    auto tensor = ggml_get_tensor(ctx_, tensor_name.c_str());
 
     const std::streamoff offs = gguf_get_data_offset(gguf_ctx_) + gguf_get_tensor_offset(gguf_ctx_, tensor_id);
 
@@ -87,7 +104,7 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
 
     std::vector<std::byte> buf(ggml_nbytes(tensor));
 
-    // std::cout << "LOAD " << it->first.c_str() << " " << parameter.shape().to_string() << std::endl;
+    // std::cout << "LOAD " << tensor_name.c_str() << " " << parameter.shape().to_string() << std::endl;
 
     file_.seekg(offs, file_.beg);
     

@@ -100,7 +100,8 @@ Tensor Qwen3Model::forward(
     std::optional<Tensor> attention_mask,
     std::optional<Tensor> position_ids,
     std::optional<Tensor> past_key_values,
-    std::optional<bool> use_cache
+    std::optional<bool> use_cache,
+    std::unordered_map<size_t, Tensor>* extract_hidden_states_by_layer
 ) {    
     if (!input_ids.has_value() && !inputs_embeds.has_value())
         throw std::invalid_argument("You must specify exactly one of input_ids or inputs_embeds");
@@ -140,9 +141,33 @@ Tensor Qwen3Model::forward(
         auto layer = std::static_pointer_cast<Qwen3DecoderLayer>((*layers)[i]);
         auto layer_mask = causal_mask_mapping.at(layer_types.at(i));
 
-        hidden_states = layer->forward(runtime, *rotary_emb, hidden_states, *position_ids, layer_mask, past_key_values, use_cache);
+        // Extact layer's hidden state
+        if (extract_hidden_states_by_layer) {
+            auto extract = extract_hidden_states_by_layer->find(i);
+
+            if (extract != extract_hidden_states_by_layer->end())
+                (*extract_hidden_states_by_layer)[extract->first] = hidden_states;
+        }
+        
+        hidden_states = layer->forward(
+            runtime,
+            *rotary_emb,
+            hidden_states,
+            *position_ids,
+            layer_mask,
+            past_key_values,
+            use_cache
+        );
     }
 
+    // Extract last layer's hidden states
+    if (extract_hidden_states_by_layer) {
+        auto extract = extract_hidden_states_by_layer->find(layers->size());
+
+        if (extract != extract_hidden_states_by_layer->end())
+            (*extract_hidden_states_by_layer)[extract->first] = hidden_states;
+    }
+    
     auto norm = std::static_pointer_cast<Qwen3RMSNorm>(modules["norm"]);
     hidden_states = norm->forward(runtime, hidden_states);
 

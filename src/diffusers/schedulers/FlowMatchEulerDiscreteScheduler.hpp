@@ -31,7 +31,7 @@ public:
 
     float step();
 
-    Tensor integrate(const Tensor& model_output, const Tensor& sample, float dt);
+    Tensor integrate(const Tensor& model_output, const Tensor& sample, const Tensor& dt);
 
     void reset_step_index();
 

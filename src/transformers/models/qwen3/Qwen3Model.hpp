@@ -1,6 +1,7 @@
 #pragma once
 
 #include "nn/Module.hpp"
+#include <unordered_map>
 
 struct Qwen3Config;
 
@@ -13,7 +14,8 @@ public:
                    std::optional<Tensor> attention_mask = std::nullopt,
                    std::optional<Tensor> position_ids = std::nullopt,
                    std::optional<Tensor> past_key_values = std::nullopt,
-                   std::optional<bool> use_cache = std::nullopt);
+                   std::optional<bool> use_cache = std::nullopt,
+                   std::unordered_map<size_t, Tensor>* extract_hidden_states_by_layer = nullptr);
 
 private:
     int vocab_size;

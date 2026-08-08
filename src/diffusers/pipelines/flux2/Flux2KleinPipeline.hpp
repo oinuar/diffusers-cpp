@@ -20,12 +20,13 @@ class Flux2KleinPipeline {
 public:
     struct GenerationOptions {
         std::string prompt;
+        std::vector<Image> images;
         int height = 1024;
         int width = 1024;
         int num_inference_steps = 4;      // Klein default (distilled)
         float guidance_scale = 0.0f;      // unused: Klein is guidance-distilled
         int num_images_per_prompt = 1;
-        uint64_t seed = 0;                // 0 -> std::random_device
+        std::optional<uint64_t> seed = std::nullopt;
         size_t max_sequence_length = 512;
     };
 
@@ -42,7 +43,7 @@ public:
     std::vector<Image> operator ()(Scheduler& scheduler, const GenerationOptions& options);
 
 private:
-    std::pair<Tensor, Tensor> encode_prompt(Runtime& runtime, const std::string& prompt, size_t max_sequence_length);
+    std::pair<Tensor, Tensor> encode_prompt(Runtime& runtime, int batch, const std::string& prompt, size_t max_sequence_length);
 
     Flux2Transformer2DModel transformer_;
     AutoencoderKLFlux2 vae_;

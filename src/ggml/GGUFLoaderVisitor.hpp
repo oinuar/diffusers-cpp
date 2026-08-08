@@ -19,6 +19,8 @@ public:
 
     virtual void visit(Parameter& parameter, std::vector<std::string> path);
 
+    void validate() const;
+
 private:
     ggml_context* ctx_;
     gguf_context* gguf_ctx_;

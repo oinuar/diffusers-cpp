@@ -10,17 +10,6 @@
 
 class TestCLI {
 public:
-    class Plan {
-    public:
-        Plan(Tensor tensor) : tensors_({tensor}) {}
-        Plan(std::vector<Tensor>&& tensors) : tensors_(tensors) {}
-
-    private:
-        std::vector<Tensor> tensors_;
-
-        friend class TestCLI;
-    };
-
     int main() {
         ggml_time_init();
         ggml_log_set([](ggml_log_level, const char* text, void*) { std::cerr << text; }, nullptr);
@@ -31,16 +20,47 @@ public:
         Scheduler scheduler({*cpu});
         Runtime runtime(scheduler);
 
-        auto plan = build(runtime);
+        auto results = compute(runtime);
 
-        Graph graph(runtime, std::move(plan.tensors_));
+        for (auto& tensor : results) {
+            switch (tensor.dtype()) {
+            case Tensor::DType<float>::value:
+            {
+                auto data = runtime.value<float>(tensor);
+                print_tensor_like(data, tensor.shape());
+                break;
+            }
 
-        compute(graph);
+            case Tensor::DType<int8_t>::value:
+            {
+                auto data = runtime.value<int8_t>(tensor);
+                print_tensor_like(data, tensor.shape());
+                break;
+            }
+
+            case Tensor::DType<int16_t>::value:
+            {
+                auto data = runtime.value<int16_t>(tensor);
+                print_tensor_like(data, tensor.shape());
+                break;
+            }
+
+            case Tensor::DType<int32_t>::value:
+            {
+                auto data = runtime.value<int32_t>(tensor);
+                print_tensor_like(data, tensor.shape());
+                break;
+            }
+
+            default:
+                throw std::runtime_error("Unsupported tensor type: " + std::string(ggml_type_name(tensor.dtype())));
+            }
+        }
 
         return EXIT_SUCCESS;
     }
 
-    virtual Plan build(Runtime& runtime) = 0;
+    virtual std::vector<Tensor> compute(Runtime& runtime) = 0;
 
     const ArgumentParser& args() const {
         return args_;
@@ -68,45 +88,6 @@ protected:
     TestCLI(int argc, char** argv) : args_(argc, argv) {}
 
 private:
-    void compute(Graph& graph) {
-        Computation computation(graph);
-
-        for (auto& tensor : computation.results()) {
-            switch (tensor.dtype()) {
-            case Tensor::DType<float>::value:
-            {
-                auto data = computation.read<float>(tensor);
-                print_tensor_like(data, tensor.shape());
-                break;
-            }
-
-            case Tensor::DType<int8_t>::value:
-            {
-                auto data = computation.read<int8_t>(tensor);
-                print_tensor_like(data, tensor.shape());
-                break;
-            }
-
-            case Tensor::DType<int16_t>::value:
-            {
-                auto data = computation.read<int16_t>(tensor);
-                print_tensor_like(data, tensor.shape());
-                break;
-            }
-
-            case Tensor::DType<int32_t>::value:
-            {
-                auto data = computation.read<int32_t>(tensor);
-                print_tensor_like(data, tensor.shape());
-                break;
-            }
-
-            default:
-                throw std::runtime_error("Unsupported tensor type: " + std::string(ggml_type_name(tensor.dtype())));
-            }
-        }
-    }
-
     void print_escaped_string(const std::string& value)
     {
         std::cout << '"';

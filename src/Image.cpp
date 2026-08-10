@@ -40,7 +40,7 @@ Image::Image(
         );
 }
 
-Image Image::load(const std::filesystem::path& path) {
+Image Image::from_file(const std::filesystem::path& path) {
     int width;
     int height;
     int channels;

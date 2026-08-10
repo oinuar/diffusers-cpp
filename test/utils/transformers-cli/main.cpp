@@ -19,7 +19,7 @@ class TestTransformersCLI : public TestCLI {
 public:
     TestTransformersCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual Plan build(Runtime& runtime) {
+    virtual std::vector<Tensor> compute(Runtime& runtime) {
         if (args_.get(0) == "Qwen3RMSNorm") {
             auto hidden_size = args_.get_one<int64_t>("--hidden_size");
             auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
@@ -31,7 +31,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, hidden_states);
+            auto output = model.forward(runtime, hidden_states);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "Qwen3MLP") {
@@ -48,7 +52,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, hidden_states);
+            auto output = model.forward(runtime, hidden_states);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "Qwen3RotaryEmbedding") {
@@ -61,7 +69,11 @@ public:
 
             Qwen3RotaryEmbedding model(config);
 
-            return model.forward(runtime, x, position_ids);
+            auto output = model.forward(runtime, x, position_ids);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "Qwen3Attention") {
@@ -85,7 +97,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
+            auto output = model.forward(runtime, rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "Qwen3Attention") {
@@ -109,7 +125,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
+            auto output = model.forward(runtime, rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "Qwen3DecoderLayer") {
@@ -132,7 +152,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, rotary_emb, hidden_states, position_ids);
+            auto output = model.forward(runtime, rotary_emb, hidden_states, position_ids);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "Qwen3Model") {
@@ -163,7 +187,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, input_ids, input_embeds, attention_mask, position_ids, past_key_values, use_cache);
+            auto output = model.forward(runtime, input_ids, input_embeds, attention_mask, position_ids, past_key_values, use_cache);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "Qwen3ForCausalLM") {
@@ -192,7 +220,7 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(
+            auto output = model.forward(
                 runtime,
                 input_ids,
                 attention_mask,
@@ -203,6 +231,10 @@ public:
                 use_cache,
                 logits_to_keep
             );
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));

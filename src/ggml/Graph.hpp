@@ -10,7 +10,7 @@
 class Graph {
 public:
     Graph(Runtime& runtime, std::vector<Tensor>&& tensors)
-        : runtime_(runtime), gf_(ggml_new_graph(*runtime.context())), tensors_(tensors)
+        : runtime_(runtime), gf_(ggml_new_graph(*runtime.context())), tensors_(std::move(tensors))
     {
         for (auto& tensor : tensors_) {
             // Materialize tensor if needed
@@ -20,12 +20,6 @@ public:
             ggml_set_output(*tensor);
             ggml_build_forward_expand(gf_, *tensor);
         }
-    }
-
-    Graph(Graph&& other)
-        : runtime_(other.runtime_), gf_(other.gf_), tensors_(std::move(other.tensors_))
-    {
-        other.gf_ = nullptr;
     }
 
     ggml_cgraph* operator *() {
@@ -49,7 +43,9 @@ public:
     }
 
     Graph(Graph&) = delete;
+    Graph(Graph&&) = default;
     Graph& operator =(const Graph&) = delete;
+    Graph& operator =(Graph&&) = default;
 
 private:
     Runtime& runtime_;

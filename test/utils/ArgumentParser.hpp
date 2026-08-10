@@ -153,3 +153,4 @@ struct ArgumentParser::parser<std::string> {
 #include "./ShapeParser.hpp"
 #include "./SliceParser.hpp"
 #include "./JsonParser.hpp"
+#include "./ImageParser.hpp"

@@ -5,31 +5,47 @@ class TestTensorCLI : public TestCLI {
 public:
     TestTensorCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual Plan build(Runtime& runtime) {
+    virtual std::vector<Tensor> compute(Runtime& runtime) {
 
         if (args_.get(0) == "contiguous") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
 
-            return self.contiguous();
+            auto output = self.contiguous();
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
 
         if (args_.get(0) == "scalar") {
             auto value = args_.get_one<float>("--value");
 
-            return Tensor::scalar(*runtime.context(), value);
+            auto output = Tensor::scalar(*runtime.context(), value);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "zeros") {
             auto shape = args_.get_one<Tensor::Shape>("--shape");
 
-            return Tensor::zeros(*runtime.context(), shape);
+            auto output = Tensor::zeros(*runtime.context(), shape);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "ones") {
             auto shape = args_.get_one<Tensor::Shape>("--shape");
 
-            return Tensor::ones(*runtime.context(), shape);
+            auto output = Tensor::ones(*runtime.context(), shape);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "arange") {
@@ -37,7 +53,11 @@ public:
             auto stop = args_.get_one<float>("--stop");
             auto step = args_.get_one<float>("--step");
 
-            return Tensor::arange(*runtime.context(), start, stop, step);
+            auto output = Tensor::arange(*runtime.context(), start, stop, step);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         
@@ -45,14 +65,22 @@ public:
             auto tensors = args_.get_many<Tensor>("--tensor", {runtime});
             auto dim = args_.get_one<int>("--dim");
 
-            return Tensor::cat(tensors, dim);
+            auto output = Tensor::cat(tensors, dim);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "stack") {
             auto tensors = args_.get_many<Tensor>("--tensor", {runtime});
             auto dim = args_.get_one<int>("--dim");
 
-            return Tensor::stack(tensors, dim);
+            auto output = Tensor::stack(tensors, dim);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
 
@@ -60,28 +88,44 @@ public:
             auto self = args_.get_one<Tensor>("--this", {runtime});
             auto shape = args_.get_one<Tensor::Shape>("--shape");
 
-            return self.reshape(shape);
+            auto output = self.reshape(shape);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "permute") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
             auto order = args_.get_one<Tensor::Shape>("--order");
 
-            return self.permute(order);
+            auto output = self.permute(order);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "squeeze") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
             auto dim = args_.get_one<int>("--dim");
 
-            return self.squeeze(dim);
+            auto output = self.squeeze(dim);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "unsqueeze") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
             auto dim = args_.get_one<int>("--dim");
 
-            return self.unsqueeze(dim);
+            auto output = self.unsqueeze(dim);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "flatten") {
@@ -89,7 +133,11 @@ public:
             auto start_dim = args_.get_optional<int>("--start_dim").value_or(0);
             auto end_dim = args_.get_optional<int>("--end_dim").value_or(-1);
 
-            return self.flatten(start_dim, end_dim);
+            auto output = self.flatten(start_dim, end_dim);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "unflatten") {
@@ -97,7 +145,11 @@ public:
             auto dim = args_.get_one<int64_t>("--dim");
             auto shape = args_.get_one<Tensor::Shape>("--shape");
 
-            return self.unflatten(dim, shape);
+            auto output = self.unflatten(dim, shape);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "narrow") {
@@ -106,21 +158,33 @@ public:
             auto start = args_.get_one<int64_t>("--start");
             auto length = args_.get_one<int64_t>("--length");
 
-            return self.narrow(dim, start, length);
+            auto output = self.narrow(dim, start, length);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "expand") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
             auto new_shape = args_.get_one<Tensor::Shape>("--new-shape");
 
-            return self.expand(new_shape);
+            auto output = self.expand(new_shape);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "repeat") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
             auto repeats = args_.get_one<Tensor::Shape>("--repeats");
 
-            return self.repeat(repeats);
+            auto output = self.repeat(repeats);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "chunk") {
@@ -128,7 +192,11 @@ public:
             auto n = args_.get_one<int>("--n");
             auto dim = args_.get_optional<int>("--dim").value_or(0);
 
-            return self.chunk(n, dim);
+            auto output = self.chunk(n, dim);
+
+            Graph graph(runtime, std::move(output));
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "split") {
@@ -136,7 +204,11 @@ public:
             auto split_size = args_.get_one<int64_t>("--split_size");
             auto dim = args_.get_optional<int>("--dim").value_or(0);
 
-            return self.split(split_size, dim);
+            auto output = self.split(split_size, dim);
+
+            Graph graph(runtime, std::move(output));
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "split_with_sizes") {
@@ -144,77 +216,121 @@ public:
             auto split_sizes = args_.get_many<int64_t>("--split_size");
             auto dim = args_.get_optional<int>("--dim").value_or(0);
 
-            return self.split_with_sizes(split_sizes, dim);
+            auto output = self.split_with_sizes(split_sizes, dim);
+
+            Graph graph(runtime, std::move(output));
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "to") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
             auto type = (ggml_type)args_.get_one<int>("--type");
 
-            return self.to(type);
+            auto output = self.to(type);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
 
         if (args_.get(0) == "neg") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
             
-            return -self;
+            auto output = -self;
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "add") {
             auto lhs = args_.get_one<Tensor>("--lhs", {runtime});
             auto rhs = args_.get_one<Tensor>("--rhs", {runtime});
 
-            return lhs + rhs;
+            auto output = lhs + rhs;
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "sub") {
             auto lhs = args_.get_one<Tensor>("--lhs", {runtime});
             auto rhs = args_.get_one<Tensor>("--rhs", {runtime});
 
-            return lhs - rhs;
+            auto output = lhs - rhs;
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "mul") {
             auto lhs = args_.get_one<Tensor>("--lhs", {runtime});
             auto rhs = args_.get_one<Tensor>("--rhs", {runtime});
 
-            return lhs * rhs;
+            auto output = lhs * rhs;
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "div") {
             auto lhs = args_.get_one<Tensor>("--lhs", {runtime});
             auto rhs = args_.get_one<Tensor>("--rhs", {runtime});
 
-            return lhs / rhs;
+            auto output = lhs / rhs;
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "add_scalar") {
             auto lhs = args_.get_one<Tensor>("--lhs", {runtime});
             auto rhs = args_.get_one<float>("--rhs");
 
-            return lhs + rhs;
+            auto output = lhs + rhs;
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "sub_scalar") {
             auto lhs = args_.get_one<Tensor>("--lhs", {runtime});
             auto rhs = args_.get_one<float>("--rhs");
 
-            return lhs - rhs;
+            auto output = lhs - rhs;
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "mul_scalar") {
             auto lhs = args_.get_one<Tensor>("--lhs", {runtime});
             auto rhs = args_.get_one<float>("--rhs");
 
-            return lhs * rhs;
+            auto output = lhs * rhs;
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "div_scalar") {
             auto lhs = args_.get_one<Tensor>("--lhs", {runtime});
             auto rhs = args_.get_one<float>("--rhs");
 
-            return lhs / rhs;
+            auto output = lhs / rhs;
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
 
@@ -222,42 +338,66 @@ public:
             auto lhs = args_.get_one<float>("--lhs");
             auto rhs = args_.get_one<Tensor>("--rhs", {runtime});
 
-            return lhs + rhs;
+            auto output = lhs + rhs;
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "scalar_sub") {
             auto lhs = args_.get_one<float>("--lhs");
             auto rhs = args_.get_one<Tensor>("--rhs", {runtime});
 
-            return lhs - rhs;
+            auto output = lhs - rhs;
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "scalar_mul") {
             auto lhs = args_.get_one<float>("--lhs");
             auto rhs = args_.get_one<Tensor>("--rhs", {runtime});
 
-            return lhs * rhs;
+            auto output = lhs * rhs;
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "scalar_div") {
             auto lhs = args_.get_one<float>("--lhs");
             auto rhs = args_.get_one<Tensor>("--rhs", {runtime});
 
-            return lhs / rhs;
+            auto output = lhs / rhs;
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "pow_scalar") {
             auto base = args_.get_one<Tensor>("--base", {runtime});
             auto exponent = args_.get_one<float>("--exponent");
 
-            return pow(base, exponent);
+            auto output = pow(base, exponent);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "scalar_pow") {
             auto base = args_.get_one<float>("--base");
             auto exponent = args_.get_one<Tensor>("--exponent", {runtime});
 
-            return pow(base, exponent);
+            auto output = pow(base, exponent);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         
@@ -266,7 +406,11 @@ public:
             auto min = args_.get_one<float>("--min");
             auto max = args_.get_one<float>("--max");
 
-            return self.clamp(min, max);
+            auto output = self.clamp(min, max);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "sum") {
@@ -274,7 +418,11 @@ public:
             auto dim = args_.get_optional<int64_t>("--dim").value_or(-1);
             auto keepdim = args_.get_optional<bool>("--keepdim").value_or(false);
 
-            return self.sum(dim, keepdim);
+            auto output = self.sum(dim, keepdim);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "mean") {
@@ -282,7 +430,11 @@ public:
             auto dim = args_.get_optional<int64_t>("--dim").value_or(-1);
             auto keepdim = args_.get_optional<bool>("--keepdim").value_or(false);
 
-            return self.mean(dim, keepdim);
+            auto output = self.mean(dim, keepdim);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
 
@@ -290,57 +442,93 @@ public:
             auto self = args_.get_one<Tensor>("--this", {runtime});
             auto index = args_.get_one<size_t>("--index");
 
-            return self[index];
+            auto output = self[index];
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "slice") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
             auto slice = args_.get_one<std::vector<Tensor::Slice>>("--slice");
 
-            return self[slice];
+            auto output = self[slice];
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
 
         if (args_.get(0) == "abs") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
 
-            return abs(self);
+            auto output = abs(self);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "sqrt") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
 
-            return sqrt(self);
+            auto output = sqrt(self);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "exp") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
 
-            return exp(self);
+            auto output = exp(self);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "log") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
 
-            return log(self);
+            auto output = log(self);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "sin") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
 
-            return sin(self);
+            auto output = sin(self);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "cos") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
 
-            return cos(self);
+            auto output = cos(self);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "rsqrt") {
             auto self = args_.get_one<Tensor>("--this", {runtime});
 
-            return rsqrt(self);
+            auto output = rsqrt(self);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));

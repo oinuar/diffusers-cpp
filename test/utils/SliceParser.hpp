@@ -20,7 +20,6 @@ struct ArgumentParser::parser<std::vector<Tensor::Slice>> {
         }
     }
 
-private:
     class SliceParser {
     public:
         explicit SliceParser(std::string_view text)

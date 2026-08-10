@@ -1,0 +1,557 @@
+#include "../TestCLI.hpp"
+#include "nn/Parameter.hpp"
+#include "nn/Visitor.hpp"
+#include "nn/RethrowVisitor.hpp"
+#include "nn/attention/ScaledDotProductAttention.hpp"
+#include "nn/attention/FlashAttentionOp.hpp"
+
+#include "diffusers/models/transformers/flux2/Flux2SwiGLU.hpp"
+#include "diffusers/models/transformers/flux2/Flux2FeedForward.hpp"
+#include "diffusers/models/transformers/flux2/Flux2Modulation.hpp"
+#include "diffusers/models/transformers/flux2/Flux2TimestepGuidanceEmbeddings.hpp"
+#include "diffusers/models/transformers/flux2/Flux2PosEmbed.hpp"
+#include "diffusers/models/transformers/flux2/Flux2Attention.hpp"
+#include "diffusers/models/transformers/flux2/Flux2ParallelSelfAttention.hpp"
+#include "diffusers/models/transformers/flux2/Flux2SingleTransformerBlock.hpp"
+#include "diffusers/models/transformers/flux2/Flux2TransformerBlock.hpp"
+#include "diffusers/models/transformers/flux2/Flux2Transformer2DModel.hpp"
+
+#include "transformers/models/qwen3/Qwen3Config.hpp"
+#include "diffusers/pipelines/flux2/Flux2KleinPipeline.hpp"
+
+#include <numeric>
+
+class TestDiffusersCLI : public TestCLI {
+public:
+    TestDiffusersCLI(int argc, char** argv) : TestCLI(argc, argv) {}
+
+    virtual std::vector<Tensor> compute(Runtime& runtime) {
+
+        if (args_.get(0) == "Flux2SwiGLU") {
+            auto x = args_.get_one<Tensor>("--x", {runtime});
+
+            Flux2SwiGLU model;
+
+            auto output = model.forward(runtime, x);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
+        }
+
+        if (args_.get(0) == "Flux2FeedForward") {
+            auto dim = args_.get_one<int64_t>("--dim");
+            auto dim_out = args_.get_optional<int64_t>("--dim_out");
+            auto mult = args_.get_optional<float>("--mult").value_or(3.0);
+            auto inner_dim = args_.get_optional<int64_t>("--inner_dim");
+            auto bias = args_.get_optional<bool>("--bias").value_or(false);
+            auto x = args_.get_one<Tensor>("--x", {runtime});
+
+            Flux2FeedForward model(dim, dim_out, mult, inner_dim, bias);
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            auto output = model.forward(runtime, x);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
+        }
+
+        if (args_.get(0) == "Flux2Modulation") {
+            auto dim = args_.get_one<int64_t>("--dim");
+            auto mod_param_sets = args_.get_optional<int64_t>("--mod_param_sets").value_or(2);
+            auto bias = args_.get_optional<bool>("--bias").value_or(false);
+            auto temb = args_.get_one<Tensor>("--temb", {runtime});
+
+            Flux2Modulation model(dim, mod_param_sets, bias);
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            auto output = model.forward(runtime, temb);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
+        }
+
+        if (args_.get(0) == "Flux2TimestepGuidanceEmbeddings") {
+            auto in_channels = args_.get_one<int64_t>("--in_channels");
+            auto embedding_dim = args_.get_one<int64_t>("--embedding_dim");
+            auto bias = args_.get_optional<bool>("--bias").value_or(false);
+            auto guidance_embeds = args_.get_optional<bool>("--guidance_embeds").value_or(true);
+            auto timestep = args_.get_one<Tensor>("--timestep", {runtime});
+            auto guidance = args_.get_optional<Tensor>("--guidance", {runtime});
+
+            Flux2TimestepGuidanceEmbeddings model(in_channels, embedding_dim, bias, guidance_embeds);
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            auto output = model.forward(runtime, timestep, guidance);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
+        }
+
+        if (args_.get(0) == "Flux2PosEmbed") {
+            auto theta = args_.get_one<int64_t>("--theta");
+            auto axes_dim = args_.get_many<int64_t>("--axes_dim");
+            auto x = args_.get_one<Tensor>("--x", {runtime});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {runtime});
+
+            Flux2PosEmbed model(theta, axes_dim);
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            auto output = model.forward(runtime, x, position_ids);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
+        }
+
+        if (args_.get(0) == "Flux2Attention") {
+            auto query_dim = args_.get_one<int64_t>("--query_dim");
+            auto heads = args_.get_optional<int64_t>("--heads").value_or(8);
+            auto dim_head = args_.get_optional<int64_t>("--dim_head").value_or(64);
+            auto dropout = args_.get_optional<float>("--dropout").value_or(0.0);
+            auto bias = args_.get_optional<bool>("--bias").value_or(false);
+            auto added_kv_proj_dim = args_.get_optional<int64_t>("--added_kv_proj_dim");
+            auto added_proj_bias = args_.get_optional<bool>("--added_proj_bias").value_or(true);
+            auto out_bias = args_.get_optional<bool>("--out_bias").value_or(true);
+            auto eps = args_.get_optional<float>("--eps").value_or(1e-5);
+            auto out_dim = args_.get_optional<int64_t>("--out_dim");
+            auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {runtime});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {runtime});
+            auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
+            auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {runtime});
+
+            auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
+                std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
+                *position_ids
+            )) : std::nullopt;
+
+            Flux2Attention<ScaledDotProductAttention<FlashAttentionOp>> model(
+                query_dim,
+                heads,
+                dim_head,
+                dropout,
+                bias,
+                added_kv_proj_dim,
+                added_proj_bias,
+                out_bias,
+                eps,
+                out_dim,
+                elementwise_affine
+            );
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            auto [y1, y2] = model.forward(runtime, hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb);
+            std::vector<Tensor> results;
+
+            results.push_back(y1);
+
+            if (y2)
+                results.push_back(*y2);
+
+            Graph graph(runtime, std::move(results));
+            Computation computation(graph);
+            return computation.results();
+        }
+
+        if (args_.get(0) == "Flux2ParallelSelfAttention") {
+            auto query_dim = args_.get_one<int64_t>("--query_dim");
+            auto heads = args_.get_optional<int64_t>("--heads").value_or(8);
+            auto dim_head = args_.get_optional<int64_t>("--dim_head").value_or(64);
+            auto dropout = args_.get_optional<float>("--dropout").value_or(0.0);
+            auto bias = args_.get_optional<bool>("--bias").value_or(false);
+            auto out_bias = args_.get_optional<bool>("--out_bias").value_or(true);
+            auto eps = args_.get_optional<float>("--eps").value_or(1e-5);
+            auto out_dim = args_.get_optional<int64_t>("--out_dim");
+            auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
+            auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(4.0);
+            auto mlp_mult_factor = args_.get_optional<int64_t>("--mlp_mult_factor").value_or(2);
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {runtime});
+            auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
+            auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {runtime});
+
+            auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
+                std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
+                *position_ids
+            )) : std::nullopt;
+
+            Flux2ParallelSelfAttention<ScaledDotProductAttention<FlashAttentionOp>> model(
+                query_dim,
+                heads,
+                dim_head,
+                dropout,
+                bias,
+                out_bias,
+                eps,
+                out_dim,
+                elementwise_affine,
+                mlp_ratio,
+                mlp_mult_factor
+            );
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            auto output = model.forward(runtime, hidden_states, attention_mask, image_rotary_emb);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
+        }
+
+        if (args_.get(0) == "Flux2SingleTransformerBlock") {
+            auto dim = args_.get_one<int64_t>("--dim");
+            auto num_attention_heads = args_.get_one<int64_t>("--num_attention_heads");
+            auto attention_head_dim = args_.get_one<int64_t>("--attention_head_dim");
+            auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(3.0);
+            auto eps = args_.get_optional<float>("--eps").value_or(1e-6);
+            auto bias = args_.get_optional<bool>("--bias").value_or(false);
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {runtime});
+            auto temb_mod = args_.get_one<Tensor>("--temb_mod", {runtime});
+            auto split_hidden_states = args_.get_optional<bool>("--split_hidden_states").value_or(false);
+            auto text_seq_len = args_.get_optional<int64_t>("--text_seq_len");
+            auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
+            auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {runtime});
+
+            auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
+                std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
+                *position_ids
+            )) : std::nullopt;
+
+            Flux2SingleTransformerBlock<ScaledDotProductAttention<FlashAttentionOp>> model(
+                dim,
+                num_attention_heads,
+                attention_head_dim,
+                mlp_ratio,
+                eps,
+                bias
+            );
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            auto [y1, y2] = model.forward(
+                runtime,
+                hidden_states,
+                encoder_hidden_states,
+                temb_mod,
+                image_rotary_emb,
+                split_hidden_states,
+                text_seq_len
+            );
+
+            std::vector<Tensor> results;
+
+            results.push_back(y1);
+
+            if (y2)
+                results.push_back(*y2);
+
+            Graph graph(runtime, std::move(results));
+            Computation computation(graph);
+            return computation.results();
+        }
+
+        if (args_.get(0) == "Flux2TransformerBlock") {
+            auto dim = args_.get_one<int64_t>("--dim");
+            auto num_attention_heads = args_.get_one<int64_t>("--num_attention_heads");
+            auto attention_head_dim = args_.get_one<int64_t>("--attention_head_dim");
+            auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(3.0);
+            auto eps = args_.get_optional<float>("--eps").value_or(1e-6);
+            auto bias = args_.get_optional<bool>("--bias").value_or(false);
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {runtime});
+            auto temb_mod_img = args_.get_one<Tensor>("--temb_mod_img", {runtime});
+            auto temb_mod_txt = args_.get_one<Tensor>("--temb_mod_txt", {runtime});
+            auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
+            auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {runtime});
+
+            auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
+                std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
+                *position_ids
+            )) : std::nullopt;
+
+            Flux2TransformerBlock<ScaledDotProductAttention<FlashAttentionOp>> model(
+                dim,
+                num_attention_heads,
+                attention_head_dim,
+                mlp_ratio,
+                eps,
+                bias
+            );
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            auto [y1, y2] = model.forward(
+                runtime,
+                hidden_states,
+                encoder_hidden_states,
+                temb_mod_img,
+                temb_mod_txt,
+                image_rotary_emb
+            );
+
+            Graph graph(runtime, {y1, y2});
+            Computation computation(graph);
+            return computation.results();
+        }
+
+        if (args_.get(0) == "Flux2Transformer2DModel") {
+            Flux2Transformer2DModel::Config config;
+
+            config.patch_size = args_.get_optional<int64_t>("--patch_size").value_or(config.patch_size);
+            config.in_channels = args_.get_optional<int64_t>("--in_channels").value_or(config.in_channels);
+            config.out_channels = args_.get_optional<int64_t>("--out_channels");
+            config.num_layers = args_.get_optional<int64_t>("--num_layers").value_or(config.num_layers);
+            config.num_single_layers = args_.get_optional<int64_t>("--num_single_layers").value_or(config.num_single_layers);
+            config.attention_head_dim = args_.get_optional<int64_t>("--attention_head_dim").value_or(config.attention_head_dim);
+            config.num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.num_attention_heads);
+            config.joint_attention_dim = args_.get_optional<int64_t>("--joint_attention_dim").value_or(config.joint_attention_dim);
+            config.timestep_guidance_channels = args_.get_optional<int64_t>("--timestep_guidance_channels").value_or(config.timestep_guidance_channels);
+            config.mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(config.mlp_ratio);
+            auto axes_dims_rope = args_.get_many<int64_t>("--axes_dims_rope");
+            config.rope_theta = args_.get_optional<int64_t>("--rope_theta").value_or(config.rope_theta);
+            config.eps = args_.get_optional<float>("--eps").value_or(config.eps);
+            config.guidance_embeds = args_.get_optional<bool>("--guidance_embeds").value_or(config.guidance_embeds);
+
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {runtime});
+            auto timestep = args_.get_one<Tensor>("--timestep", {runtime});
+            auto img_ids = args_.get_one<Tensor>("--img_ids", {runtime});
+            auto txt_ids = args_.get_one<Tensor>("--txt_ids", {runtime});
+            auto guidance = args_.get_optional<Tensor>("--guidance", {runtime});
+            auto num_ref_tokens = args_.get_optional<int64_t>("--num_ref_tokens").value_or(0);
+            auto ref_fixed_timestep = args_.get_optional<float>("--ref_fixed_timestep").value_or(0.0f);
+
+            if (!axes_dims_rope.empty())
+                config.axes_dims_rope = axes_dims_rope;
+
+            Flux2Transformer2DModel model(config);
+
+            CreateParametersVisitor create_parameters(runtime, args_);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
+
+            auto output = model.forward(
+                runtime,
+                hidden_states,
+                encoder_hidden_states,
+                timestep,
+                img_ids,
+                txt_ids,
+                guidance,
+                //std::nullopt,   // kv_cache
+                //std::nullopt,   // kv_cache_mode
+                num_ref_tokens,
+                ref_fixed_timestep
+            );
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
+        }
+
+        if (args_.get(0).rfind("Flux2KleinPipeline", 0) == 0) {
+            Flux2Transformer2DModel::Config transformer_config;
+            AutoencoderKLFlux2::Config vae_config;
+            Qwen3Config qwen_config;
+            auto tokenizer_file = args_.get_one<std::string>("--tokenizer_file");
+
+            Flux2Transformer2DModel transformer(transformer_config);
+            AutoencoderKLFlux2 vae(vae_config);
+            Qwen3ForCausalLM text_encoder(qwen_config);
+            Qwen2TokenizerFast tokenizer(tokenizer_file);
+
+            Flux2KleinPipeline pipeline(
+                std::move(transformer),
+                std::move(vae),
+                std::move(text_encoder),
+                std::move(tokenizer)
+            );
+
+            if (args_.get(0) == "Flux2KleinPipeline_embeddings") {
+                auto batch = args_.get_one<int>("--batch");
+                auto prompt = args_.get_one<std::string>("--prompt");
+                auto max_seq_length = args_.get_one<int>("--max_seq_length");
+                auto packed_h = args_.get_one<int>("--packed_h");
+                auto packed_w = args_.get_one<int>("--packed_w");
+                auto images = args_.get_many<Image>("--images");
+
+                auto graph = pipeline.make_embeddings_graph(
+                    runtime,
+                    batch,
+                    prompt,
+                    max_seq_length,
+                    packed_h,
+                    packed_w,
+                    images
+                );
+
+                Computation computation(graph);
+                
+                return computation.results();
+            }
+
+            if (args_.get(0) == "Flux2KleinPipeline_timesteps") {
+                auto num_steps = args_.get_one<int>("--num_steps");
+                auto packed_h = args_.get_one<int>("--packed_h");
+                auto packed_w = args_.get_one<int>("--packed_w");
+                auto images = args_.get_many<Image>("--images");
+
+                auto num_ref_tokens = pipeline.setup_timesteps(num_steps, packed_h, packed_w, images);
+                auto timesteps = pipeline.scheduler().get_timesteps();
+
+                Graph graph(runtime, {
+                    runtime.create<int64_t>({(int64_t)1}, [num_ref_tokens](std::mt19937&) {
+                        return std::vector<int64_t>({(int64_t)num_ref_tokens});
+                    }),
+                    runtime.create<int>({(int64_t)timesteps.size()}, [timesteps](std::mt19937&) {
+                        return std::move(timesteps);
+                    })
+                });
+
+                Computation computation(graph);
+
+                return computation.results();
+            }
+
+            if (args_.get(0) == "Flux2KleinPipeline_denoise") {
+                auto batch = args_.get_one<int>("--batch");
+                auto packed_h = args_.get_one<int>("--packed_h");
+                auto packed_w = args_.get_one<int>("--packed_w");
+                auto num_ref_tokens = args_.get_one<int>("--num_ref_tokens");
+                auto [prompt_embeds_shape, prompt_embeds_data] = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--prompt_embeds")).parse();
+                auto [img_ids_shape, img_ids_data] = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--img_ids")).parse();
+                auto [txt_ids_shape, txt_ids_data] = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--txt_ids")).parse();
+
+                Tensor::Shape image_latents_shape;
+                Tensor::Shape image_latent_ids_shape;
+                std::vector<float> image_latents_data;
+                std::vector<float> image_latent_ids_data;
+
+                if (num_ref_tokens > 0) {
+                    auto image_latents = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--image_latents")).parse();
+                    auto image_latent_ids = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--image_latent_ids")).parse();
+
+                    image_latents_shape = image_latents.first;
+                    image_latent_ids_shape = image_latent_ids.first;
+                    image_latents_data = std::move(image_latents.second);
+                    image_latent_ids_data = std::move(image_latent_ids.second);
+                }
+
+                float timestep, dt;
+
+                auto [graph, latents] = pipeline.make_denoise_graph(
+                    runtime,
+                    batch,
+                    packed_h,
+                    packed_w,
+                    num_ref_tokens,
+                    prompt_embeds_shape,
+                    img_ids_shape,
+                    txt_ids_shape,
+                    image_latents_shape,
+                    image_latent_ids_shape,
+                    &prompt_embeds_data,
+                    &img_ids_data,
+                    &txt_ids_data,
+                    &image_latents_data,
+                    &image_latent_ids_data,
+                    &timestep,
+                    &dt
+                );
+
+                Computation computation(graph);
+
+                return {latents};
+            }
+
+            if (args_.get(0) == "Flux2KleinPipeline_decode") {
+                auto packed_h = args_.get_one<int>("--packed_h");
+                auto packed_w = args_.get_one<int>("--packed_w");
+                auto [latents_shape, latents_data] = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--latents")).parse();
+
+                auto graph = pipeline.make_decode_graph(
+                    runtime,
+                    packed_h,
+                    packed_w,
+                    latents_shape,
+                    &latents_data
+                );
+
+                Computation computation(graph);
+                
+                return computation.results();
+            }
+        }
+
+        throw std::runtime_error("Uknown command: " + args_.get(0));
+    }
+
+protected:
+    class CreateParametersVisitor : public Visitor {
+    public:
+        CreateParametersVisitor(Runtime& runtime, ArgumentParser& args)
+            : runtime_(runtime), args_(args)
+        {}
+
+        virtual void visit(Parameter& parameter, std::vector<std::string> path) {
+            auto joined_path = join_path(path);
+            auto tensor = args_.get_one<Tensor>(joined_path, {runtime_});
+            parameter.set(tensor);
+        }
+
+    private:
+        Runtime& runtime_;
+        ArgumentParser& args_;
+        
+        static std::string join_path(const std::vector<std::string>& path) {
+            return std::accumulate(std::begin(path), std::end(path), std::string("--param"), [](const std::string& acc, const std::string& x) {
+                return acc + "-" + x;
+            });
+        }
+    };
+};
+
+int main(int argc, char** argv) {
+    TestDiffusersCLI cli(argc, argv);
+    return cli.main();
+}

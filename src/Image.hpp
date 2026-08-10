@@ -14,7 +14,7 @@ public:
         std::vector<uint8_t> pixels
     );
 
-    static Image load(const std::filesystem::path& path);
+    static Image from_file(const std::filesystem::path& path);
 
     void save(const std::filesystem::path& path, int quality = 95) const;
 

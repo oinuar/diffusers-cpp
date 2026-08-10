@@ -19,7 +19,7 @@ class TestNnCLI : public TestCLI {
 public:
     TestNnCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual Plan build(Runtime& runtime) {
+    virtual std::vector<Tensor> compute(Runtime& runtime) {
 
         if (args_.get(0) == "Linear") {
             auto in_features = args_.get_one<int64_t>("--in_features");
@@ -34,7 +34,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, x);
+            auto output = model.forward(runtime, x);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
         
         if (args_.get(0) == "SiLU") {
@@ -42,7 +46,11 @@ public:
 
             SiLU model;
 
-            return model.forward(runtime, x);
+            auto output = model.forward(runtime, x);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "RMSNorm") {
@@ -58,7 +66,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, x);
+            auto output = model.forward(runtime, x);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "LayerNorm") {
@@ -75,7 +87,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, x);
+            auto output = model.forward(runtime, x);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "GroupNorm") {
@@ -93,7 +109,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, input);
+            auto output = model.forward(runtime, input);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "Conv2d") {
@@ -112,7 +132,7 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, x);
+            auto output = model.forward(runtime, x);
         }
 
         if (args_.get(0) == "FlashAttention") {
@@ -123,7 +143,11 @@ public:
 
             FlashAttentionOp attention;
 
-            return attention(runtime, q, k, v, mask);
+            auto output = attention(runtime, q, k, v, mask);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "Embedding") {
@@ -139,7 +163,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, input);
+            auto output = model.forward(runtime, input);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));

@@ -86,7 +86,7 @@ Flux2KleinPipeline::encode_prompt(Runtime& runtime, int batch, const std::string
             return std::move(m);
         });
 
-    // Extract hidden states from specific layers
+    // Extract text encoder hidden states from specific layers
     std::unordered_map<size_t, Tensor> hidden_states = {
         {9, Tensor()},
         {18, Tensor()},
@@ -122,6 +122,12 @@ Flux2KleinPipeline::encode_prompt(Runtime& runtime, int batch, const std::string
     auto prompt_embeds = permuted.reshape({batch, seq_len, 3 * hidden_dim});
 
     // Generate 4D txt_ids: (B, seq_len, 4) -> [0, 0, 0, L]
+    // matches:
+    //  t = torch.arange(1)
+    //  h = torch.arange(1)
+    //  w = torch.arange(1)
+    //  l = torch.arange(L)
+    //  coords = torch.cartesian_prod(t, h, w, l)
     auto txt_ids = runtime.create<float>({batch, seq_len, 4},
         [=](std::mt19937&) {
             std::vector<float> ids(size_t(batch) * seq_len * 4, 0.0f);
@@ -394,7 +400,7 @@ static Image preprocess_reference_image(const Image& image, int multiple, double
     // Flux2/Klein normalizes the input image to approximately
     // one megapixel while preserving the original aspect ratio.
     //
-    // Do not upscale images that are already <= 1 MP.
+    // Do not upscale images that are already <= target area.
     const double scale = std::min(1.0, std::sqrt(target_area / area));
 
     auto target_width = static_cast<size_t>(std::round(width * scale));
@@ -409,6 +415,230 @@ static Image preprocess_reference_image(const Image& image, int multiple, double
     // resize_and_crop() preserves the aspect ratio and center-crops
     // to the exact dimensions required by the VAE.
     return image.resize_and_crop(target_width, target_height);
+}
+
+Graph Flux2KleinPipeline::make_embeddings_graph(
+    Runtime& runtime,
+    int batch,
+    const std::string& prompt,
+    size_t max_seq_length,
+    int packed_h,
+    int packed_w,
+    std::vector<Image>& images)
+{
+    auto vae_multiple = vae_.scale_factor() * 2;
+
+    auto [embeds, txt_ids] =
+        encode_prompt(
+            runtime,
+            batch,
+            prompt,
+            max_seq_length);
+
+    auto img_ids =
+        prepare_img_ids(
+            runtime,
+            batch,
+            packed_h,
+            packed_w);
+
+    Tensor image_latents_concat;
+    Tensor image_latent_ids_concat;
+
+    if (!images.empty()) {
+        std::vector<Tensor> packed_imgs;
+        packed_imgs.reserve(images.size());
+
+        for (auto& img : images) {
+            img = preprocess_reference_image(img, vae_multiple);
+            auto img_tensor = image_to_tensor(runtime, img);
+            auto dist = vae_.encode(runtime, img_tensor);
+            auto mode = dist.mode(); // Shape: (B, C, H, W)
+
+            auto bn_mean = vae_.bn().running_mean()->reshape({1, -1, 1, 1});
+            auto bn_std = sqrt(vae_.bn().running_var()->reshape({1, -1, 1, 1}) + vae_.batch_norm_eps());
+            mode = (mode - bn_mean) / bn_std; // Apply to (B, C, H, W)
+
+            // 2x2 patchify + flatten:
+            //
+            // (B, C, H, W)
+            //       ↓
+            // (B, H/2 * W/2, 4C)
+            auto patched = pack_latents(mode, vae_.latent_channels(), img.height() / vae_multiple, img.width() / vae_multiple);
+
+            packed_imgs.push_back(patched);
+        }
+
+        // Concatenate reference images along the token dimension:
+        //
+        // (1, N1, 4C)
+        // (1, N2, 4C)
+        //       ↓
+        // (1, N1 + N2, 4C)
+        image_latents_concat = Tensor::cat(packed_imgs, /*axis=*/1);
+
+        // Repeat reference latents for num_images_per_prompt.
+        image_latents_concat = repeat_batch(image_latents_concat, batch);
+
+        image_latent_ids_concat = prepare_image_ids(runtime, batch, images, vae_multiple);
+    }
+
+    std::vector<Tensor> outputs = {
+        embeds,
+        txt_ids,
+        img_ids
+    };
+
+    if (!images.empty()) {
+        outputs.push_back(image_latents_concat);
+        outputs.push_back(image_latent_ids_concat);
+    }
+
+    return std::move(Graph(runtime, std::move(outputs)));
+}
+
+size_t Flux2KleinPipeline::setup_timesteps(
+    int num_steps,
+    int packed_h,
+    int packed_w,
+    const std::vector<Image>& images)
+{
+    // Number of tokens belonging to the generated image.
+    const int64_t image_seq_len =
+        static_cast<int64_t>(packed_h) * packed_w;
+
+    const int64_t vae_multiple =
+        static_cast<int64_t>(vae_.scale_factor()) * 2;
+
+    // Number of tokens belonging to all reference images.
+    size_t num_ref_tokens = 0;
+
+    for (const auto& image : images) {
+        const int64_t h =
+            static_cast<int64_t>(image.height()) / vae_multiple;
+        const int64_t w =
+            static_cast<int64_t>(image.width()) / vae_multiple;
+
+        num_ref_tokens += static_cast<size_t>(h * w);
+    }
+
+    // Scheduler shifting is based only on the generated image
+    // sequence length, not reference-image tokens.
+    const float mu = compute_empirical_mu(image_seq_len, num_steps);
+
+    scheduler_.set_timesteps(num_steps, mu);
+
+    return num_ref_tokens;
+}
+
+//
+// `latents` is the recurrent state. The following:
+//
+//     next_latents = ...;
+//     next_latents = next_latents.copy(latents);
+//
+// creates a feedback edge in the graph. After each Computation, the newly
+// computed value is copied into `latents`. Therefore repeated:
+//
+//     Computation computation(graph);
+//
+// behaves like:
+//
+//     latents = scheduler(latents, timestep_0)
+//     latents = scheduler(latents, timestep_1)
+//     latents = scheduler(latents, timestep_2)
+//     ...
+//
+// Timestep and dt are runtime-bound inputs. Their (pointer) values are
+// supplied anew for each Computation, while the graph topology remains unchanged.
+std::pair<Graph, Tensor> Flux2KleinPipeline::make_denoise_graph(
+    Runtime& runtime,
+    int batch,
+    int packed_h,
+    int packed_w,
+    size_t num_ref_tokens,
+    Tensor::Shape prompt_embeds_shape,
+    Tensor::Shape img_ids_shape,
+    Tensor::Shape txt_ids_shape,
+    Tensor::Shape image_latents_shape,
+    Tensor::Shape image_latent_ids_shape,
+    std::vector<float>* prompt_embeds_data,
+    std::vector<float>* img_ids_data,
+    std::vector<float>* txt_ids_data,
+    std::vector<float>* image_latents_data,
+    std::vector<float>* image_latent_ids_data,
+    float* current_timestep,
+    float* current_dt
+) {
+    auto prompt_embeds = runtime.create<float>(prompt_embeds_shape, [prompt_embeds_data](std::mt19937&) { return std::move(*prompt_embeds_data); });
+    auto img_ids = runtime.create<float>(img_ids_shape, [img_ids_data](std::mt19937&) { return std::move(*img_ids_data); });
+    auto txt_ids = runtime.create<float>(txt_ids_shape, [txt_ids_data](std::mt19937&) { return std::move(*txt_ids_data); });
+
+    auto latents = noisy_latents(runtime, batch, packed_h, packed_w, vae_.latent_channels());
+
+    auto latent_model_input = latents;
+    auto latent_image_ids = img_ids;
+
+    if (num_ref_tokens > 0) {
+        auto image_latents = runtime.create<float>(image_latents_shape, [image_latents_data](std::mt19937&) { return std::move(*image_latents_data); });
+        auto image_latent_ids = runtime.create<float>(image_latent_ids_shape, [image_latent_ids_data](std::mt19937&) { return std::move(*image_latent_ids_data); });
+
+        latent_model_input = Tensor::cat({latents, image_latents}, /*axis=*/1);
+        latent_image_ids = Tensor::cat({img_ids, image_latent_ids}, /*axis=*/1);
+    }
+
+    auto timestep = Tensor::empty<float>(*runtime.context(), {1});
+    runtime.bind<float>(timestep, [current_timestep](std::mt19937&) {
+        return std::vector<float>({*current_timestep});
+    });
+
+    timestep = timestep.expand(latents.shape()[0]); // Add batch
+
+    auto noise_pred = transformer_.forward(runtime,
+        /*hidden_states=*/          latent_model_input,
+        /*encoder_hidden_states=*/  prompt_embeds,
+        /*timestep=*/               timestep / 1000.0f,
+        /*img_ids=*/                latent_image_ids,
+        /*txt_ids=*/                txt_ids,
+        /*guidance=*/               std::nullopt,
+        /*num_ref_tokens=*/         num_ref_tokens
+    );
+
+    // Slice noise_pred to original latents shape if img2img
+    if (num_ref_tokens > 0)
+        noise_pred = noise_pred[{Tensor::Slice::all(), Tensor::Slice::range(0, latents.shape()[1])}];
+
+    auto dt = Tensor::empty<float>(*runtime.context(), {1});
+    runtime.bind<float>(dt, [current_dt](std::mt19937&) {
+        return std::vector<float>({*current_dt});
+    });
+
+    // Integrate latents over dt and assign latents <- latents+1
+    auto next_latents = scheduler_.integrate(noise_pred, latents, dt);
+    next_latents = next_latents.copy(latents);
+
+    return {std::move(Graph(runtime, {next_latents})), latents};
+}
+
+Graph Flux2KleinPipeline::make_decode_graph(
+    Runtime& runtime,
+    int packed_h,
+    int packed_w,
+    Tensor::Shape latents_shape,
+    std::vector<float>* latents_data
+) {
+    auto latents = runtime.create<float>(latents_shape, [latents_data](std::mt19937&) { return std::move(*latents_data); });
+
+    auto z = unpack_latents(latents, vae_.latent_channels(), packed_h, packed_w);
+
+    // BN Unnormalize before VAE decode
+    auto bn_mean = vae_.bn().running_mean()->reshape({1, -1, 1, 1});
+    auto bn_std = sqrt(vae_.bn().running_var()->reshape({1, -1, 1, 1}) + vae_.batch_norm_eps());
+    z = z * bn_std + bn_mean;
+
+    auto decoded = vae_.decode(runtime, z);    // (B, 3, H, W)
+
+    return std::move(Graph(runtime, {decoded}));
 }
 
 std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, GenerationOptions&& options) {
@@ -448,206 +678,86 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
     {
         Runtime runtime(scheduler, seed);
 
-        auto [embeds, txt_ids] =
-            encode_prompt(
-                runtime,
-                batch,
-                options.prompt,
-                options.max_sequence_length);
-
-        auto img_ids =
-            prepare_img_ids(
-                runtime,
-                batch,
-                packed_h,
-                packed_w);
-
-        Tensor image_latents_concat;
-        Tensor image_latent_ids_concat;
-
-        if (!options.images.empty()) {
-            std::vector<Tensor> packed_imgs;
-            packed_imgs.reserve(options.images.size());
-
-            for (auto& img : options.images) {
-                img = preprocess_reference_image(img, vae_multiple);
-                auto img_tensor = image_to_tensor(runtime, img);
-                auto dist = vae_.encode(runtime, img_tensor);
-                auto mode = dist.mode(); // Shape: (B, C, H, W)
-
-                auto bn_mean = vae_.bn().running_mean()->reshape({1, -1, 1, 1});
-                auto bn_std = sqrt(vae_.bn().running_var()->reshape({1, -1, 1, 1}) + vae_.batch_norm_eps());
-                mode = (mode - bn_mean) / bn_std; // Apply to (B, C, H, W)
-
-                // 2x2 patchify + flatten:
-                //
-                // (B, C, H, W)
-                //       ↓
-                // (B, H/2 * W/2, 4C)
-                auto patched = pack_latents(mode, vae_.latent_channels(), img.height() / vae_multiple, img.width() / vae_multiple);
-
-                packed_imgs.push_back(patched);
-            }
-
-            // Concatenate reference images along the token dimension:
-            //
-            // (1, N1, 4C)
-            // (1, N2, 4C)
-            //       ↓
-            // (1, N1 + N2, 4C)
-            image_latents_concat = Tensor::cat(packed_imgs, /*axis=*/1);
-
-            // Repeat reference latents for num_images_per_prompt.
-            image_latents_concat = repeat_batch(image_latents_concat, batch);
-
-            image_latent_ids_concat = prepare_image_ids(runtime, batch, options.images, vae_multiple);
-        }
-
-        std::vector<Tensor> outputs = {
-            embeds,
-            txt_ids,
-            img_ids
-        };
-
-        if (!options.images.empty()) {
-            outputs.push_back(image_latents_concat);
-            outputs.push_back(image_latent_ids_concat);
-        }
-
-        Graph graph(runtime, std::move(outputs));
+        auto graph = std::move(make_embeddings_graph(
+            runtime,
+            batch,
+            options.prompt,
+            options.max_sequence_length,
+            packed_h,
+            packed_w,
+            options.images
+        ));
         Computation computation(graph);
 
         // Prompt embeddings
-        prompt_embeds_data = computation.read<float>(embeds);
+        auto embeds = computation.results().at(0);
+        prompt_embeds_data = runtime.value<float>(embeds);
         prompt_embeds_shape = embeds.shape();
 
         // Text IDs
-        txt_ids_data = computation.read<float>(txt_ids);
+        auto txt_ids = computation.results().at(1);
+        txt_ids_data = runtime.value<float>(txt_ids);
         txt_ids_shape = txt_ids.shape();
 
         // Generation image IDs
-        img_ids_data = computation.read<float>(img_ids);
+        auto img_ids = computation.results().at(2);
+        img_ids_data = runtime.value<float>(img_ids);
         img_ids_shape = img_ids.shape();
 
         // Reference image latents and IDs
         if (!options.images.empty()) {
-            image_latents_data = computation.read<float>(image_latents_concat);
+            auto image_latents_concat = computation.results().at(3);
+            image_latents_data = runtime.value<float>(image_latents_concat);
             image_latents_shape = image_latents_concat.shape();
 
-            image_latent_ids_data = computation.read<float>(image_latent_ids_concat);
+            auto image_latent_ids_concat = computation.results().at(4);
+            image_latent_ids_data = runtime.value<float>(image_latent_ids_concat);
             image_latent_ids_shape = image_latent_ids_concat.shape();
         }
     }
 
     // 2. Setup timesteps
-    size_t num_ref_tokens = 0;
-    {
-        auto image_seq_len = int64_t(packed_h) * packed_w;
-
-        if (!options.images.empty())
-            num_ref_tokens =
-                options.images.size() *
-                packed_h *
-                packed_w;
-
-        auto mu =
-            compute_empirical_mu(
-                image_seq_len,
-                options.num_inference_steps);
-
-        scheduler_.set_timesteps(
-            options.num_inference_steps,
-            mu);
-    }
+    auto num_ref_tokens = setup_timesteps(options.num_inference_steps, packed_h, packed_w, options.images);
     
     // 3. Denoise in latent space
-    //
-    // `latents` is the recurrent state. The following:
-    //
-    //     next_latents = ...;
-    //     next_latents = next_latents.copy(latents);
-    //
-    // creates a feedback edge in the graph. After each Computation, the newly
-    // computed value is copied into `latents`. Therefore repeated:
-    //
-    //     Computation computation(graph);
-    //
-    // behaves like:
-    //
-    //     latents = scheduler(latents, timestep_0)
-    //     latents = scheduler(latents, timestep_1)
-    //     latents = scheduler(latents, timestep_2)
-    //     ...
-    //
-    // Timestep and dt are runtime-bound inputs. Their (referenced) values are
-    // supplied anew for each Computation, while the graph topology remains unchanged.
     std::vector<float> latents_data;
     Tensor::Shape latents_shape;
     {
         Runtime runtime(scheduler, seed);
+        float timestep, dt;
 
-        auto prompt_embeds = runtime.create<float>(prompt_embeds_shape, [&](std::mt19937&) { return std::move(prompt_embeds_data); });
-        auto img_ids = runtime.create<float>(img_ids_shape, [&](std::mt19937&) { return std::move(img_ids_data); });
-        auto txt_ids = runtime.create<float>(txt_ids_shape, [&](std::mt19937&) { return std::move(txt_ids_data); });
+        auto [graph, latents] = std::move(make_denoise_graph(
+            runtime,
+            batch,
+            packed_h,
+            packed_w,
+            num_ref_tokens,
+            prompt_embeds_shape,
+            img_ids_shape,
+            txt_ids_shape,
+            image_latents_shape,
+            image_latent_ids_shape,
+            &prompt_embeds_data,
+            &img_ids_data,
+            &txt_ids_data,
+            &image_latents_data,
+            &image_latent_ids_data,
+            &timestep,
+            &dt
+        ));
 
-        auto latents = noisy_latents(runtime, batch, packed_h, packed_w, vae_.latent_channels());
-
-        auto latent_model_input = latents;
-        auto latent_image_ids = img_ids;
-
-        if (!options.images.empty()) {
-            auto image_latents = runtime.create<float>(image_latents_shape, [&](std::mt19937&) { return std::move(image_latents_data); });
-            auto image_latent_ids = runtime.create<float>(image_latent_ids_shape, [&](std::mt19937&) { return std::move(image_latent_ids_data); });
-
-            latent_model_input = Tensor::cat({latents, image_latents}, /*axis=*/1);
-            latent_image_ids = Tensor::cat({img_ids, image_latent_ids}, /*axis=*/1);
-        }
-
-        float current_timestep;
-        auto timestep = Tensor::empty<float>(*runtime.context(), {1});
-        runtime.bind<float>(timestep, [&](std::mt19937&) {
-            return std::vector<float>({current_timestep});
-        });
-
-        timestep = timestep.expand(latents.shape()[0]); // Add batch
-
-        auto noise_pred = transformer_.forward(runtime,
-            /*hidden_states=*/          latent_model_input,
-            /*encoder_hidden_states=*/  prompt_embeds,
-            /*timestep=*/               timestep / 1000.0f,
-            /*img_ids=*/                latent_image_ids,
-            /*txt_ids=*/                txt_ids,
-            /*guidance=*/               std::nullopt,
-            /*num_ref_tokens=*/         num_ref_tokens
-        );
-
-        // Slice noise_pred to original latents shape if img2img
-        if (num_ref_tokens > 0)
-            noise_pred = noise_pred[{Tensor::Slice::all(), Tensor::Slice::range(0, latents.shape()[1])}];
-
-        float current_dt;
-        auto dt = Tensor::empty<float>(*runtime.context(), {1});
-        runtime.bind<float>(dt, [&](std::mt19937&) {
-            return std::vector<float>({current_dt});
-        });
-
-        // Integrate latents over dt and assign latents <- latents+1
-        auto next_latents = scheduler_.integrate(noise_pred, latents, dt);
-        next_latents = next_latents.copy(latents);
-
-        Graph denoise(runtime, {next_latents});
         ProgressBar progress("Denoising", scheduler_.get_timesteps().size());
 
         for (auto i = 0; i < scheduler_.get_timesteps().size(); ++i) {
-            auto [step_timestep, step_dt] = scheduler_.step(i);
-            current_timestep = step_timestep;
-            current_dt = step_dt;
+            auto [current_timestep, current_dt] = scheduler_.step(i);
+            timestep = current_timestep;
+            dt = current_dt;
 
-            Computation computation(denoise);
+            Computation computation(graph);
 
             // Extract latents from the last denoising step
             if (i == scheduler_.get_timesteps().size() - 1) {
-                latents_data = computation.read<float>(latents);
+                latents_data = runtime.value<float>(latents);
                 latents_shape = latents.shape();
             }
 
@@ -660,21 +770,18 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
     {
         Runtime runtime(scheduler, seed);
 
-        auto latents = runtime.create<float>(latents_shape, [&](std::mt19937&) { return std::move(latents_data); });
+        auto graph = std::move(make_decode_graph(
+            runtime,
+            packed_h,
+            packed_w,
+            latents_shape,
+            &latents_data
+        ));
 
-        auto z = unpack_latents(latents, vae_.latent_channels(), packed_h, packed_w);
-
-        // BN Unnormalize before VAE decode
-        auto bn_mean = vae_.bn().running_mean()->reshape({1, -1, 1, 1});
-        auto bn_std = sqrt(vae_.bn().running_var()->reshape({1, -1, 1, 1}) + vae_.batch_norm_eps());
-        z = z * bn_std + bn_mean;
-
-        auto decoded = vae_.decode(runtime, z);    // (B, 3, H, W)
-
-        Graph graph(runtime, {decoded});
         Computation computation(graph);
 
-        auto data = computation.read<float>(decoded);
+        auto decoded = computation.results().at(0);
+        auto data = runtime.value<float>(decoded);
 
         images = latents_to_images(std::move(data), batch, target_height, target_width);
     }

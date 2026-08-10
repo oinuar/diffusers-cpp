@@ -19,7 +19,7 @@ struct ArgumentParser::parser<Tensor::Shape> {
             throw std::runtime_error("invalid argument " + option + ": " + error.what());
         }
     }
-private:
+
     class ShapeParser {
     public:
         explicit ShapeParser(const std::string& input)

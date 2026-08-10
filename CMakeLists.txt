@@ -137,6 +137,7 @@ add_subdirectory(json)
 # ---------------------------------------------------------------------------
 
 file(GLOB_RECURSE DIFFUSERS_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Image.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/diffusers/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/ggml/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/nn/*.cpp"
@@ -224,6 +225,13 @@ if(DIFFUSERS_BUILD_TESTS)
 
     target_include_directories(test-transformers-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(test-transformers-cli PRIVATE diffusers)
+    
+    add_executable(test-flux2-cli
+        test/utils/flux2-cli/main.cpp
+    )
+
+    target_include_directories(test-flux2-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(test-flux2-cli PRIVATE diffusers)
 
     # Generate an individual ctest entry for each test
     file(
@@ -252,6 +260,8 @@ if(DIFFUSERS_BUILD_TESTS)
             set(CLI_TARGET test-tensor-cli)
         elseif(TEST_FILE MATCHES "^src/nn/")
             set(CLI_TARGET test-nn-cli)
+        elseif(TEST_FILE MATCHES "^src/diffusers/models/transformers/flux2/")
+            set(CLI_TARGET test-flux2-cli)
         elseif(TEST_FILE MATCHES "^src/diffusers/")
             set(CLI_TARGET test-diffusers-cli)
         elseif(TEST_FILE MATCHES "^src/transformers/")

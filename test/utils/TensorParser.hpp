@@ -35,6 +35,7 @@ struct ArgumentParser::parser<Tensor> {
 private:
     Runtime& runtime_;
 
+public:
     class TensorParser {
     public:
         explicit TensorParser(std::string_view s)

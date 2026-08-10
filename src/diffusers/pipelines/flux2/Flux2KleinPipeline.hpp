@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ggml/Tensor.hpp"
+#include "ggml/Graph.hpp"
 #include "Image.hpp"
 #include "transformers/models/qwen3/Qwen3ForCausalLM.hpp"
 #include "transformers/models/qwen2/Qwen2TokenizerFast.hpp"
@@ -16,6 +17,39 @@ class Backend;
 class Runtime;
 class Scheduler;
 
+// 
+//                     ┌────────────────────┐
+// prompt ────────────►│ Qwen3 text encoder │
+//                     └─────────┬──────────┘
+//                               │
+//                     prompt_embeds + txt_ids
+//                               │
+//                               ▼
+//                          ┌─────────┐
+// noise ────────────────►  │         │
+// timestep ─────────────►  │ Flux2   │
+// img_ids ──────────────►  │transform│
+// image latents ────────►  └─────────┘
+//                               │
+//                               ▼
+//                          noise_pred
+//                               │
+//                               ▼
+//                          scheduler
+//                               │
+//                               ▼
+//                          next_latents
+//                               │
+//                          repeat N times
+//                               │
+//                               ▼
+//                          unpack / BN
+//                               │
+//                               ▼
+//                             VAE
+//                               │
+//                               ▼
+//                            image
 class Flux2KleinPipeline {
 public:
     struct GenerationOptions {
@@ -41,6 +75,49 @@ public:
           tokenizer_(std::move(tokenizer)) {}
 
     std::vector<Image> operator ()(Scheduler& scheduler, GenerationOptions&& options);
+
+    Graph make_embeddings_graph(
+        Runtime& runtime,
+        int batch,
+        const std::string& prompt,
+        size_t max_seq_length,
+        int packed_h,
+        int packed_w,
+        std::vector<Image>& images);
+
+    std::pair<Graph, Tensor> make_denoise_graph(
+        Runtime& runtime,
+        int batch,
+        int packed_h,
+        int packed_w,
+        size_t num_ref_tokens,
+        Tensor::Shape prompt_embeds_shape,
+        Tensor::Shape img_ids_shape,
+        Tensor::Shape txt_ids_shape,
+        Tensor::Shape image_latents_shape,
+        Tensor::Shape image_latent_ids_shape,
+        std::vector<float>* prompt_embeds_data,
+        std::vector<float>* img_ids_data,
+        std::vector<float>* txt_ids_data,
+        std::vector<float>* image_latents_data,
+        std::vector<float>* image_latent_ids_data,
+        float* timestep,
+        float* dt
+    );
+
+    Graph make_decode_graph(
+        Runtime& runtime,
+        int packed_h,
+        int packed_w,
+        Tensor::Shape latents_shape,
+        std::vector<float>* latents_data
+    );
+
+    size_t setup_timesteps(int num_steps, int packed_h, int packed_w, const std::vector<Image>& images);
+
+    const FlowMatchEulerDiscreteScheduler& scheduler() const {
+        return scheduler_;
+    }
 
 private:
     std::pair<Tensor, Tensor> encode_prompt(Runtime& runtime, int batch, const std::string& prompt, size_t max_sequence_length);

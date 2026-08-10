@@ -22,24 +22,13 @@
 #include "diffusers/models/autoencoders/vae/Encoder.hpp"
 #include "diffusers/models/autoencoders/AutoencoderKLFlux2.hpp"
 
-#include "diffusers/models/transformers/flux2/Flux2SwiGLU.hpp"
-#include "diffusers/models/transformers/flux2/Flux2FeedForward.hpp"
-#include "diffusers/models/transformers/flux2/Flux2Modulation.hpp"
-#include "diffusers/models/transformers/flux2/Flux2TimestepGuidanceEmbeddings.hpp"
-#include "diffusers/models/transformers/flux2/Flux2PosEmbed.hpp"
-#include "diffusers/models/transformers/flux2/Flux2Attention.hpp"
-#include "diffusers/models/transformers/flux2/Flux2ParallelSelfAttention.hpp"
-#include "diffusers/models/transformers/flux2/Flux2SingleTransformerBlock.hpp"
-#include "diffusers/models/transformers/flux2/Flux2TransformerBlock.hpp"
-#include "diffusers/models/transformers/flux2/Flux2Transformer2DModel.hpp"
-
 #include <numeric>
 
 class TestDiffusersCLI : public TestCLI {
 public:
     TestDiffusersCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual Plan build(Runtime& runtime) {
+    virtual std::vector<Tensor> compute(Runtime& runtime) {
 
         if (args_.get(0) == "AdaLayerNormContinuous") {
             auto embedding_dim = args_.get_one<int64_t>("--embedding_dim");
@@ -57,7 +46,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, hidden_states, conditioning_embedding);
+            auto output = model.forward(runtime, hidden_states, conditioning_embedding);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "SpatialNorm") {
@@ -73,7 +66,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, f, zq);
+            auto output = model.forward(runtime, f, zq);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "Upsample2D") {
@@ -90,7 +87,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, hidden_states);
+            auto output = model.forward(runtime, hidden_states);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "Downsample2D") {
@@ -107,7 +108,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, hidden_states);
+            auto output = model.forward(runtime, hidden_states);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "ResnetBlock2D") {
@@ -151,7 +156,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, hidden_states, temb);
+            auto output = model.forward(runtime, hidden_states, temb);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
 
@@ -179,7 +188,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, sample, latent_embeds);
+            auto output = model.forward(runtime, sample, latent_embeds);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "Encoder") {
@@ -207,7 +220,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, sample);
+            auto output = model.forward(runtime, sample);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "AutoencoderKLFlux2") {
@@ -243,10 +260,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, sample, sample_posterior);
+            auto output = model.forward(runtime, sample, sample_posterior);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
-
-
 
         if (args_.get(0) == "TimestepEmbedding") {
             auto in_channels = args_.get_one<int64_t>("--in_channels");
@@ -264,7 +283,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, sample, condition);
+            auto output = model.forward(runtime, sample, condition);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "Timesteps") {
@@ -281,7 +304,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, timesteps);
+            auto output = model.forward(runtime, timesteps);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "Attention") {
@@ -315,7 +342,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, hidden_states);
+            auto output = model.forward(runtime, hidden_states);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
 
@@ -350,7 +381,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, sample, temb);
+            auto output = model.forward(runtime, sample, temb);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
         
         if (args_.get(0) == "DownEncoderBlock2D") {
@@ -381,7 +416,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, hidden_states);
+            auto output = model.forward(runtime, hidden_states);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "UpDecoderBlock2D") {
@@ -414,337 +453,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            return model.forward(runtime, hidden_states, temb);
-        }
+            auto output = model.forward(runtime, hidden_states, temb);
 
-
-
-        if (args_.get(0) == "Flux2SwiGLU") {
-            auto x = args_.get_one<Tensor>("--x", {runtime});
-
-            Flux2SwiGLU model;
-
-            return model.forward(runtime, x);
-        }
-
-        if (args_.get(0) == "Flux2FeedForward") {
-            auto dim = args_.get_one<int64_t>("--dim");
-            auto dim_out = args_.get_optional<int64_t>("--dim_out");
-            auto mult = args_.get_optional<float>("--mult").value_or(3.0);
-            auto inner_dim = args_.get_optional<int64_t>("--inner_dim");
-            auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto x = args_.get_one<Tensor>("--x", {runtime});
-
-            Flux2FeedForward model(dim, dim_out, mult, inner_dim, bias);
-
-            CreateParametersVisitor create_parameters(runtime, args_);
-            RethrowVisitor visitor(create_parameters);
-            model.accept(visitor);
-            visitor.rethrow();
-
-            return model.forward(runtime, x);
-        }
-
-        if (args_.get(0) == "Flux2Modulation") {
-            auto dim = args_.get_one<int64_t>("--dim");
-            auto mod_param_sets = args_.get_optional<int64_t>("--mod_param_sets").value_or(2);
-            auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto temb = args_.get_one<Tensor>("--temb", {runtime});
-
-            Flux2Modulation model(dim, mod_param_sets, bias);
-
-            CreateParametersVisitor create_parameters(runtime, args_);
-            RethrowVisitor visitor(create_parameters);
-            model.accept(visitor);
-            visitor.rethrow();
-
-            return model.forward(runtime, temb);
-        }
-
-        if (args_.get(0) == "Flux2TimestepGuidanceEmbeddings") {
-            auto in_channels = args_.get_one<int64_t>("--in_channels");
-            auto embedding_dim = args_.get_one<int64_t>("--embedding_dim");
-            auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto guidance_embeds = args_.get_optional<bool>("--guidance_embeds").value_or(true);
-            auto timestep = args_.get_one<Tensor>("--timestep", {runtime});
-            auto guidance = args_.get_optional<Tensor>("--guidance", {runtime});
-
-            Flux2TimestepGuidanceEmbeddings model(in_channels, embedding_dim, bias, guidance_embeds);
-
-            CreateParametersVisitor create_parameters(runtime, args_);
-            RethrowVisitor visitor(create_parameters);
-            model.accept(visitor);
-            visitor.rethrow();
-
-            return model.forward(runtime, timestep, guidance);
-        }
-
-        if (args_.get(0) == "Flux2PosEmbed") {
-            auto theta = args_.get_one<int64_t>("--theta");
-            auto axes_dim = args_.get_many<int64_t>("--axes_dim");
-            auto x = args_.get_one<Tensor>("--x", {runtime});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {runtime});
-
-            Flux2PosEmbed model(theta, axes_dim);
-
-            CreateParametersVisitor create_parameters(runtime, args_);
-            RethrowVisitor visitor(create_parameters);
-            model.accept(visitor);
-            visitor.rethrow();
-
-            return model.forward(runtime, x, position_ids);
-        }
-
-        if (args_.get(0) == "Flux2Attention") {
-            auto query_dim = args_.get_one<int64_t>("--query_dim");
-            auto heads = args_.get_optional<int64_t>("--heads").value_or(8);
-            auto dim_head = args_.get_optional<int64_t>("--dim_head").value_or(64);
-            auto dropout = args_.get_optional<float>("--dropout").value_or(0.0);
-            auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto added_kv_proj_dim = args_.get_optional<int64_t>("--added_kv_proj_dim");
-            auto added_proj_bias = args_.get_optional<bool>("--added_proj_bias").value_or(true);
-            auto out_bias = args_.get_optional<bool>("--out_bias").value_or(true);
-            auto eps = args_.get_optional<float>("--eps").value_or(1e-5);
-            auto out_dim = args_.get_optional<int64_t>("--out_dim");
-            auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
-            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {runtime});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {runtime});
-            auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
-            auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {runtime});
-
-            auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
-                std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
-                *position_ids
-            )) : std::nullopt;
-
-            Flux2Attention<ScaledDotProductAttention<FlashAttentionOp>> model(
-                query_dim,
-                heads,
-                dim_head,
-                dropout,
-                bias,
-                added_kv_proj_dim,
-                added_proj_bias,
-                out_bias,
-                eps,
-                out_dim,
-                elementwise_affine
-            );
-
-            CreateParametersVisitor create_parameters(runtime, args_);
-            RethrowVisitor visitor(create_parameters);
-            model.accept(visitor);
-            visitor.rethrow();
-
-            auto [y1, y2] = model.forward(runtime, hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb);
-            std::vector<Tensor> results;
-
-            results.push_back(y1);
-
-            if (y2)
-                results.push_back(*y2);
-
-            return results;
-        }
-
-        if (args_.get(0) == "Flux2ParallelSelfAttention") {
-            auto query_dim = args_.get_one<int64_t>("--query_dim");
-            auto heads = args_.get_optional<int64_t>("--heads").value_or(8);
-            auto dim_head = args_.get_optional<int64_t>("--dim_head").value_or(64);
-            auto dropout = args_.get_optional<float>("--dropout").value_or(0.0);
-            auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto out_bias = args_.get_optional<bool>("--out_bias").value_or(true);
-            auto eps = args_.get_optional<float>("--eps").value_or(1e-5);
-            auto out_dim = args_.get_optional<int64_t>("--out_dim");
-            auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
-            auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(4.0);
-            auto mlp_mult_factor = args_.get_optional<int64_t>("--mlp_mult_factor").value_or(2);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {runtime});
-            auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
-            auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {runtime});
-
-            auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
-                std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
-                *position_ids
-            )) : std::nullopt;
-
-            Flux2ParallelSelfAttention<ScaledDotProductAttention<FlashAttentionOp>> model(
-                query_dim,
-                heads,
-                dim_head,
-                dropout,
-                bias,
-                out_bias,
-                eps,
-                out_dim,
-                elementwise_affine,
-                mlp_ratio,
-                mlp_mult_factor
-            );
-
-            CreateParametersVisitor create_parameters(runtime, args_);
-            RethrowVisitor visitor(create_parameters);
-            model.accept(visitor);
-            visitor.rethrow();
-
-            return model.forward(runtime, hidden_states, attention_mask, image_rotary_emb);
-        }
-
-        if (args_.get(0) == "Flux2SingleTransformerBlock") {
-            auto dim = args_.get_one<int64_t>("--dim");
-            auto num_attention_heads = args_.get_one<int64_t>("--num_attention_heads");
-            auto attention_head_dim = args_.get_one<int64_t>("--attention_head_dim");
-            auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(3.0);
-            auto eps = args_.get_optional<float>("--eps").value_or(1e-6);
-            auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
-            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {runtime});
-            auto temb_mod = args_.get_one<Tensor>("--temb_mod", {runtime});
-            auto split_hidden_states = args_.get_optional<bool>("--split_hidden_states").value_or(false);
-            auto text_seq_len = args_.get_optional<int64_t>("--text_seq_len");
-            auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
-            auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {runtime});
-
-            auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
-                std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
-                *position_ids
-            )) : std::nullopt;
-
-            Flux2SingleTransformerBlock<ScaledDotProductAttention<FlashAttentionOp>> model(
-                dim,
-                num_attention_heads,
-                attention_head_dim,
-                mlp_ratio,
-                eps,
-                bias
-            );
-
-            CreateParametersVisitor create_parameters(runtime, args_);
-            RethrowVisitor visitor(create_parameters);
-            model.accept(visitor);
-            visitor.rethrow();
-
-            auto [y1, y2] = model.forward(
-                runtime,
-                hidden_states,
-                encoder_hidden_states,
-                temb_mod,
-                image_rotary_emb,
-                split_hidden_states,
-                text_seq_len
-            );
-
-            std::vector<Tensor> results;
-
-            results.push_back(y1);
-
-            if (y2)
-                results.push_back(*y2);
-
-            return results;
-        }
-
-        if (args_.get(0) == "Flux2TransformerBlock") {
-            auto dim = args_.get_one<int64_t>("--dim");
-            auto num_attention_heads = args_.get_one<int64_t>("--num_attention_heads");
-            auto attention_head_dim = args_.get_one<int64_t>("--attention_head_dim");
-            auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(3.0);
-            auto eps = args_.get_optional<float>("--eps").value_or(1e-6);
-            auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
-            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {runtime});
-            auto temb_mod_img = args_.get_one<Tensor>("--temb_mod_img", {runtime});
-            auto temb_mod_txt = args_.get_one<Tensor>("--temb_mod_txt", {runtime});
-            auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
-            auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {runtime});
-
-            auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
-                std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
-                *position_ids
-            )) : std::nullopt;
-
-            Flux2TransformerBlock<ScaledDotProductAttention<FlashAttentionOp>> model(
-                dim,
-                num_attention_heads,
-                attention_head_dim,
-                mlp_ratio,
-                eps,
-                bias
-            );
-
-            CreateParametersVisitor create_parameters(runtime, args_);
-            RethrowVisitor visitor(create_parameters);
-            model.accept(visitor);
-            visitor.rethrow();
-
-            auto [y1, y2] = model.forward(
-                runtime,
-                hidden_states,
-                encoder_hidden_states,
-                temb_mod_img,
-                temb_mod_txt,
-                image_rotary_emb
-            );
-
-            return {{y1, y2}};
-        }
-
-        if (args_.get(0) == "Flux2Transformer2DModel") {
-            Flux2Transformer2DModel::Config config;
-
-            config.patch_size = args_.get_optional<int64_t>("--patch_size").value_or(config.patch_size);
-            config.in_channels = args_.get_optional<int64_t>("--in_channels").value_or(config.in_channels);
-            config.out_channels = args_.get_optional<int64_t>("--out_channels");
-            config.num_layers = args_.get_optional<int64_t>("--num_layers").value_or(config.num_layers);
-            config.num_single_layers = args_.get_optional<int64_t>("--num_single_layers").value_or(config.num_single_layers);
-            config.attention_head_dim = args_.get_optional<int64_t>("--attention_head_dim").value_or(config.attention_head_dim);
-            config.num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.num_attention_heads);
-            config.joint_attention_dim = args_.get_optional<int64_t>("--joint_attention_dim").value_or(config.joint_attention_dim);
-            config.timestep_guidance_channels = args_.get_optional<int64_t>("--timestep_guidance_channels").value_or(config.timestep_guidance_channels);
-            config.mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(config.mlp_ratio);
-            auto axes_dims_rope = args_.get_many<int64_t>("--axes_dims_rope");
-            config.rope_theta = args_.get_optional<int64_t>("--rope_theta").value_or(config.rope_theta);
-            config.eps = args_.get_optional<float>("--eps").value_or(config.eps);
-            config.guidance_embeds = args_.get_optional<bool>("--guidance_embeds").value_or(config.guidance_embeds);
-
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
-            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {runtime});
-            auto timestep = args_.get_one<Tensor>("--timestep", {runtime});
-            auto img_ids = args_.get_one<Tensor>("--img_ids", {runtime});
-            auto txt_ids = args_.get_one<Tensor>("--txt_ids", {runtime});
-            auto guidance = args_.get_optional<Tensor>("--guidance", {runtime});
-            auto num_ref_tokens = args_.get_optional<int64_t>("--num_ref_tokens").value_or(0);
-            auto ref_fixed_timestep = args_.get_optional<float>("--ref_fixed_timestep").value_or(0.0f);
-
-            if (!axes_dims_rope.empty())
-                config.axes_dims_rope = axes_dims_rope;
-
-            Flux2Transformer2DModel model(config);
-
-            CreateParametersVisitor create_parameters(runtime, args_);
-            RethrowVisitor visitor(create_parameters);
-            model.accept(visitor);
-            visitor.rethrow();
-
-            return model.forward(
-                runtime,
-                hidden_states,
-                encoder_hidden_states,
-                timestep,
-                img_ids,
-                txt_ids,
-                guidance,
-                //std::nullopt,   // kv_cache
-                //std::nullopt,   // kv_cache_mode
-                num_ref_tokens,
-                ref_fixed_timestep
-            );
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));
@@ -761,9 +474,6 @@ protected:
             auto joined_path = join_path(path);
             auto tensor = args_.get_one<Tensor>(joined_path, {runtime_});
             parameter.set(tensor);
-        }
-
-        virtual void visit(Value& value, std::vector<std::string> path) {
         }
 
     private:

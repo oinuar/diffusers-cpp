@@ -18,6 +18,10 @@ public:
 
     void save(const std::filesystem::path& path, int quality = 95) const;
 
+    Image resize(size_t width, size_t height) const;
+
+    Image resize_and_crop(size_t width, size_t height) const;
+
     size_t width() const {
         return width_;
     }

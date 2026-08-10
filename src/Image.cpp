@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <stdexcept>
 #include <string>
+#include <cmath>
 #include <stb_image.h>
 #include <stb_image_write.h>
+#include <stb_image_resize2.h>
 
 Image::Image(
     size_t width,
@@ -162,4 +164,109 @@ void Image::save(const std::filesystem::path& path, int quality) const {
         throw std::runtime_error(
             "Image::save(): failed to write image"
         );
+}
+
+Image Image::resize(size_t width, size_t height) const {
+    if (width == 0 || height == 0)
+        throw std::invalid_argument(
+            "Image::resize(): dimensions must be greater than zero");
+
+    if (width == width_ && height == height_)
+        return *this;
+
+    std::vector<uint8_t> resized(
+        width * height * channels_);
+
+    const stbir_pixel_layout layout =
+        channels_ == 1 ? STBIR_1CHANNEL :
+        channels_ == 2 ? STBIR_RA :
+        channels_ == 3 ? STBIR_RGB :
+        channels_ == 4 ? STBIR_RGBA :
+        throw std::invalid_argument(
+            "Image::resize(): unsupported channel count: " +
+            std::to_string(channels_));
+
+    const auto result = stbir_resize_uint8_srgb(
+        pixels_.data(),
+        static_cast<int>(width_),
+        static_cast<int>(height_),
+        static_cast<int>(width_ * channels_),
+        resized.data(),
+        static_cast<int>(width),
+        static_cast<int>(height),
+        static_cast<int>(width * channels_),
+        layout
+    );
+
+    if (!result)
+        throw std::runtime_error(
+            "Image::resize(): stb_image_resize failed");
+
+    return Image(
+        width,
+        height,
+        channels_,
+        std::move(resized)
+    );
+}
+
+Image Image::resize_and_crop(size_t width, size_t height) const {
+    if (width == 0 || height == 0)
+        throw std::invalid_argument(
+            "Image::resize_and_crop(): dimensions must be greater than zero");
+
+    if (width_ == width && height_ == height)
+        return *this;
+
+    // Scale so that the requested rectangle is completely covered.
+    const double scale = std::max(
+        static_cast<double>(width) / width_,
+        static_cast<double>(height) / height_);
+
+    const size_t resized_width =
+        std::max<size_t>(
+            1,
+            static_cast<size_t>(
+                std::round(width_ * scale)));
+
+    const size_t resized_height =
+        std::max<size_t>(
+            1,
+            static_cast<size_t>(
+                std::round(height_ * scale)));
+
+    Image resized =
+        resize(resized_width, resized_height);
+
+    // Center crop.
+    const size_t left =
+        (resized_width - width) / 2;
+
+    const size_t top =
+        (resized_height - height) / 2;
+
+    std::vector<uint8_t> cropped(
+        width * height * channels_);
+
+    for (size_t y = 0; y < height; ++y) {
+        const uint8_t* src =
+            resized.pixels_.data() +
+            ((top + y) * resized_width + left) * channels_;
+
+        uint8_t* dst =
+            cropped.data() +
+            y * width * channels_;
+
+        std::copy(
+            src,
+            src + width * channels_,
+            dst);
+    }
+
+    return Image(
+        width,
+        height,
+        channels_,
+        std::move(cropped)
+    );
 }

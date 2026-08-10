@@ -29,9 +29,9 @@ public:
 
     const std::vector<int>& get_timesteps() const;
 
-    float step();
+    std::pair<int, float> step(size_t step_index) const;
 
-    Tensor integrate(const Tensor& model_output, const Tensor& sample, const Tensor& dt);
+    Tensor integrate(const Tensor& model_output, const Tensor& sample, const Tensor& dt) const;
 
     void reset_step_index();
 
@@ -45,7 +45,6 @@ private:
 
     std::vector<float> sigmas;
     std::vector<int> timesteps;
-    int step_index;
 
     float sigma_max;
     float sigma_min;

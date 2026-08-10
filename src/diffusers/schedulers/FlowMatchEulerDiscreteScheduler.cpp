@@ -12,8 +12,7 @@ FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(
     use_dynamic_shifting(use_dynamic_shifting),
     shift_terminal(shift_terminal),
     invert_sigmas(invert_sigmas),
-    time_shift_type(time_shift_type),
-    step_index(0)
+    time_shift_type(time_shift_type)
 {
     // Initialize default sigmas bounds matching Python's linspace logic
     sigma_max = 1.0f;
@@ -39,7 +38,6 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps(
     float mu,
     std::optional<std::vector<float>> sigmas_override
 ) {
-    step_index = 0;
     std::vector<float> current_sigmas;
 
     if (sigmas_override.has_value()) {
@@ -99,33 +97,21 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps(
     } else {
         sigmas.push_back(0.0f);
     }
-
-    reset_step_index();
 }
 
 const std::vector<int>& FlowMatchEulerDiscreteScheduler::get_timesteps() const {
     return timesteps;
 }
 
-void FlowMatchEulerDiscreteScheduler::reset_step_index() {
-    step_index = 0;
-}
-
-float FlowMatchEulerDiscreteScheduler::step() {
+std::pair<int, float> FlowMatchEulerDiscreteScheduler::step(size_t step_index) const {
     float sigma = sigmas[step_index];
     float sigma_next = sigmas[step_index + 1];
     float dt = sigma_next - sigma;
-    
-    ++step_index;
 
-    return dt;
+    return {timesteps[step_index], dt};
 }
 
-Tensor FlowMatchEulerDiscreteScheduler::integrate(
-    const Tensor& model_output,
-    const Tensor& sample,
-    const Tensor& dt
-) {
+Tensor FlowMatchEulerDiscreteScheduler::integrate(const Tensor& model_output, const Tensor& sample, const Tensor& dt) const {
     auto prev_sample = sample + dt * model_output;
 
     return prev_sample;

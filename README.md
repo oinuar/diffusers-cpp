@@ -11,14 +11,21 @@ This project ports selected Python diffusers pipelines to C++, providing a drop-
 - **Performance**: Leverage ggml's optimized backends (CPU, CUDA, ROCm, Metal, Vulkan) for fast inference.
 - **Modular**: Mirror the diffusers architecture — `Module` hierarchy with visitor-based weight loading.
 
+## Implemented Pipelines
+
+| Pipeline | Status | Components |
+|----------|--------|------|
+| [Flux2KleinPipeline](src/diffusers/pipelines/flux2/Flux2KleinPipeline.hpp) | Ported | [Flux2Transformer2DModel](src/diffusers/models/transformers/flux2/Flux2Transformer2DModel.hpp), [Qwen3ForCausalLM](src/transformers/models/qwen3/Qwen3ForCausalLM.hpp), [AutoencoderKLFlux2](src/diffusers/models/autoencoders/AutoencoderKLFlux2.hpp), [Qwen2TokenizerFast](src/transformers/models/qwen2/Qwen2TokenizerFast.hpp) |
+| Ideogram 4.0 | Planned | — |
+| Wan 2.2 | Planned | — |
+
 ## Build Instructions
 
 ### Prerequisites
 
 - CMake 3.18+
 - C++17 compiler (GCC 9+, Clang 10+, MSVC 19.20+)
-- [ggml](https://github.com/ggml-org/ggml) — cloned as a git submodule
-- Python 3.8+ (for running unit tests)
+- [uv](https://docs.astral.sh/uv/) (for running tests)
 
 ### Clone & Build
 

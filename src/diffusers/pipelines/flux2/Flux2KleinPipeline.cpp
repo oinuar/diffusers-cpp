@@ -19,7 +19,7 @@
 
 Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(Backend& loader_backend, const std::filesystem::path& path) {
     // 1. Initialize models from config
-    Qwen2TokenizerFast tokenizer(path / "tokenizer" / "config.json");
+    Qwen2TokenizerFast tokenizer(path / "tokenizer" / "tokenizer.json");
     Qwen3ForCausalLM text_encoder(Qwen3Config::from_file(path / "text_encoder" / "config.json"));
     Flux2Transformer2DModel transformer(Flux2Transformer2DModel::Config::from_file(path / "transformer" / "config.json"));
     AutoencoderKLFlux2 vae(AutoencoderKLFlux2::Config::from_file(path / "vae" / "config.json"));

@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+import pathlib
 import torch
 from diffusers import (
     AutoencoderKLFlux2,
@@ -15,135 +16,14 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
 
     @classmethod
     def setUpClass(cls):
-        tokenizer_json = {
-            "version": "1.0",
-            "truncation": None,
-            "padding": None,
-            "added_tokens": [
-                {
-                    "id": 0,
-                    "content": "<|endoftext|>",
-                    "single_word": False,
-                    "lstrip": False,
-                    "rstrip": False,
-                    "normalized": False,
-                    "special": True,
-                },
-                {
-                    "id": 1,
-                    "content": "<|im_start|>",
-                    "single_word": False,
-                    "lstrip": False,
-                    "rstrip": False,
-                    "normalized": False,
-                    "special": True,
-                },
-                {
-                    "id": 2,
-                    "content": "<|im_end|>",
-                    "single_word": False,
-                    "lstrip": False,
-                    "rstrip": False,
-                    "normalized": False,
-                    "special": True,
-                },
-            ],
-            "normalizer": None,
-            "pre_tokenizer": {
-                "type": "ByteLevel",
-                "add_prefix_space": True,
-                "trim_offsets": True,
-                "use_regex": True,
-            },
-            "post_processor": None,
-            "decoder": {
-                "type": "ByteLevel",
-                "add_prefix_space": True,
-                "trim_offsets": True,
-                "use_regex": True,
-            },
-            "model": {
-                "type": "BPE",
-                "dropout": None,
-                "unk_token": "<|endoftext|>",
-                "continuing_subword_prefix": None,
-                "end_of_word_suffix": None,
-                "fuse_unk": False,
-                "byte_fallback": False,
-                "vocab": {
-                    "<|endoftext|>": 0,
-                    "<|im_start|>": 1,
-                    "<|im_end|>": 2,
-                    "h": 3,
-                    "e": 4,
-                    "l": 5,
-                    "o": 6,
-                    "Ġ": 7,
-                    "he": 8,
-                    "ll": 9,
-                    "lo": 10,
-                    "hel": 11,
-                    "llo": 12,
-                    "hello": 13,
-                    "Ġhello": 14,
-                    "world": 15,
-                    "Ġworld": 16,
-                },
-                "merges": [
-                    "h e",
-                    "l l",
-                    "l o",
-                    "he l",
-                    "l lo",
-                    "hel lo",
-                    "Ġ hello",
-                    "Ġ world",
-                ],
-            },
-        }
+        tokenizer_dir = pathlib.Path(__file__).parent.parent.parent.parent.parent.parent / "utils" / "convert-model" / "tokenizer"
 
-        tokenizer_config = {
-            "tokenizer_class": "Qwen2Tokenizer",
-            "model_max_length": 32768,
-            "clean_up_tokenization_spaces": False,
-            "eos_token": "<|im_end|>",
-            "pad_token": "<|endoftext|>",
-            "unk_token": "<|endoftext|>",
-            "bos_token": None,
-            "chat_template": (
-                "{% for message in messages %}"
-                "{% if message['role'] == 'system' %}"
-                "{{ '<|im_start|>system\\n' + message['content'] + '<|im_end|>\\n' }}"
-                "{% elif message['role'] == 'user' %}"
-                "{{ '<|im_start|>user\\n' + message['content'] + '<|im_end|>\\n' }}"
-                "{% elif message['role'] == 'assistant' %}"
-                "{{ '<|im_start|>assistant\\n' + message['content'] + '<|im_end|>\\n' }}"
-                "{% endif %}"
-                "{% endfor %}"
-                "{% if add_generation_prompt %}"
-                "{{ '<|im_start|>assistant\\n' }}"
-                "{% endif %}"
-            ),
-        }
+        if not tokenizer_dir.is_dir():
+            raise RuntimeError("No such directory: {tokenizer_dir}. It is required for tokenizer-related tests.")
 
-        cls.tmpdir = tempfile.TemporaryDirectory(delete=False)
-
-        json_path = os.path.join(cls.tmpdir.name, "tokenizer.json")
-        config_path = os.path.join(cls.tmpdir.name, "tokenizer_config.json")
-
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(tokenizer_json, f)
-
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(tokenizer_config, f)
-
-        cls.tokenizer_file = json_path
-        cls.tokenizer_config_file = config_path
-
-    @classmethod
-    def tearDownClass(cls):
-        #cls.tmpdir.cleanup()
-        pass
+        cls.tokenizer_dir = str(tokenizer_dir)
+        cls.tokenizer_file = str(tokenizer_dir / "tokenizer.json")
+        cls.tmpdir = tempfile.TemporaryDirectory()
 
     def test_embeddings(self):
         transformer = Flux2Transformer2DModel(
@@ -172,7 +52,6 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
         )
 
         text_config = Qwen3Config(
-            vocab_size=17,
             hidden_size=8,
             intermediate_size=16,
             num_hidden_layers=28,
@@ -181,11 +60,9 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
             max_position_embeddings=32,
         )
 
-        text_encoder = Qwen3ForCausalLM(text_config)
+        tokenizer = Qwen2TokenizerFast.from_pretrained(self.tokenizer_dir)
 
-        tokenizer = Qwen2TokenizerFast.from_pretrained(
-            self.tmpdir.name
-        )
+        text_encoder = Qwen3ForCausalLM(text_config)
 
         scheduler = FlowMatchEulerDiscreteScheduler()
 
@@ -206,7 +83,6 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
 
         prompt_embeds, txt_ids = pipe.encode_prompt(
             prompt=prompt,
-            device="cpu",
             num_images_per_prompt=batch,
             max_sequence_length=max_sequence_length,
         )
@@ -249,7 +125,6 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
             "--vae-layers_per_block", "1",
             "--vae-norm_num_groups", "8",
 
-            "--text_encoder-vocab_size", "17",
             "--text_encoder-hidden_size", "8",
             "--text_encoder-intermediate_size", "16",
             "--text_encoder-num_hidden_layers", "28",

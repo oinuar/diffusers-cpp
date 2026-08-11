@@ -293,12 +293,11 @@ int main(int argc, char** argv) {
         if (cli.args().get(0) == "Qwen2TokenizerFast_Encode") {
             auto text = cli.args().get_one<std::string>("--text");
             auto max_length = cli.args().get_optional<int>("--max_length").value_or(0);
-            auto add_special_tokens = cli.args().get_optional<bool>("--add_special_tokens").value_or(true);
             auto return_attention_mask = cli.args().get_optional<bool>("--return_attention_mask").value_or(false);
             
             std::vector<int> mask;
 
-            auto tokens = tokenizer.encode(text, max_length, add_special_tokens, return_attention_mask ? &mask : nullptr);
+            auto tokens = tokenizer.encode(text, max_length, return_attention_mask ? &mask : nullptr);
 
             cli.print_tensor_like(tokens, Tensor::Shape{(int64_t)tokens.size()});
 
@@ -310,9 +309,8 @@ int main(int argc, char** argv) {
 
         if (cli.args().get(0) == "Qwen2TokenizerFast_Decode") {
             auto ids = cli.args().get_many<int>("--ids");
-            auto skip_special_tokens = cli.args().get_optional<bool>("--skip_special_tokens").value_or(true);
 
-            auto text = tokenizer.decode(ids, skip_special_tokens);
+            auto text = tokenizer.decode(ids);
 
             cli.print_tensor_like<std::string>({text}, Tensor::Shape{1});
             return EXIT_SUCCESS;

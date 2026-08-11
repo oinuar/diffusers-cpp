@@ -133,6 +133,14 @@ target_link_libraries(stb PUBLIC stbi)
 add_subdirectory(json)
 
 # ---------------------------------------------------------------------------
+# tokenizer-cpp dependency
+# ---------------------------------------------------------------------------
+add_subdirectory(
+    ${CMAKE_SOURCE_DIR}/tokenizers-cpp
+    tokenizers-cpp
+)
+
+# ---------------------------------------------------------------------------
 # diffusers library
 # ---------------------------------------------------------------------------
 
@@ -152,9 +160,10 @@ target_include_directories(diffusers PUBLIC
 
 target_include_directories(diffusers PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/test
+    ${CMAKE_SOURCE_DIR}/tokenizers-cpp/include
 )
 
-target_link_libraries(diffusers PUBLIC ggml stb nlohmann_json::nlohmann_json)
+target_link_libraries(diffusers PUBLIC ggml stb nlohmann_json::nlohmann_json tokenizers_cpp)
 
 target_compile_features(diffusers PUBLIC c_std_11 cxx_std_17)
 

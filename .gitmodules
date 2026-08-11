@@ -7,3 +7,6 @@
 [submodule "json"]
 	path = json
 	url = https://github.com/nlohmann/json.git
+[submodule "tokenizers-cpp"]
+	path = tokenizers-cpp
+	url = https://github.com/mlc-ai/tokenizers-cpp.git

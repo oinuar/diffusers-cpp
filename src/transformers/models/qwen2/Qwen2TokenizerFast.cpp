@@ -354,7 +354,6 @@ std::vector<int> Qwen2TokenizerFast::bpe_encode_token(const std::string& token) 
     return ids;
 }
 
-// In qwen2_tokenizer_fast.cpp
 std::vector<int> Qwen2TokenizerFast::encode(
     const std::string& text,
     int max_length,
@@ -391,16 +390,16 @@ std::vector<int> Qwen2TokenizerFast::encode(
             if (it != special_tokens_.end()) ids.push_back(it->second);
         } else {
             for (const std::string& pt : pre_tokenize(seg.first)) {
-                std::string processed_pt = pt;
-                if (add_prefix_space_ && !processed_pt.empty() && processed_pt[0] != ' ' && !ids.empty()) {
-                    processed_pt = " " + processed_pt;
-                }
-
                 std::vector<uint8_t> bytes;
-                bytes.reserve(processed_pt.size());
-                for (char c : processed_pt) bytes.push_back(static_cast<uint8_t>(c));
+                bytes.reserve(pt.size());
+
+                for (char c : pt)
+                    bytes.push_back(static_cast<uint8_t>(c));
+
                 std::string bu = bytes_to_unicode(bytes);
-                for (int id : bpe_encode_token(bu)) ids.push_back(id);
+
+                for (int id : bpe_encode_token(bu))
+                    ids.push_back(id);
             }
         }
     }
@@ -424,7 +423,7 @@ std::vector<int> Qwen2TokenizerFast::encode(
         // Right-padding (standard for causal models)
         if (max_length > 0 && ids.size() < static_cast<size_t>(max_length)) {
             size_t pad_count = max_length - ids.size();
-            ids.resize(max_length, 151643 /*pad_token_id_*/); // TODO: read from config
+            ids.resize(max_length, vocab_.at("<|endoftext|>") /* pad_token */);
             mask->resize(max_length, 0);
         }
     }
@@ -468,12 +467,7 @@ std::string Qwen2TokenizerFast::apply_chat_template(const std::vector<Qwen2Token
         out += "<|im_start|>" + m.role + "\n" + m.content + "<|im_end|>\n";
 
     if (add_generation_prompt) {
-        out += "<|im_start|>assistant<think>";
-
-        if (!enable_thinking)
-            out += "</think>";
-
-        out += '\n';
+        out += "<|im_start|>assistant\n";
     }
 
     return out;

@@ -36,8 +36,8 @@ class TestTransformersQwen3RotaryEmbedding(TestCase):
             unsqueeze_dim=1,
         )
 
-        q = q.reshape(1, position_ids.shape[1], -1, config.hidden_size // config.num_attention_heads)
-        k = q.reshape(1, position_ids.shape[1], -1, config.hidden_size // config.num_attention_heads)
+        q = q.permute(0, 2, 1, 3).contiguous()
+        k = k.permute(0, 2, 1, 3).contiguous()
 
         expected_q = expected_q.permute(0, 2, 1, 3)
         expected_k = expected_k.permute(0, 2, 1, 3)

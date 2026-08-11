@@ -70,7 +70,7 @@ std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Runtime& runtime, i
     );
 
     auto tokens = tokenizer_.encode(text, max_sequence_length, /*add_special_tokens=*/false, &mask, &num_real_tokens);
-    
+
     auto input_ids = runtime.create<int32_t>({batch, (int64_t)tokens.size()},
         [=](std::mt19937&) {
             std::vector<int32_t> ids(size_t(batch) * tokens.size());
@@ -90,7 +90,7 @@ std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Runtime& runtime, i
     text_encoder_.forward(
         runtime,
         input_ids,
-        std::nullopt, // attention_mask
+        attention_mask,
         std::nullopt, // position_ids
         std::nullopt, // past_key_values
         std::nullopt, // inputs_embeds

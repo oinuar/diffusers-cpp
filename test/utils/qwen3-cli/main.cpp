@@ -294,10 +294,17 @@ int main(int argc, char** argv) {
             auto text = cli.args().get_one<std::string>("--text");
             auto max_length = cli.args().get_optional<int>("--max_length").value_or(0);
             auto add_special_tokens = cli.args().get_optional<bool>("--add_special_tokens").value_or(true);
+            auto return_attention_mask = cli.args().get_optional<bool>("--return_attention_mask").value_or(false);
+            
+            std::vector<int> mask;
 
-            auto tokens = tokenizer.encode(text, max_length, add_special_tokens);
+            auto tokens = tokenizer.encode(text, max_length, add_special_tokens, return_attention_mask ? &mask : nullptr);
 
             cli.print_tensor_like(tokens, Tensor::Shape{(int64_t)tokens.size()});
+
+            if (return_attention_mask)
+                cli.print_tensor_like(mask, Tensor::Shape{(int64_t)mask.size()});
+
             return EXIT_SUCCESS;
         }
 
@@ -313,6 +320,7 @@ int main(int argc, char** argv) {
 
         if (cli.args().get(0) == "Qwen2TokenizerFast_ApplyChatTemplate") {
             auto add_generation_prompt = cli.args().get_optional<bool>("--add_generation_prompt").value_or(true);
+            auto enable_thinking = cli.args().get_optional<bool>("--enable_thinking").value_or(false);
             auto json_messages = cli.args().get_many<nlohmann::json>("--messages");
 
             std::vector<Qwen2TokenizerFast::Message> messages;
@@ -321,7 +329,7 @@ int main(int argc, char** argv) {
             for (auto& json : json_messages)
                 messages.push_back({json["role"], json["content"]});
 
-            auto text = tokenizer.apply_chat_template(messages, add_generation_prompt);
+            auto text = tokenizer.apply_chat_template(messages, add_generation_prompt, enable_thinking);
 
             cli.print_tensor_like<std::string>({text}, Tensor::Shape{1});
             return EXIT_SUCCESS;

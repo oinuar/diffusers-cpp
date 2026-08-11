@@ -209,7 +209,7 @@ class TestTransformersQwen2TokenizerFast(TestCase):
             *sum([["--ids", str(id)] for id in ids], [])
         )
 
-        self.assertEqual(actual[0], [expected])
+        self.assertEqual(actual[0].tolist(), [list(expected)])
 
     def test_decode_words(self):
         tokenizer = Qwen2TokenizerFast.from_pretrained(self.tmpdir.name)
@@ -257,12 +257,14 @@ class TestTransformersQwen2TokenizerFast(TestCase):
             messages,
             tokenize=False,
             add_generation_prompt=True,
+            enable_thinking=False
         )
 
         actual = self.cli(
             "Qwen2TokenizerFast_ApplyChatTemplate",
             "--tokenizer_file", self.tokenizer_file,
             "--add_generation_prompt", "true",
+            "--enable_thinking", "false",
             *sum([["--messages", json.dumps(message)] for message in messages], [])
         )
 
@@ -286,12 +288,14 @@ class TestTransformersQwen2TokenizerFast(TestCase):
             messages,
             tokenize=False,
             add_generation_prompt=True,
+            enable_thinking=False,
         )
 
         actual = self.cli(
             "Qwen2TokenizerFast_ApplyChatTemplate",
             "--tokenizer_file", self.tokenizer_file,
             "--add_generation_prompt", "true",
+            "--enable_thinking", "false",
             *sum([["--messages", json.dumps(message)] for message in messages], [])
         )
 
@@ -319,13 +323,78 @@ class TestTransformersQwen2TokenizerFast(TestCase):
             messages,
             tokenize=False,
             add_generation_prompt=True,
+            enable_thinking=False,
         )
 
         actual = self.cli(
             "Qwen2TokenizerFast_ApplyChatTemplate",
             "--tokenizer_file", self.tokenizer_file,
             "--add_generation_prompt", "true",
+            "--enable_thinking", "false",
             *sum([["--messages", json.dumps(message)] for message in messages], [])
         )
 
         self.assertEqual(actual[0], [expected])
+
+    def test_chat_message_tokens(self):
+        tokenizer = Qwen2TokenizerFast.from_pretrained(self.tmpdir.name)
+
+        messages = [
+            {
+                "role": "user",
+                "content": "hello world"
+            }
+        ]
+        
+        text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+
+        expected = tokenizer.encode(text, add_special_tokens=False)
+
+        actual = self.cli(
+            "Qwen2TokenizerFast_Encode",
+            "--tokenizer_file", self.tokenizer_file,
+            "--text", text,
+            "--add_special_tokens", "false"
+        )
+
+        self.assertEqual(actual[0].to(torch.int32).tolist(), expected)
+
+    def test_encode_with_padding_and_mask(self):
+        tokenizer = Qwen2TokenizerFast.from_pretrained(self.tmpdir.name)
+
+        text = "hello world"
+
+        max_length = 8
+
+        expected = tokenizer(
+            text,
+            max_length=max_length,
+            padding="max_length",
+            truncation=True,
+            return_attention_mask=True,
+            add_special_tokens=False,
+        )
+
+        actual = self.cli(
+            "Qwen2TokenizerFast_Encode",
+            "--tokenizer_file", self.tokenizer_file,
+            "--text", text,
+            "--max_length", str(max_length),
+            "--return_attention_mask", "true",
+            "--add_special_tokens", "false",
+        )
+
+        self.assertEqual(
+            actual[0].to(torch.int32).tolist(),
+            expected["input_ids"],
+        )
+
+        self.assertEqual(
+            actual[1].to(torch.int32).tolist(),
+            expected["attention_mask"],
+        )

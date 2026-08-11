@@ -15,9 +15,9 @@
 #include "transformers/models/qwen3/Qwen3Model.hpp"
 #include "transformers/models/qwen3/Qwen3ForCausalLM.hpp"
 
-class TestTransformersCLI : public TestCLI {
+class TestQwen3CLI : public TestCLI {
 public:
-    TestTransformersCLI(int argc, char** argv) : TestCLI(argc, argv) {}
+    TestQwen3CLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
     virtual std::vector<Tensor> compute(Runtime& runtime) {
         if (args_.get(0) == "Qwen3RMSNorm") {
@@ -179,6 +179,7 @@ public:
             auto position_ids = args_.get_optional<Tensor>("--position_ids", {runtime});
             auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {runtime});
             auto use_cache = args_.get_optional<bool>("--past_key_values");
+            auto output_hidden_states = args_.get_optional<bool>("--output_hidden_states").value_or(false);
 
             Qwen3Model model(config);
 
@@ -187,8 +188,24 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(runtime, input_ids, input_embeds, attention_mask, position_ids, past_key_values, use_cache);
+            std::vector<Tensor> hidden_states;
 
+            auto output = model.forward(
+                runtime,
+                input_ids,
+                input_embeds,
+                attention_mask,
+                position_ids,
+                past_key_values,
+                use_cache,
+                output_hidden_states ? &hidden_states : nullptr);
+
+            if (output_hidden_states) {
+                Graph graph(runtime, std::move(hidden_states));
+                Computation computation(graph);
+                return computation.results();
+            }
+            
             Graph graph(runtime, {output});
             Computation computation(graph);
             return computation.results();
@@ -266,52 +283,49 @@ protected:
 };
 
 int main(int argc, char** argv) {
-    TestTransformersCLI cli(argc, argv);
+    TestQwen3CLI cli(argc, argv);
 
-    if (cli.args().get(0) == "Qwen2TokenizerFast_Encode") {
+    if (cli.args().get(0).rfind("Qwen2TokenizerFast", 0) == 0) {
         auto tokenizer_file = cli.args().get_one<std::string>("--tokenizer_file");
-        auto text = cli.args().get_one<std::string>("--text");
-        auto max_length = cli.args().get_optional<int>("--max_length").value_or(0);
-        auto add_special_tokens = cli.args().get_optional<bool>("--add_special_tokens").value_or(true);
 
         Qwen2TokenizerFast tokenizer(tokenizer_file);
 
-        auto tokens = tokenizer.encode(text, max_length, add_special_tokens);
+        if (cli.args().get(0) == "Qwen2TokenizerFast_Encode") {
+            auto text = cli.args().get_one<std::string>("--text");
+            auto max_length = cli.args().get_optional<int>("--max_length").value_or(0);
+            auto add_special_tokens = cli.args().get_optional<bool>("--add_special_tokens").value_or(true);
 
-        cli.print_tensor_like(tokens, Tensor::Shape{(int64_t)tokens.size()});
-        return EXIT_SUCCESS;
-    }
+            auto tokens = tokenizer.encode(text, max_length, add_special_tokens);
 
-    if (cli.args().get(0) == "Qwen2TokenizerFast_Decode") {
-        auto tokenizer_file = cli.args().get_one<std::string>("--tokenizer_file");
-        auto ids = cli.args().get_many<int>("--ids");
-        auto skip_special_tokens = cli.args().get_optional<bool>("--skip_special_tokens").value_or(true);
+            cli.print_tensor_like(tokens, Tensor::Shape{(int64_t)tokens.size()});
+            return EXIT_SUCCESS;
+        }
 
-        Qwen2TokenizerFast tokenizer(tokenizer_file);
+        if (cli.args().get(0) == "Qwen2TokenizerFast_Decode") {
+            auto ids = cli.args().get_many<int>("--ids");
+            auto skip_special_tokens = cli.args().get_optional<bool>("--skip_special_tokens").value_or(true);
 
-        auto text = tokenizer.decode(ids, skip_special_tokens);
+            auto text = tokenizer.decode(ids, skip_special_tokens);
 
-        cli.print_tensor_like<std::string>({text}, Tensor::Shape{1});
-        return EXIT_SUCCESS;
-    }
+            cli.print_tensor_like<std::string>({text}, Tensor::Shape{1});
+            return EXIT_SUCCESS;
+        }
 
-    if (cli.args().get(0) == "Qwen2TokenizerFast_ApplyChatTemplate") {
-        auto tokenizer_file = cli.args().get_one<std::string>("--tokenizer_file");
-        auto add_generation_prompt = cli.args().get_optional<bool>("--add_generation_prompt").value_or(true);
-        auto json_messages = cli.args().get_many<nlohmann::json>("--messages");
+        if (cli.args().get(0) == "Qwen2TokenizerFast_ApplyChatTemplate") {
+            auto add_generation_prompt = cli.args().get_optional<bool>("--add_generation_prompt").value_or(true);
+            auto json_messages = cli.args().get_many<nlohmann::json>("--messages");
 
-        std::vector<Qwen2TokenizerFast::Message> messages;
-        messages.reserve(json_messages.size());
+            std::vector<Qwen2TokenizerFast::Message> messages;
+            messages.reserve(json_messages.size());
 
-        for (auto& json : json_messages)
-            messages.push_back({json["role"], json["content"]});
+            for (auto& json : json_messages)
+                messages.push_back({json["role"], json["content"]});
 
-        Qwen2TokenizerFast tokenizer(tokenizer_file);
+            auto text = tokenizer.apply_chat_template(messages, add_generation_prompt);
 
-        auto text = tokenizer.apply_chat_template(messages, add_generation_prompt);
-
-        cli.print_tensor_like<std::string>({text}, Tensor::Shape{1});
-        return EXIT_SUCCESS;
+            cli.print_tensor_like<std::string>({text}, Tensor::Shape{1});
+            return EXIT_SUCCESS;
+        }
     }
 
     return cli.main();

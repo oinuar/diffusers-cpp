@@ -27,8 +27,8 @@ public:
 
     typedef std::unordered_map<Tensor, Provider<std::byte>, TensorInputHash, TensorInputEqual> Inputs;
 
-    explicit Runtime(Scheduler& scheduler, uint64_t seed = std::random_device{}())
-        : context_(scheduler.arena()), scheduler_(scheduler), rng_(seed) {}
+    explicit Runtime(Scheduler& scheduler, Context& context, uint64_t seed = std::random_device{}())
+        : scheduler_(scheduler), context_(context), rng_(seed) {}
 
     template <class T>
     Tensor create(const Tensor::Shape& shape, const Provider<T>& provider) {
@@ -39,6 +39,8 @@ public:
 
     template <class T>
     void bind(Tensor tensor, const Provider<T>& provider, bool once = false) {
+        (*tensor)->flags |= GGML_TENSOR_FLAG_INPUT;
+
         inputs_[tensor] = [this, tensor, provider, once](std::mt19937& rng) {
             auto values = provider(rng);
 
@@ -53,6 +55,7 @@ public:
     }
 
     void unbind(Tensor tensor) {
+        (*tensor)->flags &= ~GGML_TENSOR_FLAG_INPUT;
         inputs_.erase(tensor);
     }
 
@@ -93,8 +96,8 @@ public:
     Runtime& operator =(const Runtime&) = delete;
 
 private:
-    Context context_;
     Scheduler& scheduler_;
+    Context& context_;
     std::mt19937 rng_;
     Inputs inputs_;
 

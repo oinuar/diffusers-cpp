@@ -34,7 +34,7 @@ Tensor Qwen3ForCausalLM::forward(
     std::optional<Tensor> labels,
     std::optional<bool> use_cache,
     int logits_to_keep,
-    std::unordered_map<size_t, Tensor>* extract_hidden_states_by_layer
+    std::vector<Tensor>* extract_hidden_states
 ) {
     auto model = std::static_pointer_cast<Qwen3Model>(modules["model"]);
     auto hidden_states = model->forward(
@@ -45,7 +45,8 @@ Tensor Qwen3ForCausalLM::forward(
         position_ids,
         past_key_values,
         use_cache,
-        extract_hidden_states_by_layer);
+        extract_hidden_states
+    );
 
     auto lm_head = std::static_pointer_cast<Linear>(modules["lm_head"]);
     

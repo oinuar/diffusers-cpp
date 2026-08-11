@@ -68,24 +68,24 @@ static Tensor create_causal_mask(
     );
 
     if (attention_mask) {
-        // [batch, seq_len] -> [batch, 1, 1, seq_len]
         auto expanded_mask = attention_mask.value()
             .unsqueeze(1)
             .unsqueeze(1);
 
-        // 1 -> 0, 0 -> -inf
+        // 1 -> 0
+        // 0 -> large negative value.
+        //
+        // Do NOT use -inf here:
+        // (1 - 1) * -inf == 0 * -inf == NaN
         expanded_mask =
-            (1.0f - expanded_mask) * neg_inf;
+            (1.0f - expanded_mask) * -1e9f;
 
-        // [batch, 1, 1, key_len] -> [batch, 1, query_len, key_len]
-        expanded_mask = expanded_mask.expand(
-            {
-                attention_mask.value().shape()[0],
-                1,
-                seq_len,
-                target_len
-            }
-        );
+        expanded_mask = expanded_mask.expand({
+            attention_mask.value().shape()[0],
+            1,
+            seq_len,
+            target_len
+        });
 
         mask = mask + expanded_mask;
     }
@@ -95,19 +95,22 @@ static Tensor create_causal_mask(
 
 Tensor Qwen3Model::forward(
     Runtime& runtime,
-    std::optional<Tensor> input_ids, 
-    std::optional<Tensor> inputs_embeds, 
+    std::optional<Tensor> input_ids,
+    std::optional<Tensor> inputs_embeds,
     std::optional<Tensor> attention_mask,
     std::optional<Tensor> position_ids,
     std::optional<Tensor> past_key_values,
     std::optional<bool> use_cache,
-    std::unordered_map<size_t, Tensor>* extract_hidden_states_by_layer
-) {    
+    std::vector<Tensor>* extract_hidden_states
+) {
     if (!input_ids.has_value() && !inputs_embeds.has_value())
-        throw std::invalid_argument("You must specify exactly one of input_ids or inputs_embeds");
+        throw std::invalid_argument(
+            "You must specify exactly one of input_ids or inputs_embeds"
+        );
 
     if (!inputs_embeds) {
-        auto embed_tokens = std::static_pointer_cast<Embedding>(modules["embed_tokens"]);
+        auto embed_tokens =
+            std::static_pointer_cast<Embedding>(modules["embed_tokens"]);
 
         inputs_embeds = embed_tokens->forward(runtime, input_ids.value());
     }
@@ -115,7 +118,7 @@ Tensor Qwen3Model::forward(
     auto hidden_states = *inputs_embeds;
 
     auto seq_len = hidden_states.shape()[1];
-    
+
     // TODO: replace with past_key_values length when cache is implemented
     auto past_seen_tokens = 0;
 
@@ -125,30 +128,43 @@ Tensor Qwen3Model::forward(
         position_ids = position_ids.value().unsqueeze(0);
     }
 
-    auto rotary_emb = std::static_pointer_cast<Qwen3RotaryEmbedding>(modules["rotary_emb"]);
+    auto rotary_emb =
+        std::static_pointer_cast<Qwen3RotaryEmbedding>(modules["rotary_emb"]);
 
     auto target_len = past_seen_tokens + seq_len;
 
     std::unordered_map<std::string, Tensor> causal_mask_mapping;
 
-    causal_mask_mapping["full_attention"] = create_causal_mask(runtime, seq_len, target_len, past_seen_tokens, attention_mask);
+    causal_mask_mapping["full_attention"] = create_causal_mask(
+        runtime,
+        seq_len,
+        target_len,
+        past_seen_tokens,
+        attention_mask
+    );
 
-    if (has_sliding_layers)
-        causal_mask_mapping["sliding_attention"] = create_causal_mask(runtime, seq_len, target_len, past_seen_tokens, attention_mask, sliding_window);
+    if (has_sliding_layers) {
+        causal_mask_mapping["sliding_attention"] = create_causal_mask(
+            runtime,
+            seq_len,
+            target_len,
+            past_seen_tokens,
+            attention_mask,
+            sliding_window
+        );
+    }
 
     auto layers = std::static_pointer_cast<ModuleList>(modules["layers"]);
+
     for (auto i = 0; i < layers->size(); ++i) {
-        auto layer = std::static_pointer_cast<Qwen3DecoderLayer>((*layers)[i]);
+        auto layer =
+            std::static_pointer_cast<Qwen3DecoderLayer>((*layers)[i]);
+
         auto layer_mask = causal_mask_mapping.at(layer_types.at(i));
 
-        // Extact layer's hidden state
-        if (extract_hidden_states_by_layer) {
-            auto extract = extract_hidden_states_by_layer->find(i);
+        if (extract_hidden_states)
+            extract_hidden_states->push_back(hidden_states.clone());
 
-            if (extract != extract_hidden_states_by_layer->end())
-                (*extract_hidden_states_by_layer)[extract->first] = hidden_states;
-        }
-        
         hidden_states = layer->forward(
             runtime,
             *rotary_emb,
@@ -160,16 +176,13 @@ Tensor Qwen3Model::forward(
         );
     }
 
-    // Extract last layer's hidden states
-    if (extract_hidden_states_by_layer) {
-        auto extract = extract_hidden_states_by_layer->find(layers->size());
+    auto norm =
+        std::static_pointer_cast<Qwen3RMSNorm>(modules["norm"]);
 
-        if (extract != extract_hidden_states_by_layer->end())
-            (*extract_hidden_states_by_layer)[extract->first] = hidden_states;
-    }
-    
-    auto norm = std::static_pointer_cast<Qwen3RMSNorm>(modules["norm"]);
     hidden_states = norm->forward(runtime, hidden_states);
+
+    if (extract_hidden_states)
+        extract_hidden_states->push_back(hidden_states);
 
     return hidden_states;
 }

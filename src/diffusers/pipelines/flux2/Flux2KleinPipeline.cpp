@@ -58,8 +58,7 @@ static Tensor repeat_batch(const Tensor& t, int batch) {
     return t.repeat(shape);
 }
 
-std::pair<Tensor, Tensor>
-Flux2KleinPipeline::encode_prompt(Runtime& runtime, int batch, const std::string& prompt, size_t max_sequence_length) {
+std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Runtime& runtime, int batch, const std::string& prompt, size_t max_sequence_length) {
     std::vector<int> mask;
     size_t num_real_tokens;
 
@@ -86,17 +85,12 @@ Flux2KleinPipeline::encode_prompt(Runtime& runtime, int batch, const std::string
             return std::move(m);
         });
 
-    // Extract text encoder hidden states from specific layers
-    std::unordered_map<size_t, Tensor> hidden_states = {
-        {9, Tensor()},
-        {18, Tensor()},
-        {27, Tensor()},
-    };
+    std::vector<Tensor> hidden_states;
 
     text_encoder_.forward(
         runtime,
         input_ids,
-        attention_mask,
+        std::nullopt, // attention_mask
         std::nullopt, // position_ids
         std::nullopt, // past_key_values
         std::nullopt, // inputs_embeds
@@ -109,6 +103,9 @@ Flux2KleinPipeline::encode_prompt(Runtime& runtime, int batch, const std::string
     auto l9 = hidden_states[9];
     auto l18 = hidden_states[18];
     auto l27 = hidden_states[27];
+
+    if (!l9 || !l18 || !l27)
+        throw std::runtime_error("Hidden state extraction failed");
 
     // Stack along a new dimension (axis=1) -> (B, 3, seq, hidden)
     auto stacked = Tensor::stack({l9, l18, l27}, /*axis=*/1);
@@ -417,23 +414,23 @@ static Image preprocess_reference_image(const Image& image, int multiple, double
     return image.resize_and_crop(target_width, target_height);
 }
 
-Graph Flux2KleinPipeline::make_embeddings_graph(
+Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
     Runtime& runtime,
     int batch,
     const std::string& prompt,
-    size_t max_seq_length,
+    size_t max_sequence_length,
     int packed_h,
     int packed_w,
     std::vector<Image>& images)
 {
     auto vae_multiple = vae_.scale_factor() * 2;
 
-    auto [embeds, txt_ids] =
+    auto [prompt_embeds, txt_ids] =
         encode_prompt(
             runtime,
             batch,
             prompt,
-            max_seq_length);
+            max_sequence_length);
 
     auto img_ids =
         prepare_img_ids(
@@ -442,8 +439,8 @@ Graph Flux2KleinPipeline::make_embeddings_graph(
             packed_h,
             packed_w);
 
-    Tensor image_latents_concat;
-    Tensor image_latent_ids_concat;
+    std::optional<Tensor> image_latents_concat;
+    std::optional<Tensor> image_latent_ids_concat;
 
     if (!images.empty()) {
         std::vector<Tensor> packed_imgs;
@@ -478,23 +475,31 @@ Graph Flux2KleinPipeline::make_embeddings_graph(
         image_latents_concat = Tensor::cat(packed_imgs, /*axis=*/1);
 
         // Repeat reference latents for num_images_per_prompt.
-        image_latents_concat = repeat_batch(image_latents_concat, batch);
+        image_latents_concat = repeat_batch(*image_latents_concat, batch);
 
         image_latent_ids_concat = prepare_image_ids(runtime, batch, images, vae_multiple);
     }
 
     std::vector<Tensor> outputs = {
-        embeds,
+        prompt_embeds,
         txt_ids,
         img_ids
     };
 
-    if (!images.empty()) {
-        outputs.push_back(image_latents_concat);
-        outputs.push_back(image_latent_ids_concat);
-    }
+    if (image_latents_concat) 
+        outputs.push_back(*image_latents_concat);
+    
+    if (image_latent_ids_concat)
+        outputs.push_back(*image_latent_ids_concat);
 
-    return std::move(Graph(runtime, std::move(outputs)));
+    return {
+        std::move(Graph(runtime, std::move(outputs))),
+        prompt_embeds,
+        txt_ids,
+        img_ids,
+        image_latents_concat,
+        image_latent_ids_concat
+    };
 }
 
 size_t Flux2KleinPipeline::setup_timesteps(
@@ -551,7 +556,7 @@ size_t Flux2KleinPipeline::setup_timesteps(
 //
 // Timestep and dt are runtime-bound inputs. Their (pointer) values are
 // supplied anew for each Computation, while the graph topology remains unchanged.
-std::pair<Graph, Tensor> Flux2KleinPipeline::make_denoise_graph(
+Flux2KleinPipeline::Denoise Flux2KleinPipeline::make_denoise_graph(
     Runtime& runtime,
     int batch,
     int packed_h,
@@ -676,9 +681,17 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
     Tensor::Shape image_latents_shape;
     Tensor::Shape image_latent_ids_shape;
     {
-        Runtime runtime(scheduler, seed);
+        Context context;
+        Runtime runtime(scheduler, context, seed);
 
-        auto graph = std::move(make_embeddings_graph(
+        auto [
+            graph,
+            prompt_embeds,
+            txt_ids,
+            img_ids,
+            image_latents_concat,
+            image_latent_ids_concat
+        ] = std::move(make_embeddings_graph(
             runtime,
             batch,
             options.prompt,
@@ -690,29 +703,27 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
         Computation computation(graph);
 
         // Prompt embeddings
-        auto embeds = computation.results().at(0);
-        prompt_embeds_data = runtime.value<float>(embeds);
-        prompt_embeds_shape = embeds.shape();
+        prompt_embeds_data = runtime.value<float>(prompt_embeds);
+        prompt_embeds_shape = prompt_embeds.shape();
 
         // Text IDs
-        auto txt_ids = computation.results().at(1);
         txt_ids_data = runtime.value<float>(txt_ids);
         txt_ids_shape = txt_ids.shape();
 
         // Generation image IDs
-        auto img_ids = computation.results().at(2);
         img_ids_data = runtime.value<float>(img_ids);
         img_ids_shape = img_ids.shape();
 
-        // Reference image latents and IDs
-        if (!options.images.empty()) {
-            auto image_latents_concat = computation.results().at(3);
-            image_latents_data = runtime.value<float>(image_latents_concat);
-            image_latents_shape = image_latents_concat.shape();
+        // Reference image latents
+        if (image_latents_concat) {
+            image_latents_data = runtime.value<float>(*image_latents_concat);
+            image_latents_shape = image_latents_concat->shape();
+        }
 
-            auto image_latent_ids_concat = computation.results().at(4);
-            image_latent_ids_data = runtime.value<float>(image_latent_ids_concat);
-            image_latent_ids_shape = image_latent_ids_concat.shape();
+        // Reference image IDs
+        if (image_latent_ids_concat) {
+            image_latent_ids_data = runtime.value<float>(*image_latent_ids_concat);
+            image_latent_ids_shape = image_latent_ids_concat->shape();
         }
     }
 
@@ -723,7 +734,8 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
     std::vector<float> latents_data;
     Tensor::Shape latents_shape;
     {
-        Runtime runtime(scheduler, seed);
+        Context context;
+        Runtime runtime(scheduler, context, seed);
         float timestep, dt;
 
         auto [graph, latents] = std::move(make_denoise_graph(
@@ -768,7 +780,8 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
     // 4. Decode latents to pixels
     std::vector<Image> images;
     {
-        Runtime runtime(scheduler, seed);
+        Context context;
+        Runtime runtime(scheduler, context, seed);
 
         auto graph = std::move(make_decode_graph(
             runtime,

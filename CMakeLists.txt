@@ -187,7 +187,7 @@ if(DIFFUSERS_BUILD_TESTS)
 
     add_custom_command(
         OUTPUT ${UV_ENV_STAMP}
-        COMMAND ${UV_EXECUTABLE} venv --clear
+        COMMAND ${UV_EXECUTABLE} venv --clear --python 3.12
         COMMAND ${UV_EXECUTABLE} pip install -r requirements.txt
         COMMAND ${CMAKE_COMMAND} -E touch ${UV_ENV_STAMP}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test
@@ -219,12 +219,12 @@ if(DIFFUSERS_BUILD_TESTS)
     target_include_directories(test-diffusers-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(test-diffusers-cli PRIVATE diffusers)
 
-    add_executable(test-transformers-cli
-        test/utils/transformers-cli/main.cpp
+    add_executable(test-qwen3-cli
+        test/utils/qwen3-cli/main.cpp
     )
 
-    target_include_directories(test-transformers-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(test-transformers-cli PRIVATE diffusers)
+    target_include_directories(test-qwen3-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(test-qwen3-cli PRIVATE diffusers)
     
     add_executable(test-flux2-cli
         test/utils/flux2-cli/main.cpp
@@ -262,10 +262,14 @@ if(DIFFUSERS_BUILD_TESTS)
             set(CLI_TARGET test-nn-cli)
         elseif(TEST_FILE MATCHES "^src/diffusers/models/transformers/flux2/")
             set(CLI_TARGET test-flux2-cli)
+        elseif(TEST_FILE MATCHES "^src/diffusers/pipelines/flux2/")
+            set(CLI_TARGET test-flux2-cli)
+        elseif(TEST_FILE MATCHES "^src/transformers/models/qwen2/")
+            set(CLI_TARGET test-qwen3-cli)
+        elseif(TEST_FILE MATCHES "^src/transformers/models/qwen3/")
+            set(CLI_TARGET test-qwen3-cli)
         elseif(TEST_FILE MATCHES "^src/diffusers/")
             set(CLI_TARGET test-diffusers-cli)
-        elseif(TEST_FILE MATCHES "^src/transformers/")
-            set(CLI_TARGET test-transformers-cli)
         else()
             message(FATAL_ERROR "No CLI target for ${TEST_FILE}")
         endif()

@@ -20,10 +20,12 @@
 #include "diffusers/pipelines/flux2/Flux2KleinPipeline.hpp"
 
 #include <numeric>
+#include <fstream>
+#include <sstream>
 
-class TestDiffusersCLI : public TestCLI {
+class TestFlux2CLI : public TestCLI {
 public:
-    TestDiffusersCLI(int argc, char** argv) : TestCLI(argc, argv) {}
+    TestFlux2CLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
     virtual std::vector<Tensor> compute(Runtime& runtime) {
 
@@ -391,13 +393,87 @@ public:
 
         if (args_.get(0).rfind("Flux2KleinPipeline", 0) == 0) {
             Flux2Transformer2DModel::Config transformer_config;
+            {
+                transformer_config.patch_size = args_.get_optional<int64_t>("--transformer-patch_size").value_or(transformer_config.patch_size);
+                transformer_config.in_channels = args_.get_optional<int64_t>("--transformer-in_channels").value_or(transformer_config.in_channels);
+                transformer_config.out_channels = args_.get_optional<int64_t>("--transformer-out_channels");
+                transformer_config.num_layers = args_.get_optional<int64_t>("--transformer-num_layers").value_or(transformer_config.num_layers);
+                transformer_config.num_single_layers = args_.get_optional<int64_t>("--transformer-num_single_layers").value_or(transformer_config.num_single_layers);
+                transformer_config.attention_head_dim = args_.get_optional<int64_t>("--transformer-attention_head_dim").value_or(transformer_config.attention_head_dim);
+                transformer_config.num_attention_heads = args_.get_optional<int64_t>("--transformer-num_attention_heads").value_or(transformer_config.num_attention_heads);
+                transformer_config.joint_attention_dim = args_.get_optional<int64_t>("--transformer-joint_attention_dim").value_or(transformer_config.joint_attention_dim);
+                transformer_config.timestep_guidance_channels = args_.get_optional<int64_t>("--transformer-timestep_guidance_channels").value_or(transformer_config.timestep_guidance_channels);
+                transformer_config.mlp_ratio = args_.get_optional<float>("--transformer-mlp_ratio").value_or(transformer_config.mlp_ratio);
+                auto axes_dims_rope = args_.get_many<int64_t>("--transformer-axes_dims_rope");
+                transformer_config.rope_theta = args_.get_optional<int64_t>("--transformer-rope_theta").value_or(transformer_config.rope_theta);
+                transformer_config.eps = args_.get_optional<float>("--transformer-eps").value_or(transformer_config.eps);
+                transformer_config.guidance_embeds = args_.get_optional<bool>("--transformer-guidance_embeds").value_or(transformer_config.guidance_embeds);
+
+                if (!axes_dims_rope.empty())
+                    transformer_config.axes_dims_rope = axes_dims_rope;
+            }
+
             AutoencoderKLFlux2::Config vae_config;
+            {
+                vae_config.in_channels = args_.get_optional<int64_t>("--vae-in_channels").value_or(vae_config.in_channels);
+                vae_config.out_channels = args_.get_optional<int64_t>("--vae-out_channels").value_or(vae_config.out_channels);
+                auto block_out_channels = args_.get_many<int64_t>("--vae-block_out_channels");
+                vae_config.layers_per_block = args_.get_optional<int64_t>("--vae-layers_per_block").value_or(vae_config.layers_per_block);
+                vae_config.latent_channels = args_.get_optional<int64_t>("--vae-latent_channels").value_or(vae_config.latent_channels);
+                vae_config.norm_num_groups = args_.get_optional<int64_t>("--vae-norm_num_groups").value_or(vae_config.norm_num_groups);
+                vae_config.sample_size = args_.get_optional<int64_t>("--vae-sample_size").value_or(vae_config.sample_size);
+                vae_config.force_upcast = args_.get_optional<bool>("--vae-force_upcast").value_or(vae_config.force_upcast);
+                vae_config.use_quant_conv = args_.get_optional<bool>("--vae-use_quant_conv").value_or(vae_config.use_quant_conv);
+                vae_config.use_post_quant_conv = args_.get_optional<bool>("--vae-use_post_quant_conv").value_or(vae_config.use_post_quant_conv);
+                vae_config.mid_block_add_attention = args_.get_optional<bool>("--vae-mid_block_add_attention").value_or(vae_config.mid_block_add_attention);
+                vae_config.batch_norm_eps = args_.get_optional<float>("--vae-batch_norm_eps").value_or(vae_config.batch_norm_eps);
+                vae_config.batch_norm_momentum = args_.get_optional<float>("--vae-batch_norm_momentum").value_or(vae_config.batch_norm_momentum);
+                vae_config.patch_size = std::make_tuple(
+                    args_.get_optional<int64_t>("--vae-patch_size-0").value_or(std::get<0>(vae_config.patch_size)),
+                    args_.get_optional<int64_t>("--vae-patch_size-1").value_or(std::get<1>(vae_config.patch_size))
+                );
+
+                if (!block_out_channels.empty())
+                    vae_config.block_out_channels = block_out_channels;
+            }
+
             Qwen3Config qwen_config;
+            {
+                qwen_config.vocab_size = args_.get_optional<int64_t>("--text_encoder-vocab_size").value_or(qwen_config.vocab_size);
+                qwen_config.hidden_size = args_.get_optional<int64_t>("--text_encoder-hidden_size").value_or(qwen_config.hidden_size);
+                qwen_config.intermediate_size = args_.get_optional<int64_t>("--text_encoder-intermediate_size").value_or(qwen_config.intermediate_size);
+                qwen_config.num_hidden_layers = args_.get_optional<int64_t>("--text_encoder-num_hidden_layers").value_or(qwen_config.num_hidden_layers);
+                qwen_config.num_attention_heads = args_.get_optional<int64_t>("--text_encoder-num_attention_heads").value_or(qwen_config.num_attention_heads);
+                qwen_config.num_key_value_heads = args_.get_optional<int64_t>("--text_encoder-num_key_value_heads").value_or(qwen_config.num_key_value_heads);
+                qwen_config.max_position_embeddings = args_.get_optional<int64_t>("--text_encoder-max_position_embeddings").value_or(qwen_config.max_position_embeddings);
+            }
+
             auto tokenizer_file = args_.get_one<std::string>("--tokenizer_file");
 
             Flux2Transformer2DModel transformer(transformer_config);
+            {
+                CreateParametersVisitor create_parameters(runtime, args_, "transformer");
+                RethrowVisitor visitor(create_parameters);
+                transformer.accept(visitor);
+                visitor.rethrow();
+            }
+            
             AutoencoderKLFlux2 vae(vae_config);
+            {
+                CreateParametersVisitor create_parameters(runtime, args_, "vae");
+                RethrowVisitor visitor(create_parameters);
+                vae.accept(visitor);
+                visitor.rethrow();
+            }
+
             Qwen3ForCausalLM text_encoder(qwen_config);
+            {
+                CreateParametersVisitor create_parameters(runtime, args_, "text_encoder");
+                RethrowVisitor visitor(create_parameters);
+                text_encoder.accept(visitor);
+                visitor.rethrow();
+            }
+
             Qwen2TokenizerFast tokenizer(tokenizer_file);
 
             Flux2KleinPipeline pipeline(
@@ -410,24 +486,43 @@ public:
             if (args_.get(0) == "Flux2KleinPipeline_embeddings") {
                 auto batch = args_.get_one<int>("--batch");
                 auto prompt = args_.get_one<std::string>("--prompt");
-                auto max_seq_length = args_.get_one<int>("--max_seq_length");
+                auto max_sequence_length = args_.get_one<int>("--max_sequence_length");
                 auto packed_h = args_.get_one<int>("--packed_h");
                 auto packed_w = args_.get_one<int>("--packed_w");
                 auto images = args_.get_many<Image>("--images");
 
-                auto graph = pipeline.make_embeddings_graph(
+                auto [
+                    graph,
+                    prompt_embeds,
+                    txt_ids,
+                    img_ids,
+                    image_latents_concat,
+                    image_latent_ids_concat
+                ] = std::move(pipeline.make_embeddings_graph(
                     runtime,
                     batch,
                     prompt,
-                    max_seq_length,
+                    max_sequence_length,
                     packed_h,
                     packed_w,
                     images
-                );
+                ));
 
                 Computation computation(graph);
                 
-                return computation.results();
+                std::vector<Tensor> results = {
+                    prompt_embeds,
+                    txt_ids,
+                    img_ids
+                };
+
+                if (image_latents_concat)
+                    results.push_back(*image_latents_concat);
+                
+                if (image_latent_ids_concat)
+                    results.push_back(*image_latent_ids_concat);
+
+                return std::move(results);
             }
 
             if (args_.get(0) == "Flux2KleinPipeline_timesteps") {
@@ -479,7 +574,7 @@ public:
 
                 float timestep, dt;
 
-                auto [graph, latents] = pipeline.make_denoise_graph(
+                auto [graph, latents] = std::move(pipeline.make_denoise_graph(
                     runtime,
                     batch,
                     packed_h,
@@ -497,7 +592,7 @@ public:
                     &image_latent_ids_data,
                     &timestep,
                     &dt
-                );
+                ));
 
                 Computation computation(graph);
 
@@ -509,13 +604,13 @@ public:
                 auto packed_w = args_.get_one<int>("--packed_w");
                 auto [latents_shape, latents_data] = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--latents")).parse();
 
-                auto graph = pipeline.make_decode_graph(
+                auto graph = std::move(pipeline.make_decode_graph(
                     runtime,
                     packed_h,
                     packed_w,
                     latents_shape,
                     &latents_data
-                );
+                ));
 
                 Computation computation(graph);
                 
@@ -526,25 +621,61 @@ public:
         throw std::runtime_error("Uknown command: " + args_.get(0));
     }
 
+    virtual size_t get_graph_size() const {
+        if (args_.get(0) == "Flux2KleinPipeline_embeddings")
+            return 65536;
+        
+        return TestCLI::get_graph_size();
+    }
+
 protected:
     class CreateParametersVisitor : public Visitor {
     public:
-        CreateParametersVisitor(Runtime& runtime, ArgumentParser& args)
-            : runtime_(runtime), args_(args)
+        CreateParametersVisitor(Runtime& runtime, ArgumentParser& args, const std::string& prefix = "")
+            : runtime_(runtime), args_(args), prefix_(prefix)
         {}
 
         virtual void visit(Parameter& parameter, std::vector<std::string> path) {
-            auto joined_path = join_path(path);
-            auto tensor = args_.get_one<Tensor>(joined_path, {runtime_});
+            auto joined_path = join_path(path, prefix_);
+
+            auto tensor_value = args_.get_one<std::string>(joined_path);
+            ArgumentParser::parser<Tensor> parser(runtime_);
+            Tensor tensor;
+
+            // Read tensor value from file
+            if (std::filesystem::is_regular_file(tensor_value)) {
+                std::ifstream file(tensor_value);
+                if (!file)
+                    throw std::runtime_error(
+                        "Failed to open parameter file: " + tensor_value);
+                
+                std::stringstream buffer;
+                buffer << file.rdbuf();
+
+                tensor = parser(joined_path, buffer.str());
+            }
+
+            // Otherwise, read inline tensor
+            else
+                tensor = parser(joined_path, tensor_value);
+            
             parameter.set(tensor);
         }
 
     private:
         Runtime& runtime_;
         ArgumentParser& args_;
+        std::string prefix_;
         
-        static std::string join_path(const std::vector<std::string>& path) {
-            return std::accumulate(std::begin(path), std::end(path), std::string("--param"), [](const std::string& acc, const std::string& x) {
+        static std::string join_path(const std::vector<std::string>& path, const std::string& prefix = "") {
+            std::string seed("--param");
+
+            if (!prefix.empty()) {
+                seed += '-';
+                seed += prefix;
+            }
+
+            return std::accumulate(std::begin(path), std::end(path), seed, [](const std::string& acc, const std::string& x) {
                 return acc + "-" + x;
             });
         }
@@ -552,6 +683,6 @@ protected:
 };
 
 int main(int argc, char** argv) {
-    TestDiffusersCLI cli(argc, argv);
+    TestFlux2CLI cli(argc, argv);
     return cli.main();
 }

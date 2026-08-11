@@ -76,16 +76,30 @@ public:
 
     std::vector<Image> operator ()(Scheduler& scheduler, GenerationOptions&& options);
 
-    Graph make_embeddings_graph(
+    struct Embeddings {
+        Graph graph;
+        Tensor prompt_embeds;
+        Tensor txt_ids;
+        Tensor img_ids;
+        std::optional<Tensor> image_latents_concat;
+        std::optional<Tensor> image_latent_ids_concat;
+    };
+
+    Embeddings make_embeddings_graph(
         Runtime& runtime,
         int batch,
         const std::string& prompt,
-        size_t max_seq_length,
+        size_t max_sequence_length,
         int packed_h,
         int packed_w,
         std::vector<Image>& images);
 
-    std::pair<Graph, Tensor> make_denoise_graph(
+    struct Denoise {
+        Graph graph;
+        Tensor latents;
+    };
+
+    Denoise make_denoise_graph(
         Runtime& runtime,
         int batch,
         int packed_h,
@@ -120,7 +134,7 @@ public:
     }
 
 private:
-    std::pair<Tensor, Tensor> encode_prompt(Runtime& runtime, int batch, const std::string& prompt, size_t max_sequence_length);
+    std::tuple<Tensor, Tensor> encode_prompt(Runtime& runtime, int batch, const std::string& prompt, size_t max_sequence_length);
 
     Flux2Transformer2DModel transformer_;
     AutoencoderKLFlux2 vae_;

@@ -1,20 +1,21 @@
 #pragma once
 
 #include "ggml.h"
-
-#include "Arena.hpp"
+#include <vector>
 
 class Context {
 public:
-    Context(Arena& arena) : ctx_(nullptr) {
+    Context(size_t capacity = GGML_DEFAULT_GRAPH_SIZE)
+        : buffer_(ggml_tensor_overhead() * capacity + ggml_graph_overhead()), ctx_(nullptr)
+    {
         ctx_ = ggml_init({
-            /*.mem_size   =*/ arena.size(),
-            /*.mem_buffer =*/ arena.data(),
-            /*.no_alloc   =*/ true, // the tensors will be allocated later
+            /*.mem_size   =*/ buffer_.size(),
+            /*.mem_buffer =*/ buffer_.data(),
+            /*.no_alloc   =*/ true,
         });
     }
 
-    Context(Context&& other) : ctx_(other.ctx_) {
+    Context(Context&& other) : buffer_(std::move(other.buffer_)), ctx_(other.ctx_) {
         other.ctx_ = nullptr;
     }
 
@@ -32,4 +33,5 @@ public:
 
 private:
     ggml_context* ctx_;
+    std::vector<std::byte> buffer_;
 };

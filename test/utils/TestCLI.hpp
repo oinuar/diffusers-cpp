@@ -17,8 +17,9 @@ public:
         ggml_backend_load_all();
 
         Backend cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-        Scheduler scheduler({*cpu});
-        Runtime runtime(scheduler);
+        Scheduler scheduler({*cpu}, get_graph_size());
+        Context context(scheduler.capacity());
+        Runtime runtime(scheduler, context);
 
         auto results = compute(runtime);
 
@@ -61,6 +62,10 @@ public:
     }
 
     virtual std::vector<Tensor> compute(Runtime& runtime) = 0;
+
+    virtual size_t get_graph_size() const {
+        return GGML_DEFAULT_GRAPH_SIZE;
+    }
 
     const ArgumentParser& args() const {
         return args_;

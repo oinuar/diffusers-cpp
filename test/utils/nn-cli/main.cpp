@@ -1,6 +1,4 @@
 #include "../TestCLI.hpp"
-#include "nn/Parameter.hpp"
-#include "nn/Visitor.hpp"
 #include "nn/RethrowVisitor.hpp"
 
 #include "nn/Linear.hpp"
@@ -133,6 +131,10 @@ public:
             visitor.rethrow();
 
             auto output = model.forward(runtime, x);
+
+            Graph graph(runtime, {output});
+            Computation computation(graph);
+            return computation.results();
         }
 
         if (args_.get(0) == "FlashAttention") {
@@ -172,30 +174,6 @@ public:
 
         throw std::runtime_error("Uknown command: " + args_.get(0));
     }
-
-protected:
-    class CreateParametersVisitor : public Visitor {
-    public:
-        CreateParametersVisitor(Runtime& runtime, ArgumentParser& args)
-            : runtime_(runtime), args_(args)
-        {}
-
-        virtual void visit(Parameter& parameter, std::vector<std::string> path) {
-            auto joined_path = join_path(path);
-            auto tensor = args_.get_one<Tensor>(joined_path, {runtime_});
-            parameter.set(tensor);
-        }
-
-    private:
-        Runtime& runtime_;
-        ArgumentParser& args_;
-        
-        static std::string join_path(const std::vector<std::string>& path) {
-            return std::accumulate(std::begin(path), std::end(path), std::string("--param"), [](const std::string& acc, const std::string& x) {
-                return acc + "-" + x;
-            });
-        }
-    };
 };
 
 int main(int argc, char** argv) {

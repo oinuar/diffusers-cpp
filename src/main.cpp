@@ -13,18 +13,5 @@
 #include <filesystem>
 
 int main() {
-    Qwen2TokenizerFast tokenizer("../utils/convert-model/tokenizer/tokenizer.json");
-
-    auto text = tokenizer.apply_chat_template({{
-        "user", "hello world"
-    }});
-
-    std::cerr << "template: " << text <<std::endl;
-
-    auto tokens = tokenizer.encode(text);
-
-    for (auto& token : tokens)
-        std::cerr << "token: " << token << std::endl;
-
     return 0;
 }

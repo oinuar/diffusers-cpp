@@ -1,120 +1,39 @@
-#include "Qwen2TokenizerFast.hpp"
+#include "transformers/models/qwen2/Qwen2TokenizerFast.hpp"
 #include <fstream>
 #include <nlohmann/json.hpp>
 
 using namespace tokenizers;
 
-Qwen2TokenizerFast::Qwen2TokenizerFast(const std::filesystem::path& tokenizer_file) {
-    std::ifstream file(tokenizer_file, std::ios::binary);
+Qwen2TokenizerFast Qwen2TokenizerFast::from_pretrained(const std::filesystem::path& path) {
+    return std::move(Qwen2TokenizerFast(
+        path / "tokenizer.json",
+        path / "tokenizer_config.json"
+    ));
+}
 
-    if (!file.is_open()) {
-        throw std::runtime_error(
-            "Failed to open tokenizer file: " +
-            tokenizer_file.string());
-    }
-
-    std::string json(
-        (std::istreambuf_iterator<char>(file)),
-        std::istreambuf_iterator<char>());
-
-    if (json.empty()) {
-        throw std::runtime_error(
-            "Tokenizer file is empty: " +
-            tokenizer_file.string());
-    }
-
-    tokenizer_ = Tokenizer::FromBlobJSON(json);
-
-    if (!tokenizer_) {
-        throw std::runtime_error(
-            "Failed to create tokenizer from: " +
-            tokenizer_file.string());
-    }
-
-    file.clear();
-    file.seekg(0, std::ios::beg);
-
+Qwen2TokenizerFast::Qwen2TokenizerFast(const std::filesystem::path& tokenizer_file, const std::filesystem::path& config_file)
+    : PreTrainedTokenizer(tokenizer_file)
+{
+    std::ifstream file(config_file, std::ios::binary);
     nlohmann::json j;
     file >> j;
 
-    if (!j.contains("added_tokens")) {
-        throw std::runtime_error(
-            "Tokenizer JSON does not contain added_tokens");
-    }
+    // 1. Read pad token
+    auto pad_token = j["pad_token"].get<std::string>();
 
-    for (const auto& token : j["added_tokens"]) {
-        const std::string content = token.at("content").get<std::string>();
-        const int id = token.at("id").get<int>();
+    // 2. Resolve pad token id from added tokens
+    for (auto& [id, token] : j["added_tokens_decoder"].items()) {
+        auto content = token.at("content").get<std::string>();
 
-        if (content == "<|im_end|>") {
-            eos_token_id_ = id;
+        if (content == pad_token) {
+            pad_token_id_ = std::stoi(id);
+            break;
         }
-
-        if (content == "<|endoftext|>") {
-            unk_token_id_ = id;
-            pad_token_id_ = id;
-        }
-    }
-
-    if (eos_token_id_ < 0) {
-        throw std::runtime_error(
-            "Tokenizer does not define <|im_end|>");
-    }
-
-    if (unk_token_id_ < 0) {
-        throw std::runtime_error(
-            "Tokenizer does not define <|endoftext|>");
-    }
-
-    if (pad_token_id_ < 0) {
-        throw std::runtime_error(
-            "Tokenizer does not define pad token");
     }
 }
 
-std::vector<int> Qwen2TokenizerFast::encode(
-    const std::string& text,
-    int max_length,
-    std::vector<int>* mask,
-    size_t* num_real_tokens) const
-{
-    std::vector<int> ids =
-        tokenizer_->Encode(text);
-
-    const size_t real_tokens = ids.size();
-
-    if (max_length > 0) {
-        if (ids.size() > static_cast<size_t>(max_length)) {
-            ids.resize(max_length);
-        }
-
-        while (ids.size() < static_cast<size_t>(max_length)) {
-            ids.push_back(pad_token_id_);
-        }
-    }
-
-    if (num_real_tokens)
-        *num_real_tokens = std::min(
-            real_tokens,
-            max_length > 0
-                ? static_cast<size_t>(max_length)
-                : real_tokens);
-
-    if (mask) {
-        mask->resize(ids.size());
-
-        const size_t n =
-            std::min(real_tokens, ids.size());
-
-        for (size_t i = 0; i < ids.size(); ++i)
-            (*mask)[i] = i < n ? 1 : 0;
-    }
-
-    return ids;
-}
-
-std::string Qwen2TokenizerFast::decode(const std::vector<int>& ids) const {
-    return tokenizer_->Decode(ids);
+int Qwen2TokenizerFast::pad_token_id() const {
+    return pad_token_id_;
 }
 
 std::string Qwen2TokenizerFast::apply_chat_template(

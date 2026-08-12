@@ -5,8 +5,12 @@
 #include "ggml/Context.hpp"
 #include "ggml/Backend.hpp"
 #include "ggml/Scheduler.hpp"
+#include "nn/Visitor.hpp"
+#include "nn/Parameter.hpp"
 #include "./ArgumentParser.hpp"
 #include <iostream>
+#include <fstream>
+#include <sstream>
 
 class TestCLI {
 public:
@@ -92,6 +96,58 @@ protected:
 
     TestCLI(int argc, char** argv) : args_(argc, argv) {}
 
+    class CreateParametersVisitor : public Visitor {
+    public:
+        CreateParametersVisitor(Runtime& runtime, ArgumentParser& args, const std::string& prefix = "")
+            : runtime_(runtime), args_(args), prefix_(prefix)
+        {}
+
+        virtual void visit(Parameter& parameter, std::vector<std::string> path) {
+            auto joined_path = join_path(path, prefix_);
+
+            auto tensor_value = args_.get_one<std::string>(joined_path);
+            ArgumentParser::parser<Tensor> parser(runtime_);
+            Tensor tensor;
+
+            // Read tensor value from file
+            std::error_code ec;
+            if (std::filesystem::is_regular_file(tensor_value, ec)) {
+                std::ifstream file(tensor_value);
+                if (!file)
+                    throw std::runtime_error(
+                        "Failed to open parameter file: " + tensor_value);
+                
+                std::stringstream buffer;
+                buffer << file.rdbuf();
+
+                tensor = parser(joined_path, buffer.str());
+            }
+
+            // Otherwise, read inline tensor
+            else
+                tensor = parser(joined_path, tensor_value);
+            
+            parameter.set(tensor);
+        }
+
+    private:
+        Runtime& runtime_;
+        ArgumentParser& args_;
+        std::string prefix_;
+        
+        static std::string join_path(const std::vector<std::string>& path, const std::string& prefix = "") {
+            std::string seed("--param");
+
+            if (!prefix.empty()) {
+                seed += '-';
+                seed += prefix;
+            }
+
+            return std::accumulate(std::begin(path), std::end(path), seed, [](const std::string& acc, const std::string& x) {
+                return acc + "-" + x;
+            });
+        }
+    };
 private:
     void print_escaped_string(const std::string& value)
     {

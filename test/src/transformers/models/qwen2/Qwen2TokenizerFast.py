@@ -1,20 +1,13 @@
 from utils import TestCase
 from transformers import Qwen2TokenizerFast
 import torch
-import json
-import pathlib
 import os
+import json
 
 class TestTransformersQwen2TokenizerFast(TestCase):
     @classmethod
     def setUpClass(cls):
-        tokenizer_dir = pathlib.Path(__file__).parent.parent.parent.parent.parent.parent / "utils" / "convert-model" / "tokenizer"
-
-        if not tokenizer_dir.is_dir():
-            raise RuntimeError("No such directory: {tokenizer_dir}. It is required for tokenizer-related tests.")
-
-        cls.tokenizer_dir = str(tokenizer_dir)
-        cls.tokenizer_file = str(tokenizer_dir / "tokenizer.json")
+        cls.tokenizer_dir = os.path.dirname(__file__)
 
     def test_encode_word(self):
         tokenizer = Qwen2TokenizerFast.from_pretrained(self.tokenizer_dir)
@@ -24,7 +17,7 @@ class TestTransformersQwen2TokenizerFast(TestCase):
 
         actual = self.cli(
             "Qwen2TokenizerFast_Encode",
-            "--tokenizer_file", self.tokenizer_file,
+            "--tokenizer_dir", self.tokenizer_dir,
             "--text", text,
             "--add_special_tokens", "false"
         )
@@ -39,7 +32,7 @@ class TestTransformersQwen2TokenizerFast(TestCase):
 
         actual = self.cli(
             "Qwen2TokenizerFast_Encode",
-            "--tokenizer_file", self.tokenizer_file,
+            "--tokenizer_dir", self.tokenizer_dir,
             "--text", text,
             "--add_special_tokens", "false"
         )
@@ -54,7 +47,7 @@ class TestTransformersQwen2TokenizerFast(TestCase):
 
         actual = self.cli(
             "Qwen2TokenizerFast_Encode",
-            "--tokenizer_file", self.tokenizer_file,
+            "--tokenizer_dir", self.tokenizer_dir,
             "--text", text,
             "--add_special_tokens", "false"
         )
@@ -69,7 +62,7 @@ class TestTransformersQwen2TokenizerFast(TestCase):
 
         actual = self.cli(
             "Qwen2TokenizerFast_Encode",
-            "--tokenizer_file", self.tokenizer_file,
+            "--tokenizer_dir", self.tokenizer_dir,
             "--text", text,
             "--add_special_tokens", "false"
         )
@@ -85,7 +78,7 @@ class TestTransformersQwen2TokenizerFast(TestCase):
 
         actual = self.cli(
             "Qwen2TokenizerFast_Decode",
-            "--tokenizer_file", self.tokenizer_file,
+            "--tokenizer_dir", self.tokenizer_dir,
             "--skip_special_tokens", "false",
             *sum([["--ids", str(id)] for id in ids], [])
         )
@@ -101,7 +94,7 @@ class TestTransformersQwen2TokenizerFast(TestCase):
 
         actual = self.cli(
             "Qwen2TokenizerFast_Decode",
-            "--tokenizer_file", self.tokenizer_file,
+            "--tokenizer_dir", self.tokenizer_dir,
             "--skip_special_tokens", "false",
             *sum([["--ids", str(id)] for id in ids], [])
         )
@@ -117,7 +110,7 @@ class TestTransformersQwen2TokenizerFast(TestCase):
 
         actual = self.cli(
             "Qwen2TokenizerFast_Decode",
-            "--tokenizer_file", self.tokenizer_file,
+            "--tokenizer_dir", self.tokenizer_dir,
             "--skip_special_tokens", "false",
             *sum([["--ids", str(id)] for id in ids], [])
         )
@@ -133,7 +126,7 @@ class TestTransformersQwen2TokenizerFast(TestCase):
 
         actual = self.cli(
             "Qwen2TokenizerFast_Decode",
-            "--tokenizer_file", self.tokenizer_file,
+            "--tokenizer_dir", self.tokenizer_dir,
             "--skip_special_tokens", "false",
             *sum([["--ids", str(id)] for id in ids], [])
         )
@@ -159,7 +152,7 @@ class TestTransformersQwen2TokenizerFast(TestCase):
 
         actual = self.cli(
             "Qwen2TokenizerFast_ApplyChatTemplate",
-            "--tokenizer_file", self.tokenizer_file,
+            "--tokenizer_dir", self.tokenizer_dir,
             "--add_generation_prompt", "true",
             "--enable_thinking", "false",
             *sum([["--messages", json.dumps(message)] for message in messages], [])
@@ -190,7 +183,7 @@ class TestTransformersQwen2TokenizerFast(TestCase):
 
         actual = self.cli(
             "Qwen2TokenizerFast_ApplyChatTemplate",
-            "--tokenizer_file", self.tokenizer_file,
+            "--tokenizer_dir", self.tokenizer_dir,
             "--add_generation_prompt", "true",
             "--enable_thinking", "false",
             *sum([["--messages", json.dumps(message)] for message in messages], [])
@@ -225,7 +218,7 @@ class TestTransformersQwen2TokenizerFast(TestCase):
 
         actual = self.cli(
             "Qwen2TokenizerFast_ApplyChatTemplate",
-            "--tokenizer_file", self.tokenizer_file,
+            "--tokenizer_dir", self.tokenizer_dir,
             "--add_generation_prompt", "true",
             "--enable_thinking", "false",
             *sum([["--messages", json.dumps(message)] for message in messages], [])
@@ -254,7 +247,7 @@ class TestTransformersQwen2TokenizerFast(TestCase):
 
         actual = self.cli(
             "Qwen2TokenizerFast_Encode",
-            "--tokenizer_file", self.tokenizer_file,
+            "--tokenizer_dir", self.tokenizer_dir,
             "--text", text,
             "--add_special_tokens", "false"
         )
@@ -279,7 +272,7 @@ class TestTransformersQwen2TokenizerFast(TestCase):
 
         actual = self.cli(
             "Qwen2TokenizerFast_Encode",
-            "--tokenizer_file", self.tokenizer_file,
+            "--tokenizer_dir", self.tokenizer_dir,
             "--text", text,
             "--max_length", str(max_length),
             "--return_attention_mask", "true",

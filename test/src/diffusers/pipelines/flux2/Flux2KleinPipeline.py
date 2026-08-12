@@ -1,7 +1,6 @@
 import json
 import os
 import tempfile
-import pathlib
 import torch
 from diffusers import (
     AutoencoderKLFlux2,
@@ -13,16 +12,9 @@ from transformers import Qwen3Config, Qwen3ForCausalLM, Qwen2TokenizerFast
 from utils import TestCase
 
 class TestPipelinesFlux2KleinPipeline(TestCase):
-
     @classmethod
     def setUpClass(cls):
-        tokenizer_dir = pathlib.Path(__file__).parent.parent.parent.parent.parent.parent / "utils" / "convert-model" / "tokenizer"
-
-        if not tokenizer_dir.is_dir():
-            raise RuntimeError("No such directory: {tokenizer_dir}. It is required for tokenizer-related tests.")
-
-        cls.tokenizer_dir = str(tokenizer_dir)
-        cls.tokenizer_file = str(tokenizer_dir / "tokenizer.json")
+        cls.tokenizer_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "transformers", "models", "qwen2")
         cls.tmpdir = tempfile.TemporaryDirectory()
 
     def test_embeddings(self):
@@ -132,7 +124,7 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
             "--text_encoder-num_key_value_heads", "2",
             "--text_encoder-max_position_embeddings", "32",
 
-            "--tokenizer_file", self.tokenizer_file,
+            "--tokenizer_dir", self.tokenizer_dir,
 
             *self.params(pipe.transformer, self.tmpdir.name, "transformer"),
             *self.params(pipe.vae, self.tmpdir.name, "vae"),

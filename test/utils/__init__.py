@@ -41,7 +41,7 @@ class TestCase(unittest.TestCase):
             value = str(tensor.tolist())
 
             if path is not None:
-                filename = os.path.join(path, str(param_id) + ".params")
+                filename = os.path.join(path, f"{param_id}.{prefix}-params")
                 with open(filename, "w") as f:
                     f.write(value)
                 value = filename

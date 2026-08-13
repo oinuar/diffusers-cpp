@@ -233,12 +233,15 @@ static float compute_empirical_mu(int64_t image_seq_len, int num_steps) {
     return a * (float)num_steps + b;
 }
 
-static Tensor noisy_latents(Runtime& runtime, int batch, int packed_h, int packed_w, int num_latent_channels) {
+static Tensor noisy_latents(Runtime& runtime, int batch, int packed_h, int packed_w, int num_latent_channels, std::vector<float>* init_latents) {
     const int64_t token_dim = int64_t(num_latent_channels) * 4; // C * 4
     const size_t count = size_t(batch) * packed_h * packed_w * token_dim;
 
     return runtime.create<float>({batch, int64_t(packed_h) * packed_w, token_dim},
         [=](std::mt19937& rng) {
+            if (init_latents)
+                return std::move(*init_latents);
+
             std::vector<float> noise(count);
             std::normal_distribution<float> normal(0.0f, 1.0f);
             for (float& v : noise) v = normal(rng);
@@ -502,40 +505,6 @@ Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
     };
 }
 
-size_t Flux2KleinPipeline::setup_timesteps(
-    int num_steps,
-    int packed_h,
-    int packed_w,
-    const std::vector<Image>& images)
-{
-    // Number of tokens belonging to the generated image.
-    const int64_t image_seq_len =
-        static_cast<int64_t>(packed_h) * packed_w;
-
-    const int64_t vae_multiple =
-        static_cast<int64_t>(vae_.scale_factor()) * 2;
-
-    // Number of tokens belonging to all reference images.
-    size_t num_ref_tokens = 0;
-
-    for (const auto& image : images) {
-        const int64_t h =
-            static_cast<int64_t>(image.height()) / vae_multiple;
-        const int64_t w =
-            static_cast<int64_t>(image.width()) / vae_multiple;
-
-        num_ref_tokens += static_cast<size_t>(h * w);
-    }
-
-    // Scheduler shifting is based only on the generated image
-    // sequence length, not reference-image tokens.
-    const float mu = compute_empirical_mu(image_seq_len, num_steps);
-
-    scheduler_.set_timesteps(num_steps, mu);
-
-    return num_ref_tokens;
-}
-
 //
 // `latents` is the recurrent state. The following:
 //
@@ -567,6 +536,7 @@ Flux2KleinPipeline::Denoise Flux2KleinPipeline::make_denoise_graph(
     Tensor::Shape txt_ids_shape,
     Tensor::Shape image_latents_shape,
     Tensor::Shape image_latent_ids_shape,
+    std::vector<float>* init_latents,
     std::vector<float>* prompt_embeds_data,
     std::vector<float>* img_ids_data,
     std::vector<float>* txt_ids_data,
@@ -579,7 +549,7 @@ Flux2KleinPipeline::Denoise Flux2KleinPipeline::make_denoise_graph(
     auto img_ids = runtime.create<float>(img_ids_shape, [img_ids_data](std::mt19937&) { return std::move(*img_ids_data); });
     auto txt_ids = runtime.create<float>(txt_ids_shape, [txt_ids_data](std::mt19937&) { return std::move(*txt_ids_data); });
 
-    auto latents = noisy_latents(runtime, batch, packed_h, packed_w, vae_.latent_channels());
+    auto latents = noisy_latents(runtime, batch, packed_h, packed_w, vae_.latent_channels(), init_latents);
 
     auto latent_model_input = latents;
     auto latent_image_ids = img_ids;
@@ -592,12 +562,10 @@ Flux2KleinPipeline::Denoise Flux2KleinPipeline::make_denoise_graph(
         latent_image_ids = Tensor::cat({img_ids, image_latent_ids}, /*axis=*/1);
     }
 
-    auto timestep = Tensor::empty<float>(*runtime.context(), {1});
-    runtime.bind<float>(timestep, [current_timestep](std::mt19937&) {
-        return std::vector<float>({*current_timestep});
+    auto timestep = Tensor::empty<float>(*runtime.context(), {batch});
+    runtime.bind<float>(timestep, [batch, current_timestep](std::mt19937&) {
+        return std::vector<float>(batch, *current_timestep);
     });
-
-    timestep = timestep.expand(latents.shape()[0]); // Add batch
 
     auto noise_pred = transformer_.forward(runtime,
         /*hidden_states=*/          latent_model_input,
@@ -615,7 +583,7 @@ Flux2KleinPipeline::Denoise Flux2KleinPipeline::make_denoise_graph(
 
     auto dt = Tensor::empty<float>(*runtime.context(), {1});
     runtime.bind<float>(dt, [current_dt](std::mt19937&) {
-        return std::vector<float>({*current_dt});
+        return std::vector<float>{*current_dt};
     });
 
     // Integrate latents over dt and assign latents <- latents+1
@@ -666,6 +634,8 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
 
     auto batch = options.num_images_per_prompt;
 
+    auto image_seq_len = static_cast<int64_t>(packed_h) * packed_w;
+
     // 1. Generate text embeddings and reference-image embeddings
     std::vector<float> prompt_embeds_data;
     std::vector<float> txt_ids_data;
@@ -680,6 +650,8 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
 
     Tensor::Shape image_latents_shape;
     Tensor::Shape image_latent_ids_shape;
+
+    size_t num_ref_tokens = 0;
     {
         Context context;
         Runtime runtime(scheduler, context, seed);
@@ -725,11 +697,28 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
             image_latent_ids_data = runtime.value<float>(*image_latent_ids_concat);
             image_latent_ids_shape = image_latent_ids_concat->shape();
         }
+
+        // Calculate number of image reference tokens
+        for (const auto& image : options.images) {
+            const int64_t h =
+                static_cast<int64_t>(image.height()) / vae_multiple;
+            const int64_t w =
+                static_cast<int64_t>(image.width()) / vae_multiple;
+
+            num_ref_tokens += static_cast<size_t>(h * w);
+        }
     }
 
-    // 2. Setup timesteps
-    auto num_ref_tokens = setup_timesteps(options.num_inference_steps, packed_h, packed_w, options.images);
-    
+    // 2. Setup schedule
+    Schedule schedule;
+    {        
+        // Scheduler shifting is based only on the generated image
+        // sequence length, not reference-image tokens.
+        auto mu = compute_empirical_mu(image_seq_len, options.num_inference_steps);
+
+        schedule = std::move(scheduler_.schedule(options.num_inference_steps, mu));
+    }
+
     // 3. Denoise in latent space
     std::vector<float> latents_data;
     Tensor::Shape latents_shape;
@@ -749,6 +738,7 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
             txt_ids_shape,
             image_latents_shape,
             image_latent_ids_shape,
+            nullptr, // init_latents
             &prompt_embeds_data,
             &img_ids_data,
             &txt_ids_data,
@@ -758,22 +748,22 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
             &dt
         ));
 
-        ProgressBar progress("Denoising", scheduler_.get_timesteps().size());
+        ProgressBar progress("Denoising", schedule.size());
+        size_t i = 0;
 
-        for (auto i = 0; i < scheduler_.get_timesteps().size(); ++i) {
-            auto [current_timestep, current_dt] = scheduler_.step(i);
-            timestep = current_timestep;
-            dt = current_dt;
+        for (const auto& step : schedule) {
+            timestep = step.timestep;
+            dt = step.dt;
 
             Computation computation(graph);
 
             // Extract latents from the last denoising step
-            if (i == scheduler_.get_timesteps().size() - 1) {
+            if (i == schedule.size() - 1) {
                 latents_data = runtime.value<float>(latents);
                 latents_shape = latents.shape();
             }
 
-            progress.update(i);
+            progress.update(i++);
         }
     }
 

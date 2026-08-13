@@ -521,34 +521,14 @@ public:
                 return std::move(results);
             }
 
-            if (args_.get(0) == "Flux2KleinPipeline_timesteps") {
-                auto num_steps = args_.get_one<int>("--num_steps");
-                auto packed_h = args_.get_one<int>("--packed_h");
-                auto packed_w = args_.get_one<int>("--packed_w");
-                auto images = args_.get_many<Image>("--images");
-
-                auto num_ref_tokens = pipeline.setup_timesteps(num_steps, packed_h, packed_w, images);
-                auto timesteps = pipeline.scheduler().get_timesteps();
-
-                Graph graph(runtime, {
-                    runtime.create<int64_t>({(int64_t)1}, [num_ref_tokens](std::mt19937&) {
-                        return std::vector<int64_t>({(int64_t)num_ref_tokens});
-                    }),
-                    runtime.create<int>({(int64_t)timesteps.size()}, [timesteps](std::mt19937&) {
-                        return std::move(timesteps);
-                    })
-                });
-
-                Computation computation(graph);
-
-                return computation.results();
-            }
-
             if (args_.get(0) == "Flux2KleinPipeline_denoise") {
                 auto batch = args_.get_one<int>("--batch");
                 auto packed_h = args_.get_one<int>("--packed_h");
                 auto packed_w = args_.get_one<int>("--packed_w");
                 auto num_ref_tokens = args_.get_one<int>("--num_ref_tokens");
+                auto timestep = args_.get_one<float>("--timestep");
+                auto dt = args_.get_one<float>("--dt");
+                auto [_, init_latents] = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--init_latents")).parse();
                 auto [prompt_embeds_shape, prompt_embeds_data] = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--prompt_embeds")).parse();
                 auto [img_ids_shape, img_ids_data] = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--img_ids")).parse();
                 auto [txt_ids_shape, txt_ids_data] = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--txt_ids")).parse();
@@ -568,8 +548,6 @@ public:
                     image_latent_ids_data = std::move(image_latent_ids.second);
                 }
 
-                float timestep, dt;
-
                 auto [graph, latents] = std::move(pipeline.make_denoise_graph(
                     runtime,
                     batch,
@@ -581,6 +559,7 @@ public:
                     txt_ids_shape,
                     image_latents_shape,
                     image_latent_ids_shape,
+                    &init_latents,
                     &prompt_embeds_data,
                     &img_ids_data,
                     &txt_ids_data,

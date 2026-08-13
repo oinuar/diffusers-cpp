@@ -1,5 +1,10 @@
 #include "diffusers/schedulers/FlowMatchEulerDiscreteScheduler.hpp"
 
+#include <cmath>
+#include <stdexcept>
+#include <utility>
+#include <vector>
+
 FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(
     int num_train_timesteps,
     float shift,
@@ -7,112 +12,195 @@ FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(
     std::optional<float> shift_terminal,
     bool invert_sigmas,
     std::string time_shift_type
-) : num_train_timesteps(num_train_timesteps),
-    shift(shift),
-    use_dynamic_shifting(use_dynamic_shifting),
-    shift_terminal(shift_terminal),
-    invert_sigmas(invert_sigmas),
-    time_shift_type(time_shift_type)
+)
+    : num_train_timesteps_(num_train_timesteps),
+      shift_(shift),
+      use_dynamic_shifting_(use_dynamic_shifting),
+      shift_terminal_(shift_terminal),
+      invert_sigmas_(invert_sigmas),
+      time_shift_type_(std::move(time_shift_type)),
+      sigma_max_(1.0f),
+      sigma_min_(1.0f / static_cast<float>(num_train_timesteps))
 {
-    // Initialize default sigmas bounds matching Python's linspace logic
-    sigma_max = 1.0f;
-    sigma_min = 1.0f / static_cast<float>(num_train_timesteps);
+    if (num_train_timesteps_ <= 0) {
+        throw std::invalid_argument(
+            "FlowMatchEulerDiscreteScheduler: "
+            "num_train_timesteps must be positive");
+    }
+
+    if (time_shift_type_ != "exponential" &&
+        time_shift_type_ != "linear") {
+        throw std::invalid_argument(
+            "FlowMatchEulerDiscreteScheduler: "
+            "unsupported time_shift_type: " +
+            time_shift_type_);
+    }
 }
 
 float FlowMatchEulerDiscreteScheduler::sigma_to_t(float sigma) const {
-    return sigma * num_train_timesteps;
+    return sigma * static_cast<float>(num_train_timesteps_);
 }
 
-float FlowMatchEulerDiscreteScheduler::time_shift(float mu, float sigma_val, float t_val) const {
-    if (time_shift_type == "exponential") {
-        float exp_mu = std::exp(mu);
-        return exp_mu / (exp_mu + std::pow(1.0f / t_val - 1.0f, sigma_val));
-    } else {
-        // linear
-        return mu / (mu + std::pow(1.0f / t_val - 1.0f, sigma_val));
-    }
-}
-
-void FlowMatchEulerDiscreteScheduler::set_timesteps(
-    int num_inference_steps,
+float FlowMatchEulerDiscreteScheduler::time_shift(
     float mu,
-    std::optional<std::vector<float>> sigmas_override
-) {
-    std::vector<float> current_sigmas;
+    float sigma,
+    float t
+) const {
+    if (t <= 0.0f || t >= 1.0f) {
+        throw std::invalid_argument(
+            "FlowMatchEulerDiscreteScheduler::time_shift(): "
+            "t must be in (0, 1)");
+    }
 
-    if (sigmas_override.has_value()) {
-        current_sigmas = sigmas_override.value();
-        num_inference_steps = current_sigmas.size();
+    const float exponent =
+        std::pow(1.0f / t - 1.0f, sigma);
+
+    if (time_shift_type_ == "exponential") {
+        const float exp_mu = std::exp(mu);
+
+        return exp_mu / (exp_mu + exponent);
+    }
+
+    // linear
+    return mu / (mu + exponent);
+}
+
+Schedule FlowMatchEulerDiscreteScheduler::schedule(
+    int num_inference_steps,
+    float mu
+) const {
+    if (num_inference_steps <= 0) {
+        throw std::invalid_argument(
+            "FlowMatchEulerDiscreteScheduler::schedule(): "
+            "num_inference_steps must be positive");
+    }
+
+    std::vector<float> sigmas;
+    sigmas.reserve(num_inference_steps + 1);
+
+    //
+    // 1. Construct the base sigma schedule.
+    //
+    // Python:
+    //
+    //   sigmas = np.linspace(
+    //       sigma_max,
+    //       sigma_min,
+    //       num_inference_steps
+    //   )
+    //
+    const float t_max = sigma_to_t(sigma_max_);
+    const float t_min = sigma_to_t(sigma_min_);
+
+    if (num_inference_steps == 1) {
+        sigmas.push_back(
+            t_max /
+            static_cast<float>(num_train_timesteps_)
+        );
     } else {
-        float t_max = sigma_to_t(sigma_max);
-        float t_min = sigma_to_t(sigma_min);
-        // Matches np.linspace(t_max, t_min, num_inference_steps)
         for (int i = 0; i < num_inference_steps; ++i) {
-            float t_val = t_max - static_cast<float>(i) * (t_max - t_min) / static_cast<float>(num_inference_steps - 1);
-            current_sigmas.push_back(t_val / num_train_timesteps);
+            const float t =
+                t_max -
+                static_cast<float>(i) *
+                (t_max - t_min) /
+                static_cast<float>(num_inference_steps - 1);
+
+            sigmas.push_back(
+                t /
+                static_cast<float>(num_train_timesteps_)
+            );
         }
     }
 
-    // 2. Perform timestep shifting
-    if (use_dynamic_shifting) {
-        for (float& s : current_sigmas) {
-            s = time_shift(mu, 1.0f, s);
+    //
+    // 2. Apply FlowMatch timestep shifting.
+    //
+    if (use_dynamic_shifting_) {
+        for (float& sigma : sigmas) {
+            sigma = time_shift(
+                mu,
+                1.0f,
+                sigma
+            );
         }
     } else {
-        for (float& s : current_sigmas) {
-            s = shift * s / (1.0f + (shift - 1.0f) * s);
+        for (float& sigma : sigmas) {
+            sigma =
+                shift_ * sigma /
+                (
+                    1.0f +
+                    (shift_ - 1.0f) * sigma
+                );
         }
     }
 
-    // 3. Stretch shift to terminal if configured
-    if (shift_terminal) {
-        float last_val = current_sigmas.back();
-        float scale_factor = (1.0f - last_val) / (1.0f - *shift_terminal);
-        for (float& s : current_sigmas) {
-            float one_minus_z = 1.0f - s;
-            s = 1.0f - (one_minus_z / scale_factor);
+    //
+    // 3. Stretch schedule to shift_terminal.
+    //
+    if (shift_terminal_.has_value()) {
+        const float last = sigmas.back();
+
+        const float scale_factor =
+            (1.0f - last) /
+            (1.0f - *shift_terminal_);
+
+        for (float& sigma : sigmas) {
+            sigma =
+                1.0f -
+                (1.0f - sigma) /
+                scale_factor;
         }
     }
 
-    // Note: Karras, exponential, and beta sigma conversions are omitted here 
-    // as they are typically disabled (False) in standard Flux configurations. 
+    //
+    // 4. Convert sigma -> timestep.
+    //
+    std::vector<float> timesteps;
+    timesteps.reserve(num_inference_steps);
 
-    // 4 & 5. Convert to vectors and prepare timesteps
-    sigmas.clear();
-    timesteps.clear();
-    for (float s : current_sigmas) {
-        sigmas.push_back(s);
-        timesteps.push_back(static_cast<int>(std::round(s * num_train_timesteps)));
+    for (float sigma : sigmas) {
+        timesteps.push_back(
+            sigma_to_t(sigma)
+        );
     }
 
-    // 6. Append terminal sigma value
-    if (invert_sigmas) {
-        for (float& s : sigmas) {
-            s = 1.0f - s;
+    //
+    // 5. Handle inverted sigmas.
+    //
+    if (invert_sigmas_) {
+        for (float& sigma : sigmas) {
+            sigma = 1.0f - sigma;
         }
+
         for (size_t i = 0; i < timesteps.size(); ++i) {
-            timesteps[i] = static_cast<int>(std::round(sigmas[i] * num_train_timesteps));
+            timesteps[i] =
+                sigma_to_t(sigmas[i]);
         }
+
         sigmas.push_back(1.0f);
     } else {
+        //
+        // Euler integration needs one additional sigma
+        // representing the endpoint.
+        //
         sigmas.push_back(0.0f);
     }
+
+    return Schedule(
+        std::move(timesteps),
+        std::move(sigmas)
+    );
 }
 
-const std::vector<int>& FlowMatchEulerDiscreteScheduler::get_timesteps() const {
-    return timesteps;
-}
-
-std::pair<int, float> FlowMatchEulerDiscreteScheduler::step(size_t step_index) const {
-    float sigma = sigmas[step_index];
-    float sigma_next = sigmas[step_index + 1];
-    float dt = sigma_next - sigma;
-
-    return {timesteps[step_index], dt};
-}
-
-Tensor FlowMatchEulerDiscreteScheduler::integrate(const Tensor& model_output, const Tensor& sample, const Tensor& dt) const {
-    auto prev_sample = sample + dt * model_output;
-
-    return prev_sample;
+Tensor FlowMatchEulerDiscreteScheduler::integrate(
+    const Tensor& model_output,
+    const Tensor& sample,
+    const Tensor& dt
+) const {
+    //
+    // Euler:
+    //
+    //   x_next = x + dt * model_output
+    //
+    return sample + dt * model_output;
 }

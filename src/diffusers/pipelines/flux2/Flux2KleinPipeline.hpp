@@ -110,6 +110,7 @@ public:
         Tensor::Shape txt_ids_shape,
         Tensor::Shape image_latents_shape,
         Tensor::Shape image_latent_ids_shape,
+        std::vector<float>* init_latents,
         std::vector<float>* prompt_embeds_data,
         std::vector<float>* img_ids_data,
         std::vector<float>* txt_ids_data,
@@ -126,8 +127,6 @@ public:
         Tensor::Shape latents_shape,
         std::vector<float>* latents_data
     );
-
-    size_t setup_timesteps(int num_steps, int packed_h, int packed_w, const std::vector<Image>& images);
 
     const FlowMatchEulerDiscreteScheduler& scheduler() const {
         return scheduler_;

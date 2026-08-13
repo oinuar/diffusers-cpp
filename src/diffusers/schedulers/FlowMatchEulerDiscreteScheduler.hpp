@@ -1,14 +1,9 @@
 #pragma once
 
-#include <vector>
-#include <string>
-#include <cmath>
-#include <algorithm>
 #include <optional>
-#include <limits>
-#include "ggml/Tensor.hpp"
+#include <string>
 
-class Runtime;
+#include "diffusers/schedulers/Schedule.hpp"
 
 class FlowMatchEulerDiscreteScheduler {
 public:
@@ -21,34 +16,34 @@ public:
         std::string time_shift_type = "exponential"
     );
 
-    void set_timesteps(
+    Schedule schedule(
         int num_inference_steps,
-        float mu = 0.0f,
-        std::optional<std::vector<float>> sigmas_override = std::nullopt
-    );
+        float mu = 0.0f
+    ) const;
 
-    const std::vector<int>& get_timesteps() const;
-
-    std::pair<int, float> step(size_t step_index) const;
-
-    Tensor integrate(const Tensor& model_output, const Tensor& sample, const Tensor& dt) const;
-
-    void reset_step_index();
+    Tensor integrate(
+        const Tensor& model_output,
+        const Tensor& sample,
+        const Tensor& dt
+    ) const;
 
 private:
-    int num_train_timesteps;
-    float shift;
-    bool use_dynamic_shifting;
-    std::optional<float> shift_terminal;
-    bool invert_sigmas;
-    std::string time_shift_type;
-
-    std::vector<float> sigmas;
-    std::vector<int> timesteps;
-
-    float sigma_max;
-    float sigma_min;
-
     float sigma_to_t(float sigma) const;
-    float time_shift(float mu, float sigma_val, float t_val) const;
+
+    float time_shift(
+        float mu,
+        float sigma,
+        float t
+    ) const;
+
+private:
+    int num_train_timesteps_;
+    float shift_;
+    bool use_dynamic_shifting_;
+    std::optional<float> shift_terminal_;
+    bool invert_sigmas_;
+    std::string time_shift_type_;
+
+    float sigma_max_;
+    float sigma_min_;
 };

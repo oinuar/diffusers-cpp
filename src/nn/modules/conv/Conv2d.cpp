@@ -42,7 +42,7 @@ Tensor Conv2d::forward(
         ->forward();
 
 
-    auto conv = ggml_conv_2d(
+    auto conv = ggml_conv_2d_direct(
         *runtime.context(),
         *weight,
         *x,

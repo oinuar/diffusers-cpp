@@ -10,3 +10,6 @@
 [submodule "tokenizers-cpp"]
 	path = tokenizers-cpp
 	url = https://github.com/mlc-ai/tokenizers-cpp.git
+[submodule "minja"]
+	path = minja
+	url = https://github.com/google/minja

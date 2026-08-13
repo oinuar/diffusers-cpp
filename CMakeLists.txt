@@ -128,17 +128,30 @@ add_library(stb STATIC
 target_link_libraries(stb PUBLIC stbi)
 
 # ---------------------------------------------------------------------------
-# nlohmann/json dependency
-# ---------------------------------------------------------------------------
-add_subdirectory(json)
-
-# ---------------------------------------------------------------------------
-# tokenizer-cpp dependency
+# tokenizers-cpp dependency
 # ---------------------------------------------------------------------------
 add_subdirectory(
     ${CMAKE_SOURCE_DIR}/tokenizers-cpp
     tokenizers-cpp
 )
+
+# ---------------------------------------------------------------------------
+# minja dependency
+# ---------------------------------------------------------------------------
+set(MINJA_TEST_ENABLED OFF)
+set(MINJA_EXAMPLE_ENABLED OFF)
+add_subdirectory(
+    ${CMAKE_SOURCE_DIR}/minja
+    minja
+)
+
+# ---------------------------------------------------------------------------
+# nlohmann/json dependency
+# ---------------------------------------------------------------------------
+if(NOT TARGET nlohmann_json::nlohmann_json)
+    add_subdirectory(json)
+endif()
+
 
 # ---------------------------------------------------------------------------
 # diffusers library
@@ -163,7 +176,7 @@ target_include_directories(diffusers PRIVATE
     ${CMAKE_SOURCE_DIR}/tokenizers-cpp/include
 )
 
-target_link_libraries(diffusers PUBLIC ggml stb nlohmann_json::nlohmann_json tokenizers_cpp)
+target_link_libraries(diffusers PUBLIC ggml stb nlohmann_json::nlohmann_json tokenizers_cpp minja)
 
 target_compile_features(diffusers PUBLIC c_std_11 cxx_std_17)
 

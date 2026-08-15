@@ -350,3 +350,170 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
         )
 
         self.assertTensors(actual, [expected_latents.float()])
+
+    def test_decode(self):
+        transformer = Flux2Transformer2DModel(
+            patch_size=1,
+            in_channels=16,
+            out_channels=16,
+            num_layers=1,
+            num_single_layers=1,
+            attention_head_dim=4,
+            num_attention_heads=2,
+            joint_attention_dim=24,
+            timestep_guidance_channels=8,
+            axes_dims_rope=(2, 2),
+            guidance_embeds=False,
+        )
+
+        vae = AutoencoderKLFlux2(
+            in_channels=3,
+            out_channels=3,
+            latent_channels=4,
+            down_block_types=("DownEncoderBlock2D",),
+            up_block_types=("UpDecoderBlock2D",),
+            block_out_channels=(8,),
+            layers_per_block=1,
+            norm_num_groups=8,
+        )
+
+        text_config = Qwen3Config(
+            hidden_size=8,
+            intermediate_size=16,
+            num_hidden_layers=28,
+            num_attention_heads=2,
+            num_key_value_heads=2,
+            max_position_embeddings=32,
+        )
+
+        tokenizer = Qwen2TokenizerFast.from_pretrained(self.tokenizer_dir)
+        text_encoder = Qwen3ForCausalLM(text_config)
+        scheduler = FlowMatchEulerDiscreteScheduler()
+
+        pipe = Flux2KleinPipeline(
+            transformer=transformer,
+            vae=vae,
+            text_encoder=text_encoder,
+            tokenizer=tokenizer,
+            scheduler=scheduler,
+        )
+
+        batch = 1
+        packed_h = 2
+        packed_w = 3
+
+        latent_height = packed_h * 2
+        latent_width = packed_w * 2
+
+        # ------------------------------------------------------------
+        # 1. Generate the same latent representation that the pipeline
+        #    passes into the denoising stage.
+        # ------------------------------------------------------------
+
+        generator = torch.Generator()
+
+        # The pipeline's packed latent representation is:
+        #
+        #   (B, N, 4C)
+        #
+        # where N = packed_h * packed_w.
+        #
+        # Start from the same representation used by prepare_latents().
+        latents_unpacked = torch.randn(
+            batch,
+            pipe.vae.config.latent_channels * 4,
+            packed_h,
+            packed_w,
+            generator=generator,
+            dtype=torch.float32,
+        )
+
+        # Construct the latent IDs in the same way as the pipeline.
+        latent_ids = pipe._prepare_latent_ids(latents_unpacked)
+
+        # Convert to the packed representation consumed by the transformer.
+        latents, _ = pipe.prepare_latents(
+            batch_size=batch,
+            num_latents_channels=pipe.transformer.config.in_channels // 4,
+            height=latent_height * pipe.vae_scale_factor,
+            width=latent_width * pipe.vae_scale_factor,
+            dtype=torch.float32,
+            device=latents_unpacked.device,
+            generator=generator,
+            latents=latents_unpacked,
+        )
+
+        # ------------------------------------------------------------
+        # 2. Reference Python decode path
+        #
+        # Flux2Klein's decode path first converts the packed latent tokens
+        # back to spatial latents using _unpack_latents_with_ids().
+        # ------------------------------------------------------------
+
+        z = pipe._unpack_latents_with_ids(
+            latents,
+            latent_ids,
+            latent_height // 2,
+            latent_width // 2,
+        )
+
+        # ------------------------------------------------------------
+        # 3. Apply the unnormalization.
+        # ------------------------------------------------------------
+
+        latents_bn_mean = pipe.vae.bn.running_mean.view(1, -1, 1, 1).to(z.device, z.dtype)
+        latents_bn_std = torch.sqrt(pipe.vae.bn.running_var.view(1, -1, 1, 1) + pipe.vae.config.batch_norm_eps).to(
+            z.device, z.dtype
+        )
+        z = z * latents_bn_std + latents_bn_mean
+        z = pipe._unpatchify_latents(z)
+
+        # ------------------------------------------------------------
+        # 4. Python VAE decode.
+        # ------------------------------------------------------------
+
+        expected = pipe.vae.decode(z, return_dict=False)[0]
+
+        actual = self.cli(
+            "Flux2KleinPipeline_decode",
+
+            "--batch", str(batch),
+            "--packed_h", str(packed_h),
+            "--packed_w", str(packed_w),
+            "--latents", str(latents.tolist()),
+
+            "--transformer-patch_size", "1",
+            "--transformer-in_channels", "16",
+            "--transformer-out_channels", "16",
+            "--transformer-num_layers", "1",
+            "--transformer-num_single_layers", "1",
+            "--transformer-attention_head_dim", "4",
+            "--transformer-num_attention_heads", "2",
+            "--transformer-joint_attention_dim", "24",
+            "--transformer-timestep_guidance_channels", "8",
+            "--transformer-axes_dims_rope", "2",
+            "--transformer-axes_dims_rope", "2",
+            "--transformer-guidance_embeds", "false",
+
+            "--vae-in_channels", "3",
+            "--vae-out_channels", "3",
+            "--vae-latent_channels", "4",
+            "--vae-block_out_channels", "8",
+            "--vae-layers_per_block", "1",
+            "--vae-norm_num_groups", "8",
+
+            "--text_encoder-hidden_size", "8",
+            "--text_encoder-intermediate_size", "16",
+            "--text_encoder-num_hidden_layers", "28",
+            "--text_encoder-num_attention_heads", "2",
+            "--text_encoder-num_key_value_heads", "2",
+            "--text_encoder-max_position_embeddings", "32",
+
+            "--tokenizer_dir", self.tokenizer_dir,
+
+            *self.params(pipe.transformer, self.tmpdir.name, "transformer"),
+            *self.params(pipe.vae, self.tmpdir.name, "vae"),
+            *self.params(pipe.text_encoder, self.tmpdir.name, "text_encoder"),
+        )
+
+        self.assertTensors(actual, [expected.float()])

@@ -233,7 +233,7 @@ static float compute_empirical_mu(int64_t image_seq_len, int num_steps) {
     return a * (float)num_steps + b;
 }
 
-static Tensor noisy_latents(Runtime& runtime, int batch, int packed_h, int packed_w, int num_latent_channels, std::vector<float>* init_latents) {
+static Tensor make_packed_latents(Runtime& runtime, int batch, int packed_h, int packed_w, int num_latent_channels, std::vector<float>* init_latents) {
     const int64_t token_dim = int64_t(num_latent_channels) * 4; // C * 4
     const size_t count = size_t(batch) * packed_h * packed_w * token_dim;
 
@@ -417,6 +417,62 @@ static Image preprocess_reference_image(const Image& image, int multiple, double
     return image.resize_and_crop(target_width, target_height);
 }
 
+// 1. Unpacks from (B, ph*pw, 4C) to (B, 4C, ph, pw)
+static Tensor unpack_to_patch_grid(Tensor packed, int packed_h, int packed_w) {
+    const int64_t B = packed.shape()[0];
+    const int64_t C4 = packed.shape()[2];
+    auto t = packed.permute({0, 2, 1}).contiguous();
+    return t.reshape({B, C4, packed_h, packed_w});
+}
+
+// 2. Unpatchifies from (B, 4C, ph, pw) to (B, C, 2ph, 2pw)
+// Uses a 4D interleaving trick to avoid 5D/6D tensors
+static Tensor unpatchify_latents(Tensor patched, int channels, int packed_h, int packed_w) {
+    const int64_t B = patched.shape()[0];
+    const int64_t C = channels;
+    const int64_t N = packed_h * packed_w;
+
+    auto t = patched.reshape({B, 4 * C, N});
+    t = t.reshape({B, 2 * C, 2, N});
+    t = t.permute({0, 1, 3, 2}).contiguous();
+    t = t.reshape({B, 2 * C, packed_h, 2 * packed_w});
+    t = t.reshape({B * C, 2, packed_h, 2 * packed_w});
+    t = t.permute({0, 2, 1, 3}).contiguous();
+    t = t.reshape({B, C, 2 * packed_h, 2 * packed_w});
+
+    return t;
+}
+
+// 3. Packs from (B, 4C, ph, pw) to (B, ph*pw, 4C)
+static Tensor pack_latents(Tensor latents) {
+    const int64_t B = latents.shape()[0];
+    const int64_t C4 = latents.shape()[1];
+    const int64_t ph = latents.shape()[2];
+    const int64_t pw = latents.shape()[3];
+    const int64_t N = ph * pw;
+
+    auto t = latents.reshape({B, C4, N});
+    return t.permute({0, 2, 1}).contiguous();
+}
+
+// 4. Patchifies from (B, C, 2ph, 2pw) to (B, 4C, ph, pw)
+// Inverse of the 4D interleaving trick
+static Tensor patchify_latents(Tensor latents, int channels, int packed_h, int packed_w) {
+    const int64_t B = latents.shape()[0];
+    const int64_t C = channels;
+    const int64_t N = packed_h * packed_w;
+
+    auto t = latents.reshape({B * C, packed_h, 2, 2 * packed_w});
+    t = t.permute({0, 2, 1, 3}).contiguous();
+    t = t.reshape({B, 2 * C, packed_h, 2 * packed_w});
+    t = t.reshape({B, 2 * C, N, 2});
+    t = t.permute({0, 1, 3, 2}).contiguous();
+    t = t.reshape({B, 4 * C, N});
+    t = t.reshape({B, 4 * C, packed_h, packed_w});
+
+    return t;
+}
+
 Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
     Runtime& runtime,
     int batch,
@@ -455,18 +511,21 @@ Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
             auto dist = vae_.encode(runtime, img_tensor);
             auto mode = dist.mode(); // Shape: (B, C, H, W)
 
+            auto packed_h = img.height() / vae_multiple;
+            auto packed_w = img.width() / vae_multiple;
+
+            // 1. Patchify: (B, C, H, W) -> (B, 4C, H/2, W/2)
+            auto patched_mode = patchify_latents(mode, vae_.latent_channels(), packed_h, packed_w);
+
+            // 2. Apply BN normalization to patchified latents
             auto bn_mean = vae_.bn().running_mean()->reshape({1, -1, 1, 1});
             auto bn_std = sqrt(vae_.bn().running_var()->reshape({1, -1, 1, 1}) + vae_.batch_norm_eps());
-            mode = (mode - bn_mean) / bn_std; // Apply to (B, C, H, W)
+            patched_mode = (patched_mode - bn_mean) / bn_std; // Apply to (B, 4C, H/2, W/2)
 
-            // 2x2 patchify + flatten:
-            //
-            // (B, C, H, W)
-            //       ↓
-            // (B, H/2 * W/2, 4C)
-            auto patched = pack_latents(mode, vae_.latent_channels(), img.height() / vae_multiple, img.width() / vae_multiple);
+            // 3. Pack latents: (B, 4C, H/2, W/2) -> (B, H/2 * W/2, 4C)
+            auto packed = pack_latents(patched_mode);
 
-            packed_imgs.push_back(patched);
+            packed_imgs.push_back(packed);
         }
 
         // Concatenate reference images along the token dimension:
@@ -536,7 +595,7 @@ Flux2KleinPipeline::Denoise Flux2KleinPipeline::make_denoise_graph(
     Tensor::Shape txt_ids_shape,
     Tensor::Shape image_latents_shape,
     Tensor::Shape image_latent_ids_shape,
-    std::vector<float>* init_latents,
+    std::vector<float>* packed_latents,
     std::vector<float>* prompt_embeds_data,
     std::vector<float>* img_ids_data,
     std::vector<float>* txt_ids_data,
@@ -549,7 +608,7 @@ Flux2KleinPipeline::Denoise Flux2KleinPipeline::make_denoise_graph(
     auto img_ids = runtime.create<float>(img_ids_shape, [img_ids_data](std::mt19937&) { return std::move(*img_ids_data); });
     auto txt_ids = runtime.create<float>(txt_ids_shape, [txt_ids_data](std::mt19937&) { return std::move(*txt_ids_data); });
 
-    auto latents = noisy_latents(runtime, batch, packed_h, packed_w, vae_.latent_channels(), init_latents);
+    auto latents = make_packed_latents(runtime, batch, packed_h, packed_w, vae_.latent_channels(), packed_latents);
 
     auto latent_model_input = latents;
     auto latent_image_ids = img_ids;
@@ -602,13 +661,18 @@ Graph Flux2KleinPipeline::make_decode_graph(
 ) {
     auto latents = runtime.create<float>(latents_shape, [latents_data](std::mt19937&) { return std::move(*latents_data); });
 
-    auto z = unpack_latents(latents, vae_.latent_channels(), packed_h, packed_w);
+    // 1. Unpack to patch grid (B, 4C, ph, pw)
+    auto z_packed = unpack_to_patch_grid(latents, packed_h, packed_w);
 
-    // BN Unnormalize before VAE decode
+    // 2. BN Unnormalize before VAE decode (Broadcasts over the 4C channels)
     auto bn_mean = vae_.bn().running_mean()->reshape({1, -1, 1, 1});
     auto bn_std = sqrt(vae_.bn().running_var()->reshape({1, -1, 1, 1}) + vae_.batch_norm_eps());
-    z = z * bn_std + bn_mean;
+    z_packed = z_packed * bn_std + bn_mean;
 
+    // 3. Unpatchify to spatial latents (B, C, 2ph, 2pw)
+    auto z = unpatchify_latents(z_packed, vae_.latent_channels(), packed_h, packed_w);
+
+    // 4. VAE decode
     auto decoded = vae_.decode(runtime, z);    // (B, 3, H, W)
 
     return std::move(Graph(runtime, {decoded}));

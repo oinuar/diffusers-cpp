@@ -110,7 +110,7 @@ public:
         Tensor::Shape txt_ids_shape,
         Tensor::Shape image_latents_shape,
         Tensor::Shape image_latent_ids_shape,
-        std::vector<float>* init_latents,
+        std::vector<float>* packed_latents,
         std::vector<float>* prompt_embeds_data,
         std::vector<float>* img_ids_data,
         std::vector<float>* txt_ids_data,

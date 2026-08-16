@@ -46,10 +46,10 @@ float FlowMatchEulerDiscreteScheduler::time_shift(
     float sigma,
     float t
 ) const {
-    if (t <= 0.0f || t >= 1.0f) {
+    if (t <= 0.0f) {
         throw std::invalid_argument(
             "FlowMatchEulerDiscreteScheduler::time_shift(): "
-            "t must be in (0, 1)");
+            "t must be positive");
     }
 
     const float exponent =

@@ -11,6 +11,8 @@
 #include "diffusers/models/embeddings/TimestepEmbedding.hpp"
 #include "diffusers/models/embeddings/Timesteps.hpp"
 #include "diffusers/models/attention_processor/Attention.hpp"
+#include "diffusers/schedulers/FlowMatchEulerDiscreteScheduler.hpp"
+
 
 #include "diffusers/models/unets/unet2d/UNetMidBlock2D.hpp"
 #include "diffusers/models/unets/unet2d/DownEncoderBlock2D.hpp"
@@ -456,6 +458,62 @@ public:
             Graph graph(runtime, {output});
             Computation computation(graph);
             return computation.results();
+        }
+
+        if (args_.get(0).rfind("FlowMatchEulerDiscreteScheduler", 0) == 0) {
+            auto num_train_timesteps = args_.get_optional<int>("--num_train_timesteps").value_or(1000);
+            auto shift = args_.get_optional<float>("--shift").value_or(1.0f);
+            auto use_dynamic_shifting = args_.get_optional<bool>("--use_dynamic_shifting").value_or(false);
+            auto shift_terminal = args_.get_optional<float>("--shift_terminal");
+            auto invert_sigmas = args_.get_optional<bool>("--invert_sigmas").value_or(false);
+            auto time_shift_type = args_.get_optional<std::string>("--time_shift_type").value_or("exponential");
+
+            FlowMatchEulerDiscreteScheduler scheduler(
+                num_train_timesteps,
+                shift,
+                use_dynamic_shifting,
+                shift_terminal,
+                invert_sigmas,
+                time_shift_type
+            );
+
+            auto num_inference_steps = args_.get_one<int>("--num_inference_steps");
+            auto mu = args_.get_one<float>("--mu");
+
+            auto schedule = scheduler.schedule(num_inference_steps, mu);
+
+            if (args_.get(0) == "FlowMatchEulerDiscreteScheduler_schedule") {
+                auto timesteps = runtime.create<float>(
+                    {static_cast<int64_t>(schedule.size())},
+                    [&schedule](std::mt19937&) { return schedule.timesteps(); }
+                );
+
+                auto sigmas = runtime.create<float>(
+                    {static_cast<int64_t>(schedule.sigmas().size())},
+                    [&schedule](std::mt19937&) { return schedule.sigmas(); }
+                );
+
+                Graph graph(runtime, {timesteps, sigmas});
+                Computation computation(graph);
+                return computation.results();
+            }
+
+            if (args_.get(0) == "FlowMatchEulerDiscreteScheduler_step") {
+                auto index = args_.get_one<int>("--index");
+                auto model_output = args_.get_one<Tensor>("--model_output", {runtime});
+                auto sample = args_.get_one<Tensor>("--sample", {runtime});
+
+                auto dt = runtime.create<float>(
+                    {1},
+                    [dt = schedule[index].dt](std::mt19937&) { return std::vector<float>{dt}; }
+                );
+
+                auto next_sample = scheduler.integrate(model_output, sample, dt);
+
+                Graph graph(runtime, {next_sample});
+                Computation computation(graph);
+                return computation.results();
+            }
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));

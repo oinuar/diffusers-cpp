@@ -2,7 +2,8 @@
 
 #include <string>
 #include <string_view>
-#include <unordered_map>
+#include <optional>
+#include <utility>
 #include <vector>
 #include <charconv>
 #include <iostream>
@@ -16,7 +17,7 @@ public:
         T operator ()(const std::string& option, const std::string& value) const;
     };
 
-    typedef std::unordered_multimap<std::string, std::string>::const_iterator iterator;
+    typedef std::vector<std::pair<std::string, std::string>>::const_iterator iterator;
 
     ArgumentParser(int argc, char** argv);
 
@@ -35,7 +36,7 @@ public:
 
 private:
     std::string command_;
-    std::unordered_multimap<std::string, std::string> options_;
+    std::vector<std::pair<std::string, std::string>> options_;
     std::vector<std::string> positional_;
 };
 
@@ -52,11 +53,11 @@ ArgumentParser::ArgumentParser(int argc, char** argv) : options_(), positional_(
 
             // --key value
             if (i + 1 < argc && std::string_view(argv[i + 1]).rfind("--") != 0)
-                options_.emplace(std::move(key), argv[++i]);
+                options_.emplace_back(std::move(key), argv[++i]);
 
             // --flag
             else
-                options_.emplace(std::move(key), "");
+                options_.emplace_back(std::move(key), "");
         }
         else
             positional_.emplace_back(arg);
@@ -98,19 +99,25 @@ std::vector<T> ArgumentParser::get_many(std::string_view option, Parser parser) 
     auto [start, end] = get(option);
     std::vector<T> result;
 
-    // TODO: unordered_map returns these options in reverse order. Bad since order
-    // is unspecified anyway and may change. Need to fix to keep proper (argument) ordering!
     for (auto it = start; it != end; ++it)
-        result.emplace(result.begin(), parser(it->first, it->second));
+        result.emplace_back(parser(it->first, it->second));
 
     return std::move(result);
 }
 
 inline
 std::pair<ArgumentParser::iterator, ArgumentParser::iterator> ArgumentParser::get(std::string_view option) const {
-    auto [start, end] = options_.equal_range(std::string(option));
+    const std::string key(option);
 
-    return std::make_pair(start, end);
+    auto start = options_.begin();
+    while (start != options_.end() && start->first != key)
+        ++start;
+
+    auto end = start;
+    while (end != options_.end() && end->first == key)
+        ++end;
+
+    return {start, end};
 }
 
 inline

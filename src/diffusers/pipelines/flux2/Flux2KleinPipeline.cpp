@@ -372,15 +372,16 @@ static Tensor image_to_tensor(Runtime& runtime, const Image& img) {
 
                     // HWC uint8 -> CHW float32.
                     //
-                    // Diffusers VAE expects image values in [-1, 1].
+                    // Matches VaeImageProcessor.preprocess():
+                    // (image / 255.0) * 2.0 - 1.0, mapping [0, 255] to [-1, 1].
                     data[0 * plane + dst] =
-                        static_cast<float>(pixels[src + 0]) / 127.5f - 1.0f;
+                        2.0f * (static_cast<float>(pixels[src + 0]) / 255.0f) - 1.0f;
 
                     data[1 * plane + dst] =
-                        static_cast<float>(pixels[src + 1]) / 127.5f - 1.0f;
+                        2.0f * (static_cast<float>(pixels[src + 1]) / 255.0f) - 1.0f;
 
                     data[2 * plane + dst] =
-                        static_cast<float>(pixels[src + 2]) / 127.5f - 1.0f;
+                        2.0f * (static_cast<float>(pixels[src + 2]) / 255.0f) - 1.0f;
                 }
             }
 

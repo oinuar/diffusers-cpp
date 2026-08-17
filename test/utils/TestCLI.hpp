@@ -76,7 +76,7 @@ public:
     }
 
     template <typename T>
-    void print_tensor_like(const std::vector<T>& data, const Tensor::Shape& shape) {
+    void print_tensor_like(const std::vector<T>& data, const Tensor::Shape& shape, std::ostream& stream=std::cout) const {
         size_t expected = 1;
         for (auto i = 0; i < shape.rank(); ++i)
             expected *= shape[i];
@@ -87,8 +87,8 @@ public:
         std::cerr << "output shape: " << shape.to_string() << std::endl;
 
         size_t index = 0;
-        print_tensor_recursively(data, shape, 0, index);
-        std::cout << std::endl;
+        print_tensor_recursively(data, shape, 0, index, stream);
+        stream << std::endl;
     }
 
 protected:
@@ -96,9 +96,10 @@ protected:
 
     TestCLI(int argc, char** argv) : args_(argc, argv) {}
 
+public:
     class CreateParametersVisitor : public Visitor {
     public:
-        CreateParametersVisitor(Runtime& runtime, ArgumentParser& args, const std::string& prefix = "")
+        CreateParametersVisitor(Runtime& runtime, const ArgumentParser& args, const std::string& prefix = "")
             : runtime_(runtime), args_(args), prefix_(prefix)
         {}
 
@@ -132,7 +133,7 @@ protected:
 
     private:
         Runtime& runtime_;
-        ArgumentParser& args_;
+        const ArgumentParser& args_;
         std::string prefix_;
         
         static std::string join_path(const std::vector<std::string>& path, const std::string& prefix = "") {
@@ -149,44 +150,43 @@ protected:
         }
     };
 private:
-    void print_escaped_string(const std::string& value)
-    {
-        std::cout << '"';
+    void print_escaped_string(const std::string& value, std::ostream& stream) const {
+        stream << '"';
 
         for (char c : value) {
             switch (c) {
             case '"':
-                std::cout << "\\\"";
+                stream << "\\\"";
                 break;
             case '\\':
-                std::cout << "\\\\";
+                stream << "\\\\";
                 break;
             case '\n':
-                std::cout << "\\n";
+                stream << "\\n";
                 break;
             case '\r':
-                std::cout << "\\r";
+                stream << "\\r";
                 break;
             case '\t':
-                std::cout << "\\t";
+                stream << "\\t";
                 break;
             default:
-                std::cout << c;
+                stream << c;
                 break;
             }
         }
 
-        std::cout << '"';
+        stream << '"';
     }
 
     template <typename T>
-    void print_tensor_recursively(const std::vector<T>& data, const Tensor::Shape& shape, size_t dim, size_t& index) {
+    void print_tensor_recursively(const std::vector<T>& data, const Tensor::Shape& shape, size_t dim, size_t& index, std::ostream& stream) const {
         if (shape.rank() == 0 && dim == 0) {
-            std::cout << data[index++];
+            stream << data[index++];
             return;
         }
 
-        std::cout << "[";
+        stream << "[";
 
         if (dim == shape.rank() - 1)
         {
@@ -194,12 +194,12 @@ private:
             for (auto i = 0; i < shape[dim]; ++i)
             {
                 if constexpr (std::is_same_v<T, std::string>)
-                    print_escaped_string(data[index++]);
+                    print_escaped_string(data[index++], stream);
                 else
-                    std::cout << data[index++];
+                    stream << data[index++];
 
                 if (i + 1 != shape[dim])
-                    std::cout << ", ";
+                    stream << ", ";
             }
         }
         else
@@ -207,12 +207,12 @@ private:
             // Print nested arrays
             for (auto i = 0; i < shape[dim]; ++i)
             {
-                print_tensor_recursively(data, shape, dim + 1, index);
+                print_tensor_recursively(data, shape, dim + 1, index, stream);
                 if (i + 1 != shape[dim])
-                    std::cout << ", ";
+                    stream << ", ";
             }
         }
 
-        std::cout << "]";
+        stream << "]";
     }
 };

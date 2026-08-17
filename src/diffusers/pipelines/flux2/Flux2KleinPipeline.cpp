@@ -310,7 +310,7 @@ static Tensor pack_latents(Tensor latents, int channels, int packed_h, int packe
     return t.permute({0, 2, 1}).contiguous();
 }
 
-static std::vector<Image> latents_to_images(std::vector<float>&& data, int batch, int height, int width) {
+static std::vector<Image> latents_to_images(const std::vector<float>& data, int batch, int height, int width) {
     std::vector<Image> images;
     images.reserve(batch);
 
@@ -320,7 +320,7 @@ static std::vector<Image> latents_to_images(std::vector<float>&& data, int batch
     constexpr size_t channels = 3;
 
     for (int b = 0; b < batch; ++b) {
-        std::vector<uint8_t> pixels(plane * channels);
+        std::vector<uint8_t> pixels(plane * channels, 0);
         const float* src = data.data() + size_t(b) * channels * plane;
 
         for (size_t y = 0; y < h; ++y)
@@ -333,7 +333,8 @@ static std::vector<Image> latents_to_images(std::vector<float>&& data, int batch
 
         images.emplace_back(w, h, channels, std::move(pixels));
     }
-    return images;
+
+    return std::move(images);
 }
 
 static Tensor image_to_tensor(Runtime& runtime, const Image& img) {
@@ -679,7 +680,7 @@ Graph Flux2KleinPipeline::make_decode_graph(
     return std::move(Graph(runtime, {decoded}));
 }
 
-std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, GenerationOptions&& options) {
+std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& runtime, GenerationOptions&& options) {
     if (options.height % vae_.scale_factor() != 0 ||
         options.width % vae_.scale_factor() != 0)
         throw std::runtime_error("height/width must be divisible by VAE's scale factor");
@@ -718,8 +719,8 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
 
     size_t num_ref_tokens = 0;
     {
-        Context context;
-        Runtime runtime(scheduler, context, seed);
+        //Context context(scheduler.capacity());
+        //Runtime runtime(scheduler, context, seed);
 
         auto [
             graph,
@@ -737,6 +738,7 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
             packed_w,
             options.images
         ));
+
         Computation computation(graph);
 
         // Prompt embeddings
@@ -776,20 +778,26 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
 
     // 2. Setup schedule
     Schedule schedule;
-    {        
+    {
         // Scheduler shifting is based only on the generated image
         // sequence length, not reference-image tokens.
         auto mu = compute_empirical_mu(image_seq_len, options.num_inference_steps);
+        const int n = options.num_inference_steps;
 
-        schedule = std::move(scheduler_.schedule(options.num_inference_steps, mu));
+        std::vector<float> sigmas(n);
+        for (int i = 0; i < n; ++i)
+            sigmas[i] =
+                static_cast<float>(1.0 - static_cast<double>(i) / n);
+
+        schedule = std::move(scheduler_.schedule(n, mu, std::move(sigmas)));
     }
 
     // 3. Denoise in latent space
     std::vector<float> latents_data;
     Tensor::Shape latents_shape;
     {
-        Context context;
-        Runtime runtime(scheduler, context, seed);
+        //Context context(scheduler.capacity());
+        //Runtime runtime(scheduler, context, seed);
         float timestep, dt;
 
         auto [graph, latents] = std::move(make_denoise_graph(
@@ -803,7 +811,7 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
             txt_ids_shape,
             image_latents_shape,
             image_latent_ids_shape,
-            nullptr, // init_latents
+            options.init_latents ? &options.init_latents.value() : nullptr,
             &prompt_embeds_data,
             &img_ids_data,
             &txt_ids_data,
@@ -830,13 +838,15 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
 
             progress.update(i++);
         }
+
+        progress.complete();
     }
 
     // 4. Decode latents to pixels
     std::vector<Image> images;
     {
-        Context context;
-        Runtime runtime(scheduler, context, seed);
+        //Context context(scheduler.capacity());
+        //Runtime runtime(scheduler, context, seed);
 
         auto graph = std::move(make_decode_graph(
             runtime,
@@ -851,8 +861,8 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Generat
         auto decoded = computation.results().at(0);
         auto data = runtime.value<float>(decoded);
 
-        images = latents_to_images(std::move(data), batch, target_height, target_width);
+        images = std::move(latents_to_images(data, batch, target_height, target_width));
     }
 
-    return images;
+    return std::move(images);
 }

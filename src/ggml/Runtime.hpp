@@ -84,6 +84,10 @@ public:
         return std::move(data);
     }
 
+    Scheduler& scheduler() {
+        return scheduler_;
+    }
+
     Context& context() {
         return context_;
     }

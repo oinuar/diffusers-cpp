@@ -9,6 +9,7 @@
 #include "diffusers/models/transformers/flux2/Flux2Transformer2DModel.hpp"
 #include "diffusers/schedulers/FlowMatchEulerDiscreteScheduler.hpp"
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 #include <filesystem>
@@ -61,6 +62,10 @@ public:
         float guidance_scale = 0.0f;      // unused: Klein is guidance-distilled
         int num_images_per_prompt = 1;
         std::optional<uint64_t> seed = std::nullopt;
+        // Optional initial latents in the packed representation
+        // (batch, packed_h * packed_w, 4 * latent_channels).
+        // If nullopt, random noise is generated instead.
+        std::optional<std::vector<float>> init_latents;
         size_t max_sequence_length = 512;
     };
 
@@ -74,7 +79,7 @@ public:
           scheduler_(), text_encoder_(std::move(text_encoder)),
           tokenizer_(std::move(tokenizer)) {}
 
-    std::vector<Image> operator ()(Scheduler& scheduler, GenerationOptions&& options);
+    std::vector<Image> operator ()(Runtime& runtime, GenerationOptions&& options);
 
     struct Embeddings {
         Graph graph;

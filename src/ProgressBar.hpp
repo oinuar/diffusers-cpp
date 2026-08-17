@@ -16,8 +16,7 @@ public:
           lastTime_(Clock::now())
     {}
 
-    void update(int currentIteration)
-    {
+    void update(int currentIteration) {
         using namespace std::chrono;
 
         currentIteration = std::clamp(currentIteration, 0, total_);
@@ -32,7 +31,7 @@ public:
         if (dt > 0.0)
             rate = (currentIteration - lastIteration_) / dt;
 
-        std::cout << '\r'
+        std::cerr << '\r'
                   << title_ << ": ["
                   << std::string(filled, '#')
                   << std::string(width_ - filled, '-')
@@ -42,18 +41,22 @@ public:
 
         if (rate > 0.0) {
             if (rate >= 1.0)
-                std::cout << std::setprecision(2) << rate << " it/s";
+                std::cerr << std::setprecision(2) << rate << " it/s";
             else
-                std::cout << std::setprecision(2) << (1.0 / rate) << " s/it";
+                std::cerr << std::setprecision(2) << (1.0 / rate) << " s/it";
         }
 
         if (currentIteration == total_)
-            std::cout << " DONE" << std::endl;
+            std::cerr << " DONE" << std::endl;
 
-        std::cout << std::flush;
+        std::cerr << std::flush;
 
         lastIteration_ = currentIteration;
         lastTime_ = now;
+    }
+
+    void complete() {
+        update(total_);
     }
 
 private:

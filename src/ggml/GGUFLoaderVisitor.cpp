@@ -104,7 +104,7 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
 
     std::vector<std::byte> buf(ggml_nbytes(tensor));
 
-    // std::cout << "LOAD " << tensor_name.c_str() << " " << parameter.shape().to_string() << std::endl;
+    // std::cerr << "LOAD " << tensor_name.c_str() << " " << parameter.shape().to_string() << std::endl;
 
     file_.seekg(offs, file_.beg);
     

@@ -67,7 +67,8 @@ float FlowMatchEulerDiscreteScheduler::time_shift(
 
 Schedule FlowMatchEulerDiscreteScheduler::schedule(
     int num_inference_steps,
-    float mu
+    float mu,
+    std::optional<std::vector<float>> sigmas
 ) const {
     if (num_inference_steps <= 0) {
         throw std::invalid_argument(
@@ -75,48 +76,62 @@ Schedule FlowMatchEulerDiscreteScheduler::schedule(
             "num_inference_steps must be positive");
     }
 
-    std::vector<float> sigmas;
-    sigmas.reserve(num_inference_steps + 1);
-
     //
     // 1. Construct the base sigma schedule.
     //
-    // Python:
+    // Mirrors Python's set_timesteps():
     //
-    //   sigmas = np.linspace(
-    //       sigma_max,
-    //       sigma_min,
-    //       num_inference_steps
-    //   )
+    //   if sigmas is None:
+    //       timesteps = np.linspace(
+    //           self._sigma_to_t(self.sigma_max),
+    //           self._sigma_to_t(self.sigma_min),
+    //           num_inference_steps,
+    //       )
+    //       sigmas = timesteps / self.config.num_train_timesteps
+    //   else:
+    //       sigmas = np.array(sigmas).astype(np.float32)
     //
-    const float t_max = sigma_to_t(sigma_max_);
-    const float t_min = sigma_to_t(sigma_min_);
-
-    if (num_inference_steps == 1) {
-        sigmas.push_back(
-            t_max /
-            static_cast<float>(num_train_timesteps_)
-        );
+    if (sigmas.has_value()) {
+        if (sigmas->size() != static_cast<size_t>(num_inference_steps)) {
+            throw std::invalid_argument(
+                "FlowMatchEulerDiscreteScheduler::schedule(): "
+                "sigmas must have num_inference_steps entries");
+        }
     } else {
-        for (int i = 0; i < num_inference_steps; ++i) {
-            const float t =
-                t_max -
-                static_cast<float>(i) *
-                (t_max - t_min) /
-                static_cast<float>(num_inference_steps - 1);
+        sigmas = std::vector<float>();
 
-            sigmas.push_back(
-                t /
+        const float t_max = sigma_to_t(sigma_max_);
+        const float t_min = sigma_to_t(sigma_min_);
+
+        if (num_inference_steps == 1) {
+            sigmas->push_back(
+                t_max /
                 static_cast<float>(num_train_timesteps_)
             );
+        } else {
+            for (int i = 0; i < num_inference_steps; ++i) {
+                const float t =
+                    t_max -
+                    static_cast<float>(i) *
+                    (t_max - t_min) /
+                    static_cast<float>(num_inference_steps - 1);
+
+                sigmas->push_back(
+                    t /
+                    static_cast<float>(num_train_timesteps_)
+                );
+            }
         }
     }
+
+    std::vector<float> base = std::move(*sigmas);
+    base.reserve(num_inference_steps + 1);
 
     //
     // 2. Apply FlowMatch timestep shifting.
     //
     if (use_dynamic_shifting_) {
-        for (float& sigma : sigmas) {
+        for (float& sigma : base) {
             sigma = time_shift(
                 mu,
                 1.0f,
@@ -124,7 +139,7 @@ Schedule FlowMatchEulerDiscreteScheduler::schedule(
             );
         }
     } else {
-        for (float& sigma : sigmas) {
+        for (float& sigma : base) {
             sigma =
                 shift_ * sigma /
                 (
@@ -138,13 +153,13 @@ Schedule FlowMatchEulerDiscreteScheduler::schedule(
     // 3. Stretch schedule to shift_terminal.
     //
     if (shift_terminal_.has_value()) {
-        const float last = sigmas.back();
+        const float last = base.back();
 
         const float scale_factor =
             (1.0f - last) /
             (1.0f - *shift_terminal_);
 
-        for (float& sigma : sigmas) {
+        for (float& sigma : base) {
             sigma =
                 1.0f -
                 (1.0f - sigma) /
@@ -158,7 +173,7 @@ Schedule FlowMatchEulerDiscreteScheduler::schedule(
     std::vector<float> timesteps;
     timesteps.reserve(num_inference_steps);
 
-    for (float sigma : sigmas) {
+    for (float sigma : base) {
         timesteps.push_back(
             sigma_to_t(sigma)
         );
@@ -168,27 +183,27 @@ Schedule FlowMatchEulerDiscreteScheduler::schedule(
     // 5. Handle inverted sigmas.
     //
     if (invert_sigmas_) {
-        for (float& sigma : sigmas) {
+        for (float& sigma : base) {
             sigma = 1.0f - sigma;
         }
 
         for (size_t i = 0; i < timesteps.size(); ++i) {
             timesteps[i] =
-                sigma_to_t(sigmas[i]);
+                sigma_to_t(base[i]);
         }
 
-        sigmas.push_back(1.0f);
+        base.push_back(1.0f);
     } else {
         //
         // Euler integration needs one additional sigma
         // representing the endpoint.
         //
-        sigmas.push_back(0.0f);
+        base.push_back(0.0f);
     }
 
     return Schedule(
         std::move(timesteps),
-        std::move(sigmas)
+        std::move(base)
     );
 }
 

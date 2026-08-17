@@ -18,7 +18,8 @@ public:
 
     Schedule schedule(
         int num_inference_steps,
-        float mu = 0.0f
+        float mu = 0.0f,
+        std::optional<std::vector<float>> sigmas = std::nullopt
     ) const;
 
     Tensor integrate(
@@ -36,7 +37,6 @@ private:
         float t
     ) const;
 
-private:
     int num_train_timesteps_;
     float shift_;
     bool use_dynamic_shifting_;

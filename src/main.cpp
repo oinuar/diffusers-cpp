@@ -4,14 +4,28 @@
 #include "ggml/Computation.hpp"
 #include "ggml/GGUFLoaderVisitor.hpp"
 #include "nn/RethrowVisitor.hpp"
-#include "diffusers/models/transformers/flux2/Flux2Transformer2DModel.hpp"
-#include "diffusers/models/autoencoders/AutoencoderKLFlux2.hpp"
-#include "transformers/models/qwen3/Qwen3Config.hpp"
-#include "transformers/models/qwen3/Qwen3ForCausalLM.hpp"
-#include "transformers/models/qwen2/Qwen2TokenizerFast.hpp"
+#include "diffusers/pipelines/flux2/Flux2KleinPipeline.hpp"
 #include <iostream>
 #include <filesystem>
 
 int main() {
-    return 0;
+    ggml_time_init();
+    ggml_log_set([](ggml_log_level, const char* text, void*) { std::cerr << text; }, nullptr);
+
+    ggml_backend_load_all();
+
+    Backend cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+    Backend gpu(GGML_BACKEND_DEVICE_TYPE_GPU);
+    Scheduler scheduler({*gpu, *cpu}, 65536);
+    Context context(65536);
+    Runtime runtime(scheduler, context);
+
+    auto pipeline = std::move(Flux2KleinPipeline::from_pretrained(runtime, "../utils/convert-model"));
+
+    Flux2KleinPipeline::GenerationOptions options;
+    options.prompt = "a lovely cat";
+
+    auto images = pipeline(runtime, std::move(options));
+
+    images[0].save("test.png");
 }

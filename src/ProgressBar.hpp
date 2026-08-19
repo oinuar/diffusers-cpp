@@ -9,12 +9,18 @@
 
 class ProgressBar {
 public:
-    explicit ProgressBar(std::string title, int totalIterations, int width = 20)
-        : title_(std::move(title)),
-          total_(totalIterations),
+    explicit ProgressBar(const std::string& title, int width = 20)
+        : title_(title),
+          total_(0),
           width_(width),
           lastTime_(Clock::now())
     {}
+
+    ProgressBar() = default;
+
+    void add(int value) {
+        total_ += value;
+    }
 
     void update(int currentIteration) {
         using namespace std::chrono;
@@ -22,7 +28,7 @@ public:
         currentIteration = std::clamp(currentIteration, 0, total_);
         double progress = static_cast<double>(currentIteration) / total_;
 
-        int filled = static_cast<int>(std::round(progress * width_));
+        int filled = std::clamp(static_cast<int>(std::round(progress * width_)), 0, width_);
 
         auto now = Clock::now();
         double dt = duration<double>(now - lastTime_).count();
@@ -32,22 +38,24 @@ public:
             rate = (currentIteration - lastIteration_) / dt;
 
         std::cerr << '\r'
-                  << title_ << ": ["
+                  << title_ << ": |"
                   << std::string(filled, '#')
                   << std::string(width_ - filled, '-')
-                  << "] "
+                  << "| "
                   << std::fixed << std::setprecision(1)
-                  << progress * 100.0 << "% ";
+                  << currentIteration << '/' << total_;
 
         if (rate > 0.0) {
             if (rate >= 1.0)
-                std::cerr << std::setprecision(2) << rate << " it/s";
+                std::cerr << " [" << std::fixed << std::setprecision(2) << rate << " it/s]";
             else
-                std::cerr << std::setprecision(2) << (1.0 / rate) << " s/it";
+                std::cerr << " [" << std::fixed << std::setprecision(2) << (1.0 / rate) << " s/it]";
         }
 
-        if (currentIteration == total_)
-            std::cerr << " DONE" << std::endl;
+        if (currentIteration >= total_)
+            std::cerr << " 100.0%" << std::endl;
+        else
+            std::cerr << ' ' << std::fixed << std::setprecision(1) << progress * 100.0 << '%';
 
         std::cerr << std::flush;
 
@@ -55,8 +63,8 @@ public:
         lastTime_ = now;
     }
 
-    void complete() {
-        update(total_);
+    void next() {
+        update(lastIteration_ + 1);
     }
 
 private:

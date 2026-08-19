@@ -55,7 +55,7 @@ class Flux2KleinPipeline {
 public:
     struct GenerationOptions {
         std::string prompt;
-        std::vector<Image> images;
+        std::vector<Image> images = {};
         int height = 1024;
         int width = 1024;
         int num_inference_steps = 4;      // Klein default (distilled)
@@ -69,7 +69,19 @@ public:
         size_t max_sequence_length = 512;
     };
 
-    Flux2KleinPipeline from_pretrained(Backend& loader_backend, const std::filesystem::path& path);
+    static Flux2KleinPipeline from_pretrained(Runtime& runtime, const std::filesystem::path& path);
+
+    // Latent shape conversions mirroring the static methods of the Python
+    // Flux2KleinPipeline. Pure tensor ops with no model state.
+    //
+    //   pack_latents       (B, C, H, W)   -> (B, H*W, C)   _pack_latents
+    //   unpack_latents     (B, H*W, C)    -> (B, C, H, W)  _unpack_latents_with_ids (canonical ids)
+    //   patchify_latents   (B, C, 2H, 2W) -> (B, 4C, H, W) _patchify_latents
+    //   unpatchify_latents (B, 4C, H, W)  -> (B, C, 2H, 2W) _unpatchify_latents
+    static Tensor pack_latents(Tensor latents);
+    static Tensor unpack_latents(Tensor packed, int packed_h, int packed_w);
+    static Tensor patchify_latents(Tensor latents, int channels, int packed_h, int packed_w);
+    static Tensor unpatchify_latents(Tensor latents, int channels, int packed_h, int packed_w);
 
     Flux2KleinPipeline(Flux2Transformer2DModel&& transformer,
                        AutoencoderKLFlux2&& vae,

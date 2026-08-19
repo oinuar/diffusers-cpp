@@ -980,7 +980,7 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
         batch = 1
         prompt = "hello world"
         max_sequence_length = 16
-        num_inference_steps = 1 # TODO: >1 does not work
+        num_inference_steps = 2
         generator = torch.Generator()
 
         packed_h = 2
@@ -1073,3 +1073,68 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
         )
 
         self.assertTensors(actual, expected)
+
+    def test_pack_latents(self):
+        generator = torch.Generator()
+        latents = torch.randn(2, 16, 2, 3, generator=generator)
+
+        expected = Flux2KleinPipeline._pack_latents(latents)
+
+        actual = self.cli(
+            "Flux2KleinPipeline_pack_latents",
+            "--latents", str(latents.tolist()),
+        )
+
+        self.assertTensors(actual, [expected.float()])
+
+    def test_unpack_latents(self):
+        generator = torch.Generator()
+        packed = torch.randn(2, 2 * 3, 16, generator=generator)
+
+        # Canonical grid ids, the ones the pipeline generates for the
+        # generated latents via _prepare_latent_ids().
+        x_ids = Flux2KleinPipeline._prepare_latent_ids(torch.zeros(2, 16, 2, 3))
+
+        expected = Flux2KleinPipeline._unpack_latents_with_ids(packed, x_ids, 2, 3)
+
+        actual = self.cli(
+            "Flux2KleinPipeline_unpack_latents",
+            "--latents", str(packed.tolist()),
+            "--packed_h", "2",
+            "--packed_w", "3",
+        )
+
+        self.assertTensors(actual, [expected.float()])
+
+    def test_patchify_latents(self):
+        generator = torch.Generator()
+        latents = torch.randn(2, 4, 4, 6, generator=generator)
+
+        expected = Flux2KleinPipeline._patchify_latents(latents)
+
+        actual = self.cli(
+            "Flux2KleinPipeline_patchify_latents",
+            "--latents", str(latents.tolist()),
+            "--channels", "4",
+            "--packed_h", "2",
+            "--packed_w", "3",
+        )
+
+        self.assertTensors(actual, [expected.float()])
+
+    def test_unpatchify_latents(self):
+        generator = torch.Generator()
+        latents = torch.randn(2, 16, 2, 3, generator=generator)
+
+        expected = Flux2KleinPipeline._unpatchify_latents(latents)
+
+        actual = self.cli(
+            "Flux2KleinPipeline_unpatchify_latents",
+            "--latents", str(latents.tolist()),
+            "--channels", "4",
+            "--packed_h", "2",
+            "--packed_w", "3",
+        )
+
+        self.assertTensors(actual, [expected.float()])
+

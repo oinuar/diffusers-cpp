@@ -387,6 +387,45 @@ public:
             return computation.results();
         }
 
+        if (args_.get(0) == "Flux2KleinPipeline_pack_latents" ||
+            args_.get(0) == "Flux2KleinPipeline_unpack_latents" ||
+            args_.get(0) == "Flux2KleinPipeline_patchify_latents" ||
+            args_.get(0) == "Flux2KleinPipeline_unpatchify_latents") {
+            auto [latents_shape, latents_data] = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--latents")).parse();
+            auto latents = runtime.create<float>(latents_shape, [latents_data](std::mt19937&) { return std::move(latents_data); });
+
+            Tensor result;
+
+            if (args_.get(0) == "Flux2KleinPipeline_pack_latents") {
+                result = Flux2KleinPipeline::pack_latents(latents);
+            } else if (args_.get(0) == "Flux2KleinPipeline_unpack_latents") {
+                result = Flux2KleinPipeline::unpack_latents(
+                    latents,
+                    args_.get_one<int>("--packed_h"),
+                    args_.get_one<int>("--packed_w")
+                );
+            } else if (args_.get(0) == "Flux2KleinPipeline_patchify_latents") {
+                result = Flux2KleinPipeline::patchify_latents(
+                    latents,
+                    args_.get_one<int>("--channels"),
+                    args_.get_one<int>("--packed_h"),
+                    args_.get_one<int>("--packed_w")
+                );
+            } else {
+                result = Flux2KleinPipeline::unpatchify_latents(
+                    latents,
+                    args_.get_one<int>("--channels"),
+                    args_.get_one<int>("--packed_h"),
+                    args_.get_one<int>("--packed_w")
+                );
+            }
+
+            Graph graph(runtime, {result});
+            Computation computation(graph);
+
+            return computation.results();
+        }
+
         if (args_.get(0).rfind("Flux2KleinPipeline", 0) == 0) {
             Flux2Transformer2DModel::Config transformer_config;
             {

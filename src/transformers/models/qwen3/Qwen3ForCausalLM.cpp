@@ -6,10 +6,10 @@
 #include "nn/RethrowVisitor.hpp"
 #include "ggml/GGUFLoaderVisitor.hpp"
 
-Qwen3ForCausalLM Qwen3ForCausalLM::from_pretrained(Backend& loader_backend, Qwen3Config&& config, const std::filesystem::path& path) {
+Qwen3ForCausalLM Qwen3ForCausalLM::from_pretrained(Runtime& runtime, Qwen3Config&& config, const std::filesystem::path& path) {
     Qwen3ForCausalLM model(config);
 
-    GGUFLoaderVisitor loader(loader_backend, path);
+    GGUFLoaderVisitor loader(runtime, path);
     RethrowVisitor visitor(loader);
 
     model.accept(visitor);

@@ -389,7 +389,7 @@ public:
     }
 
     /** @brief Copies this tensor to another tensor. */
-    Tensor copy(Tensor dest) const {
+    Tensor copy_to(Tensor dest) const {
         return Tensor(ctx_, ggml_cpy(ctx_, t_, *dest), dest.shape_);
     }
 
@@ -436,7 +436,7 @@ public:
     template <typename T>
     Tensor operator+(const T& rhs) const {
         auto result = this->to<float>() + scalar(ctx_, (float)rhs);
-        result = result.to<T>();
+        //result = result.to<T>();
 
         return result;
     }
@@ -444,7 +444,7 @@ public:
     template <typename T>
     Tensor operator-(const T& rhs) const {
         auto result = this->to<float>() - scalar(ctx_, (float)rhs);
-        result = result.to<T>();
+        //result = result.to<T>();
 
         return result;
     }
@@ -510,7 +510,7 @@ inline Tensor operator+(const T& value, const Tensor& tensor) {
 template <typename T>
 inline Tensor operator-(const T& value, const Tensor& tensor) {
     auto result = Tensor::scalar(tensor.ctx_, (float)value) - tensor.to<float>();
-    result = result.to<T>();
+    //result = result.to<T>();
 
     return result;
 }
@@ -523,7 +523,7 @@ inline Tensor operator*(const T& value, const Tensor& tensor) {
 template <typename T>
 inline Tensor operator/(const T& value, const Tensor& tensor) {
     auto result = Tensor::scalar(tensor.ctx_, (float)value) / tensor.to<float>();
-    result = result.to<T>();
+    //result = result.to<T>();
 
     return result;
 }

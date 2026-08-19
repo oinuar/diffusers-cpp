@@ -30,6 +30,11 @@ public:
     explicit Runtime(Scheduler& scheduler, Context& context, uint64_t seed = std::random_device{}())
         : scheduler_(scheduler), context_(context), rng_(seed) {}
 
+    Runtime(Runtime& other)
+        : scheduler_(other.scheduler_), context_(other.context_), rng_(other.rng_), inputs_(other.inputs_)
+    {
+    }
+
     template <class T>
     Tensor create(const Tensor::Shape& shape, const Provider<T>& provider) {
         auto tensor = Tensor::empty<T>(*context(), shape);
@@ -44,19 +49,26 @@ public:
         inputs_[tensor] = [this, tensor, provider, once](std::mt19937& rng) {
             auto values = provider(rng);
 
-            std::vector<std::byte> bytes(values.size() * sizeof(T));
-            std::memcpy(bytes.data(), values.data(), bytes.size());
-
             if (once)
                 this->unbind(tensor);
 
-            return std::move(bytes);
+            if constexpr (std::is_same_v<T, std::byte>)
+                return std::move(values);
+
+            // Convert T[] to std::byte[]
+            std::vector<std::byte> bytes(values.size() * sizeof(T));
+            std::memcpy(bytes.data(), values.data(), bytes.size());
+            return bytes;
         };
     }
 
     void unbind(Tensor tensor) {
         (*tensor)->flags &= ~GGML_TENSOR_FLAG_INPUT;
         inputs_.erase(tensor);
+    }
+
+    void clear() {
+        inputs_.clear();
     }
 
     template<class T>
@@ -96,7 +108,7 @@ public:
         return rng_;
     }
 
-    Runtime(Runtime&) = delete;
+    Runtime(const Runtime&) = delete;
     Runtime& operator =(const Runtime&) = delete;
 
 private:

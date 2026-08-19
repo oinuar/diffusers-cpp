@@ -22,7 +22,7 @@ struct ArgumentParser::parser<Tensor> {
         try {
             auto [shape, data] = parser.parse();
 
-            std::cerr << "inferred shape for " << option << ": " << shape.to_string() << std::endl;
+            // std::cerr << "inferred shape for " << option << ": " << shape.to_string() << std::endl;
 
             return runtime_.create<float>(shape, [data](std::mt19937&) {
                 return std::move(data);

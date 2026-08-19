@@ -61,6 +61,18 @@ public:
         return runtime_.scheduler_;
     }
 
+    size_t size() const {
+        size_t result = 0;
+
+        // Count only tensors whose buffer has been bound
+        for (auto& pair : runtime_.inputs_) {
+            if ((*pair.first)->buffer != nullptr)
+                ++result;
+        }
+
+        return result;
+    }
+
     Graph(Graph&) = delete;
     Graph& operator =(const Graph&) = delete;
     Graph& operator =(Graph&&) = delete;

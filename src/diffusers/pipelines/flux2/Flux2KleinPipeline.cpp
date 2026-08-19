@@ -17,37 +17,50 @@
 #include <chrono>
 #include <optional>
 
-Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(Backend& loader_backend, const std::filesystem::path& path) {
+Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(Runtime& runtime, const std::filesystem::path& path) {
     // 1. Initialize models from config
-    auto tokenizer = Qwen2TokenizerFast::from_pretrained(path / "tokenizer");
     Qwen3ForCausalLM text_encoder(Qwen3Config::from_file(path / "text_encoder" / "config.json"));
     Flux2Transformer2DModel transformer(Flux2Transformer2DModel::Config::from_file(path / "transformer" / "config.json"));
     AutoencoderKLFlux2 vae(AutoencoderKLFlux2::Config::from_file(path / "vae" / "config.json"));
 
-    // 2. Access GGUF models
-    GGUFLoaderVisitor vae_loader(loader_backend, path / "vae");
-    GGUFLoaderVisitor text_encoder_loader(loader_backend, path / "text_encoder");
-    GGUFLoaderVisitor transformer_loader(loader_backend, path / "transformer");
+    // 2. Load VAE
+    {
+        GGUFLoaderVisitor vae_loader(runtime, path / "vae");
+        RethrowVisitor vae_visitor(vae_loader);
+        vae.accept(vae_visitor);
+        vae_visitor.rethrow();
+        vae_loader.validate();
+    }
 
-    // 3. Load model structure
-    RethrowVisitor vae_visitor(vae_loader);
-    RethrowVisitor text_encoder_visitor(text_encoder_loader);
-    RethrowVisitor transformer_visitor(transformer_loader);
-    vae.accept(vae_visitor);
-    vae_visitor.rethrow();
-    text_encoder.accept(text_encoder_visitor);
-    text_encoder_visitor.rethrow();
-    transformer.accept(transformer_visitor);
-    transformer_visitor.rethrow();
+    // 3. Load text encoder
+    {
+        GGUFLoaderVisitor text_encoder_loader(runtime, path / "text_encoder");
+        RethrowVisitor text_encoder_visitor(text_encoder_loader);
+        text_encoder.accept(text_encoder_visitor);
+        text_encoder_visitor.rethrow();
+        text_encoder_loader.validate();
+    }
 
-    // 4. Construct the pipeline
+    // 4. Load transformer
+    {
+        GGUFLoaderVisitor transformer_loader(runtime, path / "transformer");
+        RethrowVisitor transformer_visitor(transformer_loader);
+        transformer.accept(transformer_visitor);
+        transformer_visitor.rethrow();
+        transformer_loader.validate();
+    }
+
+    // 5. Load tokenizer
+    auto tokenizer = Qwen2TokenizerFast::from_pretrained(path / "tokenizer");
+
+    // 6. Construct the pipeline
     Flux2KleinPipeline pipeline(
         std::move(transformer),
         std::move(vae),
         std::move(text_encoder),
         std::move(tokenizer)
     );
-    
+
     return std::move(pipeline);
 }
 
@@ -249,67 +262,6 @@ static Tensor make_packed_latents(Runtime& runtime, int batch, int packed_h, int
         });
 }
 
-// Graph-native 2x2 unpack.
-//
-// Input:
-//   packed: (B, ph*pw, 4C)
-//
-// Output:
-//   (B, C, 2ph, 2pw)
-//
-// Equivalent to:
-//
-//   latents = latents.reshape(B, ph, pw, C, 2, 2)
-//   latents = latents.permute(0, 3, 1, 4, 2, 5)
-//   latents = latents.reshape(B, C, 2ph, 2pw)
-//
-static Tensor unpack_latents(Tensor packed, int channels, int packed_h, int packed_w) {
-    const int64_t B = packed.shape()[0];
-    const int64_t N = packed.shape()[1];
-    const int64_t C = channels;
-
-    if (N != packed_h * packed_w)
-        throw std::invalid_argument("unpack_latents(): invalid packed shape");
-
-    auto t = packed.permute({0, 2, 1}).contiguous();
-    t = t.reshape({B, 2 * C, 2, N});
-    t = t.permute({0, 1, 3, 2}).contiguous();
-    t = t.reshape({B, 2 * C, packed_h, 2 * packed_w});
-    t = t.reshape({B * C, 2, packed_h, 2 * packed_w});
-    t = t.permute({0, 2, 1, 3}).contiguous();
-    t = t.reshape({B, C, 2 * packed_h, 2 * packed_w});
-
-    return t;
-}
-
-// Graph-native 2x2 pack.
-//
-// Input:
-//   latents: (B, C, 2ph, 2pw)
-//
-// Output:
-//   (B, ph*pw, 4C)
-//
-// Equivalent to:
-//
-//   latents = latents.reshape(B, C, ph, 2, pw, 2)
-//   latents = latents.permute(0, 2, 4, 1, 3, 5)
-//   latents = latents.reshape(B, ph*pw, 4C)
-//
-static Tensor pack_latents(Tensor latents, int channels, int packed_h, int packed_w) {
-    const int64_t B = latents.shape()[0];
-    const int64_t C = channels;
-
-    Tensor t = latents.reshape({B * C, 2 * packed_h, 2 * packed_w});
-    t = t.reshape({B * C, packed_h, 2, 2 * packed_w});
-    t = t.permute({0, 2, 1, 3}).contiguous();
-    t = t.reshape({B, 2 * C, packed_h, 2 * packed_w});
-    t = t.reshape({B, 2 * C, packed_h * packed_w, 2});
-    t = t.permute({0, 1, 3, 2}).contiguous();
-    t = t.reshape({B, 4 * C, packed_h * packed_w});
-    return t.permute({0, 2, 1}).contiguous();
-}
-
 static std::vector<Image> latents_to_images(const std::vector<float>& data, int batch, int height, int width) {
     std::vector<Image> images;
     images.reserve(batch);
@@ -420,7 +372,7 @@ static Image preprocess_reference_image(const Image& image, int multiple, double
 }
 
 // 1. Unpacks from (B, ph*pw, 4C) to (B, 4C, ph, pw)
-static Tensor unpack_to_patch_grid(Tensor packed, int packed_h, int packed_w) {
+Tensor Flux2KleinPipeline::unpack_latents(Tensor packed, int packed_h, int packed_w) {
     const int64_t B = packed.shape()[0];
     const int64_t C4 = packed.shape()[2];
     auto t = packed.permute({0, 2, 1}).contiguous();
@@ -429,7 +381,7 @@ static Tensor unpack_to_patch_grid(Tensor packed, int packed_h, int packed_w) {
 
 // 2. Unpatchifies from (B, 4C, ph, pw) to (B, C, 2ph, 2pw)
 // Uses a 4D interleaving trick to avoid 5D/6D tensors
-static Tensor unpatchify_latents(Tensor patched, int channels, int packed_h, int packed_w) {
+Tensor Flux2KleinPipeline::unpatchify_latents(Tensor patched, int channels, int packed_h, int packed_w) {
     const int64_t B = patched.shape()[0];
     const int64_t C = channels;
     const int64_t N = packed_h * packed_w;
@@ -446,7 +398,7 @@ static Tensor unpatchify_latents(Tensor patched, int channels, int packed_h, int
 }
 
 // 3. Packs from (B, 4C, ph, pw) to (B, ph*pw, 4C)
-static Tensor pack_latents(Tensor latents) {
+Tensor Flux2KleinPipeline::pack_latents(Tensor latents) {
     const int64_t B = latents.shape()[0];
     const int64_t C4 = latents.shape()[1];
     const int64_t ph = latents.shape()[2];
@@ -459,7 +411,7 @@ static Tensor pack_latents(Tensor latents) {
 
 // 4. Patchifies from (B, C, 2ph, 2pw) to (B, 4C, ph, pw)
 // Inverse of the 4D interleaving trick
-static Tensor patchify_latents(Tensor latents, int channels, int packed_h, int packed_w) {
+Tensor Flux2KleinPipeline::patchify_latents(Tensor latents, int channels, int packed_h, int packed_w) {
     const int64_t B = latents.shape()[0];
     const int64_t C = channels;
     const int64_t N = packed_h * packed_w;
@@ -570,7 +522,7 @@ Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
 // `latents` is the recurrent state. The following:
 //
 //     next_latents = ...;
-//     next_latents = next_latents.copy(latents);
+//     next_latents = next_latents.copy_to(latents);
 //
 // creates a feedback edge in the graph. After each Computation, the newly
 // computed value is copied into `latents`. Therefore repeated:
@@ -649,7 +601,7 @@ Flux2KleinPipeline::Denoise Flux2KleinPipeline::make_denoise_graph(
 
     // Integrate latents over dt and assign latents <- latents+1
     auto next_latents = scheduler_.integrate(noise_pred, latents, dt);
-    next_latents = next_latents.copy(latents);
+    next_latents = next_latents.copy_to(latents);
 
     return {std::move(Graph(runtime, {next_latents})), latents};
 }
@@ -661,13 +613,13 @@ Graph Flux2KleinPipeline::make_decode_graph(
     Tensor::Shape latents_shape,
     std::vector<float>* latents_data
 ) {
-    auto latents = runtime.create<float>(latents_shape, [latents_data](std::mt19937&) { return std::move(*latents_data); });
+    auto latents = runtime.create<float>(latents_shape, [=](std::mt19937&) { return std::move(*latents_data); });
 
     // 1. Unpack to patch grid (B, 4C, ph, pw)
-    auto z_packed = unpack_to_patch_grid(latents, packed_h, packed_w);
+    auto z_packed = unpack_latents(latents, packed_h, packed_w);
 
     // 2. BN Unnormalize before VAE decode (Broadcasts over the 4C channels)
-    auto bn_mean = vae_.bn().running_mean()->reshape({1, -1, 1, 1});
+    auto bn_mean = vae_.bn().running_mean()->reshape({1, -1, 1, 1}); // TODO: if runtime.clear() these won't get bound
     auto bn_std = sqrt(vae_.bn().running_var()->reshape({1, -1, 1, 1}) + vae_.batch_norm_eps());
     z_packed = z_packed * bn_std + bn_mean;
 
@@ -680,7 +632,7 @@ Graph Flux2KleinPipeline::make_decode_graph(
     return std::move(Graph(runtime, {decoded}));
 }
 
-std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& runtime, GenerationOptions&& options) {
+std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& parent_runtime, GenerationOptions&& options) {
     if (options.height % vae_.scale_factor() != 0 ||
         options.width % vae_.scale_factor() != 0)
         throw std::runtime_error("height/width must be divisible by VAE's scale factor");
@@ -719,8 +671,7 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& runtime, GenerationO
 
     size_t num_ref_tokens = 0;
     {
-        //Context context(scheduler.capacity());
-        //Runtime runtime(scheduler, context, seed);
+        Runtime runtime(parent_runtime);
 
         auto [
             graph,
@@ -739,7 +690,8 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& runtime, GenerationO
             options.images
         ));
 
-        Computation computation(graph);
+        ProgressBar progress("Preparing");
+        Computation computation(graph, &progress);
 
         // Prompt embeddings
         prompt_embeds_data = runtime.value<float>(prompt_embeds);
@@ -796,8 +748,7 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& runtime, GenerationO
     std::vector<float> latents_data;
     Tensor::Shape latents_shape;
     {
-        //Context context(scheduler.capacity());
-        //Runtime runtime(scheduler, context, seed);
+        Runtime runtime(parent_runtime);
         float timestep, dt;
 
         auto [graph, latents] = std::move(make_denoise_graph(
@@ -835,18 +786,15 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& runtime, GenerationO
                 latents_data = runtime.value<float>(latents);
                 latents_shape = latents.shape();
             }
-
-            progress.update(i++);
+            
+            progress.next();
         }
-
-        progress.complete();
     }
 
     // 4. Decode latents to pixels
     std::vector<Image> images;
     {
-        //Context context(scheduler.capacity());
-        //Runtime runtime(scheduler, context, seed);
+        Runtime runtime(parent_runtime);
 
         auto graph = std::move(make_decode_graph(
             runtime,
@@ -856,7 +804,8 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& runtime, GenerationO
             &latents_data
         ));
 
-        Computation computation(graph);
+        ProgressBar progress("Decoding");
+        Computation computation(graph, &progress);
 
         auto decoded = computation.results().at(0);
         auto data = runtime.value<float>(decoded);

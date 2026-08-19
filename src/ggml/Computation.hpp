@@ -3,18 +3,28 @@
 #include "ggml/Runtime.hpp"
 #include "ggml/Scheduler.hpp"
 #include "ggml/Graph.hpp"
-#include "ggml.h"
-#include "ggml-backend.h"
+#include "ProgressBar.hpp"
+#include <ggml.h>
+#include <ggml-backend.h>
 #include <vector>
 
 class Computation {
 public:
-    explicit Computation(Graph& graph) : graph_(graph) {
+    explicit Computation(Graph& graph, ProgressBar* progress = nullptr) : graph_(graph) {
         ggml_backend_sched_reset(*graph.scheduler());
         ggml_backend_sched_alloc_graph(*graph.scheduler(), *graph);
 
-        for (auto& [tensor, provider] : graph.inputs())
+        auto inputs = graph.inputs();
+
+        if (progress != nullptr)
+            progress->add(inputs.size());
+
+        for (auto& [tensor, provider] : inputs) {
             load(tensor, graph.provide(provider));
+
+            if (progress != nullptr)
+                progress->next();
+        }
 
         ggml_backend_sched_graph_compute(*graph.scheduler(), *graph);
     }

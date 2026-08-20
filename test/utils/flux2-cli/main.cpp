@@ -535,9 +535,9 @@ public:
                     image_latent_ids_concat
                 ] = std::move(pipeline.make_embeddings_graph(
                     runtime,
-                    batch,
                     prompt,
                     max_sequence_length,
+                    batch,
                     packed_h,
                     packed_w,
                     images

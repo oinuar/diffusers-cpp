@@ -97,7 +97,7 @@ public:
                 index += rank_;
 
             if (index < 0 || index >= rank_)
-                throw std::out_of_range("Shape index out of range");
+                throw std::out_of_range("Shape index out of range: " + std::to_string(index) + ", but rank is " + std::to_string(rank_));
 
             return index;
         }
@@ -266,19 +266,29 @@ public:
         ggml_context* ctx,
         const Shape& shape)
     {
-        // GGML does not support 0d tensors, let's fake it with 1d tensor
-        if (shape.rank() == 0)
-            return Tensor(ctx, ggml_new_tensor_1d(ctx, DType<T>::value, 1), shape);
-
-        return Tensor(ctx, ggml_new_tensor(ctx, DType<T>::value, shape.rank(), shape.data()), shape);
+        return empty(ctx, shape, DType<T>::value);
     }
 
     /** @brief Creates a scalar tensor filled with the given value. */
-    static Tensor scalar(ggml_context* ctx, float value) {
+    template <typename T> static Tensor scalar(ggml_context* ctx, const T& value) {
+        // GGML supports filling only float tensors
         auto tensor = empty<float>(ctx, {});
         tensor.t_ = ggml_fill_inplace(tensor.ctx_, tensor.t_, (float)value);
 
-        return tensor;
+        return tensor.to(DType<T>::value);
+    }
+
+    /** @brief Creates an uninitialized tensor with the given shape and type. */
+    static Tensor empty(
+        ggml_context* ctx,
+        const Shape& shape,
+        ggml_type type)
+    {
+        // GGML does not support 0d tensors, let's fake it with 1d tensor
+        if (shape.rank() == 0)
+            return Tensor(ctx, ggml_new_tensor_1d(ctx, type, 1), shape);
+
+        return Tensor(ctx, ggml_new_tensor(ctx, type, shape.rank(), shape.data()), shape);
     }
 
     /** @brief Creates a filled tensor with the given value, shape and type. */
@@ -375,17 +385,17 @@ public:
     /** @brief Splits a tensor into chunks of specified sizes along dimension `dim`. */
     std::vector<Tensor> split_with_sizes(const std::vector<int64_t>& split_sizes, int64_t dim = 0) const;
 
-    /** @brief Casts a tensor to type `type`. */
+    /** @brief Casts a tensor to type `type` if it is not already. */
     Tensor to(ggml_type type) const {
-        return Tensor(ctx_, ggml_cast(ctx_, t_, type), shape_);
-    }
-
-    /** @brief Casts a tensor to type `T` if not already in type `T`. */
-    template <typename T> Tensor to() const {
-        if (dtype() != DType<T>::value)
-            return to(DType<T>::value);
+        if (dtype() != type)
+            return astype(type);
 
         return *this;
+    }
+
+    /** @brief Converts a tensor to type `type`. */
+    Tensor astype(ggml_type type) const {
+        return Tensor(ctx_, ggml_cast(ctx_, t_, type), shape_);
     }
 
     /** @brief Copies this tensor to another tensor. */
@@ -399,54 +409,52 @@ public:
 
     Tensor operator+(Tensor rhs) const {
         auto target = Shape::broadcast(shape_, rhs.shape_);
+        auto dtype = promote(this->dtype(), rhs.dtype());
 
         auto lhs = expand(target);
         rhs = rhs.expand(target);
 
-        return Tensor(lhs.ctx_, ggml_add(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_);
+        return Tensor(lhs.ctx_, ggml_add(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_).to(dtype);
     }
 
     Tensor operator-(Tensor rhs) const {
         auto target = Shape::broadcast(shape_, rhs.shape_);
+        auto dtype = promote(this->dtype(), rhs.dtype());
 
         auto lhs = expand(target);
         rhs = rhs.expand(target);
 
-        return Tensor(lhs.ctx_, ggml_sub(ctx_, lhs.t_, rhs.t_), lhs.shape_);
+        return Tensor(lhs.ctx_, ggml_sub(ctx_, lhs.t_, rhs.t_), lhs.shape_).to(dtype);
     }
 
     Tensor operator*(Tensor rhs) const {
         auto target = Shape::broadcast(shape_, rhs.shape_);
+        auto dtype = promote(this->dtype(), rhs.dtype());
 
         auto lhs = expand(target);
         rhs = rhs.expand(target);
 
-        return Tensor(lhs.ctx_, ggml_mul(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_);
+        return Tensor(lhs.ctx_, ggml_mul(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_).to(dtype);
     }
 
     Tensor operator/(Tensor rhs) const {
         auto target = Shape::broadcast(shape_, rhs.shape_);
+        auto dtype = promote(this->dtype(), rhs.dtype());
 
         auto lhs = expand(target);
         rhs = rhs.expand(target);
 
-        return Tensor(lhs.ctx_, ggml_div(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_);
+        return Tensor(lhs.ctx_, ggml_div(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_).to(dtype);
     }
 
     template <typename T>
     Tensor operator+(const T& rhs) const {
-        auto result = this->to<float>() + scalar(ctx_, (float)rhs);
-        //result = result.to<T>();
-
-        return result;
+        return *this + scalar<T>(ctx_, rhs);
     }
 
     template <typename T>
     Tensor operator-(const T& rhs) const {
-        auto result = this->to<float>() - scalar(ctx_, (float)rhs);
-        //result = result.to<T>();
-
-        return result;
+        return *this - scalar<T>(ctx_, rhs);
     }
 
     template <typename T>
@@ -462,14 +470,6 @@ public:
     Tensor clamp(float a, float b) const {
         return Tensor(ctx_, ggml_clamp(ctx_, t_, a, b), shape_);
     }
-
-    /*Tensor sum() const {
-        return Tensor(ctx_, ggml_sum(ctx_, t_), {});
-    }
-
-    Tensor mean() const {
-        return sum() / numel();
-    }*/
 
     Tensor sum(int64_t dim, bool keepdim = false) const;
 
@@ -498,6 +498,7 @@ private:
     friend Tensor pow(float base, const Tensor& exponent);
 
     static int normalize_dim(const std::string& method, int64_t dim, int64_t rank, bool allow_end = false);
+    static ggml_type promote(ggml_type lhs, ggml_type rhs);
 
     void throw_if_not_valid() const;
 };
@@ -509,10 +510,7 @@ inline Tensor operator+(const T& value, const Tensor& tensor) {
 
 template <typename T>
 inline Tensor operator-(const T& value, const Tensor& tensor) {
-    auto result = Tensor::scalar(tensor.ctx_, (float)value) - tensor.to<float>();
-    //result = result.to<T>();
-
-    return result;
+    return Tensor::scalar<T>(tensor.ctx_, value) - tensor;
 }
 
 template <typename T>
@@ -522,10 +520,7 @@ inline Tensor operator*(const T& value, const Tensor& tensor) {
 
 template <typename T>
 inline Tensor operator/(const T& value, const Tensor& tensor) {
-    auto result = Tensor::scalar(tensor.ctx_, (float)value) / tensor.to<float>();
-    //result = result.to<T>();
-
-    return result;
+    return Tensor::scalar<T>(tensor.ctx_, value) / tensor;
 }
 
 inline Tensor abs(const Tensor& tensor) {
@@ -575,20 +570,8 @@ struct Tensor::DType<float> {
 };
 
 template<>
-struct Tensor::DType<int8_t> {
-    static constexpr ggml_type value = GGML_TYPE_I8;
-};
-
-template<>
-struct Tensor::DType<uint8_t> {
-    // GGML has no unsigned byte type.
-    // Use I8 storage.
-    static constexpr ggml_type value = GGML_TYPE_I8;
-};
-
-template<>
-struct Tensor::DType<int16_t> {
-    static constexpr ggml_type value = GGML_TYPE_I16;
+struct Tensor::DType<int64_t> {
+    static constexpr ggml_type value = GGML_TYPE_I64;
 };
 
 template<>
@@ -597,6 +580,11 @@ struct Tensor::DType<int32_t> {
 };
 
 template<>
-struct Tensor::DType<int64_t> {
-    static constexpr ggml_type value = GGML_TYPE_I64;
+struct Tensor::DType<int16_t> {
+    static constexpr ggml_type value = GGML_TYPE_I16;
+};
+
+template<>
+struct Tensor::DType<int8_t> {
+    static constexpr ggml_type value = GGML_TYPE_I8;
 };

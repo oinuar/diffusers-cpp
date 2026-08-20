@@ -17,7 +17,7 @@ public:
         auto inputs = graph.inputs();
 
         if (progress != nullptr)
-            progress->add(inputs.size());
+            progress->push("Computing", inputs.size() + 1);
 
         for (auto& [tensor, provider] : inputs) {
             load(tensor, graph.provide(provider));
@@ -27,6 +27,11 @@ public:
         }
 
         ggml_backend_sched_graph_compute(*graph.scheduler(), *graph);
+
+        if (progress != nullptr) {
+            progress->next();
+            progress->pop();
+        }
     }
 
     const std::vector<Tensor>& results() const {

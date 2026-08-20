@@ -104,9 +104,9 @@ public:
 
     Embeddings make_embeddings_graph(
         Runtime& runtime,
-        int batch,
         const std::string& prompt,
         size_t max_sequence_length,
+        int batch,
         int packed_h,
         int packed_w,
         std::vector<Image>& images);

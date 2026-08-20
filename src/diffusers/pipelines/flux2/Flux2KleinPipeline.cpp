@@ -429,9 +429,9 @@ Tensor Flux2KleinPipeline::patchify_latents(Tensor latents, int channels, int pa
 
 Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
     Runtime& runtime,
-    int batch,
     const std::string& prompt,
     size_t max_sequence_length,
+    int batch,
     int packed_h,
     int packed_w,
     std::vector<Image>& images)
@@ -613,13 +613,13 @@ Graph Flux2KleinPipeline::make_decode_graph(
     Tensor::Shape latents_shape,
     std::vector<float>* latents_data
 ) {
-    auto latents = runtime.create<float>(latents_shape, [=](std::mt19937&) { return std::move(*latents_data); });
+    auto latents = runtime.create<float>(latents_shape, [latents_data](std::mt19937&) { return std::move(*latents_data); });
 
     // 1. Unpack to patch grid (B, 4C, ph, pw)
     auto z_packed = unpack_latents(latents, packed_h, packed_w);
 
     // 2. BN Unnormalize before VAE decode (Broadcasts over the 4C channels)
-    auto bn_mean = vae_.bn().running_mean()->reshape({1, -1, 1, 1}); // TODO: if runtime.clear() these won't get bound
+    auto bn_mean = vae_.bn().running_mean()->reshape({1, -1, 1, 1});
     auto bn_std = sqrt(vae_.bn().running_var()->reshape({1, -1, 1, 1}) + vae_.batch_norm_eps());
     z_packed = z_packed * bn_std + bn_mean;
 
@@ -654,6 +654,8 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& parent_runtime, Gene
 
     auto image_seq_len = static_cast<int64_t>(packed_h) * packed_w;
 
+    ProgressBar progress("Generating", 1);
+
     // 1. Generate text embeddings and reference-image embeddings
     std::vector<float> prompt_embeds_data;
     std::vector<float> txt_ids_data;
@@ -682,15 +684,18 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& parent_runtime, Gene
             image_latent_ids_concat
         ] = std::move(make_embeddings_graph(
             runtime,
-            batch,
             options.prompt,
             options.max_sequence_length,
+            batch,
             packed_h,
             packed_w,
             options.images
         ));
 
-        ProgressBar progress("Preparing");
+        ggml_graph_dump_dot(*graph, NULL, "make_embeddings_graph.dot");
+
+        progress.push("Preparing", 1 + options.images.size());
+
         Computation computation(graph, &progress);
 
         // Prompt embeddings
@@ -725,7 +730,11 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& parent_runtime, Gene
                 static_cast<int64_t>(image.width()) / vae_multiple;
 
             num_ref_tokens += static_cast<size_t>(h * w);
+            progress.next();
         }
+
+        progress.next();
+        progress.pop();
     }
 
     // 2. Setup schedule
@@ -772,14 +781,14 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& parent_runtime, Gene
             &dt
         ));
 
-        ProgressBar progress("Denoising", schedule.size());
+        progress.push("Denoising", schedule.size());
         size_t i = 0;
 
         for (const auto& step : schedule) {
             timestep = step.timestep;
             dt = step.dt;
 
-            Computation computation(graph);
+            Computation computation(graph, &progress);
 
             // Extract latents from the last denoising step
             if (i == schedule.size() - 1) {
@@ -787,8 +796,10 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& parent_runtime, Gene
                 latents_shape = latents.shape();
             }
             
-            progress.next();
+            progress.update(++i);
         }
+
+        progress.pop();
     }
 
     // 4. Decode latents to pixels
@@ -804,14 +815,20 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& parent_runtime, Gene
             &latents_data
         ));
 
-        ProgressBar progress("Decoding");
+        progress.push("Decoding", 1);
+
         Computation computation(graph, &progress);
 
         auto decoded = computation.results().at(0);
         auto data = runtime.value<float>(decoded);
 
         images = std::move(latents_to_images(data, batch, target_height, target_width));
+
+        progress.update(1);
+        progress.pop();
     }
+
+    progress.next();
 
     return std::move(images);
 }

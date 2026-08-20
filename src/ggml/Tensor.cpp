@@ -545,34 +545,95 @@ Tensor Tensor::expand(const Shape& new_shape) const {
 
     auto src = *this;
 
-    // Pad rank with leading PyTorch singleton dimensions
+    // Pad rank with leading PyTorch singleton dimensions.
     while (src.shape().rank() < new_shape.rank())
         src = src.unsqueeze(0);
 
-    // Validate
-    for (int i = 0; i < new_shape.rank(); ++i) {
-        auto cur = src.shape()[i];
-        auto dst = new_shape[i];
+    if (src.shape().rank() != new_shape.rank())
+        throw std::runtime_error(
+            "expand(): target rank must not be smaller than tensor rank");
 
-        if (cur != dst && cur != 1) {
+    Shape repeats(new_shape.rank());
+
+    for (int64_t i = 0; i < new_shape.rank(); ++i) {
+        const int64_t current = src.shape()[i];
+        const int64_t target = new_shape[i];
+
+        if (current == target) {
+            repeats[i] = 1;
+        } else if (current == 1) {
+            repeats[i] = target;
+        } else {
             throw std::runtime_error(
                 "expand(): incompatible dimension");
         }
     }
 
-    // Create a dummy tensor with the target shape to use as the repeat target.
-    // GGML's ggml_repeat only reads the 'ne' array of the target tensor, 
-    // so the type (GGML_TYPE_F32) and lack of a data buffer are perfectly safe.
-    auto target =
-        ggml_new_tensor(ctx_, src.t_->type,
-                        new_shape.rank(),
-                        new_shape.data());
-
-    return Tensor(
-        ctx_,
-        ggml_repeat(ctx_, src.t_, target),
-        new_shape);
+    return src.repeat(repeats);
 }
+
+#if 1
+// without ggml_repeat
+
+Tensor Tensor::repeat(const Shape& repeats) const {
+    throw_if_not_valid();
+
+    const int64_t rank = ndim();
+
+    if (repeats.rank() != rank)
+        throw std::invalid_argument(
+            "repeat(): number of repeat dimensions must match tensor rank");
+
+    auto result = *this;
+
+    for (int64_t dim = 0; dim < rank; ++dim) {
+        const int64_t count = repeats[dim];
+
+        if (count < 0)
+            throw std::invalid_argument(
+                "repeat(): repeat dimensions must be non-negative");
+
+        if (count == 0) {
+            Shape out = result.shape();
+            out[dim] = 0;
+
+            return Tensor::empty(ctx_, out, result.dtype());
+        }
+
+        if (count == 1)
+            continue;
+
+        const auto original = result;
+        const int64_t original_size = result.shape()[dim];
+
+        // Build the required repetitions using powers of two.
+        // This requires O(log(count)) concat operations.
+        std::vector<Tensor> parts;
+
+        int64_t remaining = count;
+        int64_t power = 1;
+        Tensor block = original;
+
+        while (remaining > 0) {
+            if (remaining & 1)
+                parts.push_back(block);
+
+            remaining >>= 1;
+
+            if (remaining == 0)
+                break;
+
+            block = Tensor::cat({block, block}, dim);
+            power <<= 1;
+        }
+
+        result = Tensor::cat(parts, dim);
+    }
+
+    return result;
+}
+
+#else
 
 Tensor Tensor::repeat(const Shape& repeats) const {
     throw_if_not_valid();
@@ -598,14 +659,16 @@ Tensor Tensor::repeat(const Shape& repeats) const {
 
     // GGML repeat requires the target tensor to describe the
     // desired output shape.
-    auto target = Tensor::zeros(ctx_, out).to(dtype());
+    auto target = empty(ctx_, out, dtype());
 
     return Tensor(
         ctx_,
-        ggml_repeat(ctx_, *clone(), *target),
+        ggml_repeat(ctx_, t_, *target),
         out
     );
 }
+
+#endif
 
 Tensor Tensor::sum(int64_t dim, bool keepdim) const {
     throw_if_not_valid();
@@ -801,6 +864,45 @@ int Tensor::normalize_dim(const std::string& method, int64_t dim, int64_t rank, 
         dim += rank + (allow_end ? 1 : 0);
 
     return dim;
+}
+
+ggml_type Tensor::promote(ggml_type a, ggml_type b) {
+    // Same type
+     if (a == b)
+        return a;
+
+    // Floating point promotion
+    if (a == GGML_TYPE_F64 || b == GGML_TYPE_F64)
+        return GGML_TYPE_F64;
+
+    if (a == GGML_TYPE_F32 || b == GGML_TYPE_F32)
+        return GGML_TYPE_F32;
+
+    // F16 + BF16 -> F32
+    if ((a == GGML_TYPE_F16  && b == GGML_TYPE_BF16) ||
+        (a == GGML_TYPE_BF16 && b == GGML_TYPE_F16))
+        return GGML_TYPE_F32;
+
+    if (a == GGML_TYPE_F16 || b == GGML_TYPE_F16)
+        return GGML_TYPE_F16;
+
+    if (a == GGML_TYPE_BF16 || b == GGML_TYPE_BF16)
+        return GGML_TYPE_BF16;
+
+    // Integers promotion (wider wins)
+    if (a == GGML_TYPE_I64 || b == GGML_TYPE_I64)
+        return GGML_TYPE_I64;
+
+    if (a == GGML_TYPE_I32 || b == GGML_TYPE_I32)
+        return GGML_TYPE_I32;
+
+    if (a == GGML_TYPE_I16 || b == GGML_TYPE_I16)
+        return GGML_TYPE_I16;
+
+    if (a == GGML_TYPE_I8 || b == GGML_TYPE_I8)
+        return GGML_TYPE_I8;
+
+    throw std::runtime_error("Unsupported GGML types: " + std::string(ggml_type_name(a)) + " and " + std::string(ggml_type_name(b)));
 }
 
 void Tensor::throw_if_not_valid() const {

@@ -408,40 +408,56 @@ public:
     }
 
     Tensor operator+(Tensor rhs) const {
-        auto target = Shape::broadcast(shape_, rhs.shape_);
-        auto dtype = promote(this->dtype(), rhs.dtype());
+        auto lhs = *this;
+        auto target = Shape::broadcast(lhs.shape_, rhs.shape_);
+        auto dtype = common_dtype(lhs.dtype(), rhs.dtype());
 
-        auto lhs = expand(target);
+        lhs = lhs.to(dtype);
+        rhs = rhs.to(dtype);
+
+        lhs = lhs.expand(target);
         rhs = rhs.expand(target);
 
-        return Tensor(lhs.ctx_, ggml_add(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_).to(dtype);
+        return Tensor(lhs.ctx_, ggml_add(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_);
     }
 
     Tensor operator-(Tensor rhs) const {
-        auto target = Shape::broadcast(shape_, rhs.shape_);
-        auto dtype = promote(this->dtype(), rhs.dtype());
+        auto lhs = *this;
+        auto target = Shape::broadcast(lhs.shape_, rhs.shape_);
+        auto dtype = common_dtype(lhs.dtype(), rhs.dtype());
 
-        auto lhs = expand(target);
+        lhs = lhs.to(dtype);
+        rhs = rhs.to(dtype);
+
+        lhs = lhs.expand(target);
         rhs = rhs.expand(target);
 
         return Tensor(lhs.ctx_, ggml_sub(ctx_, lhs.t_, rhs.t_), lhs.shape_).to(dtype);
     }
 
     Tensor operator*(Tensor rhs) const {
-        auto target = Shape::broadcast(shape_, rhs.shape_);
-        auto dtype = promote(this->dtype(), rhs.dtype());
+        auto lhs = *this;
+        auto target = Shape::broadcast(lhs.shape_, rhs.shape_);
+        auto dtype = common_dtype(lhs.dtype(), rhs.dtype());
 
-        auto lhs = expand(target);
+        lhs = lhs.to(dtype);
+        rhs = rhs.to(dtype);
+
+        lhs = lhs.expand(target);
         rhs = rhs.expand(target);
 
         return Tensor(lhs.ctx_, ggml_mul(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_).to(dtype);
     }
 
     Tensor operator/(Tensor rhs) const {
-        auto target = Shape::broadcast(shape_, rhs.shape_);
-        auto dtype = promote(this->dtype(), rhs.dtype());
+        auto lhs = *this;
+        auto target = Shape::broadcast(lhs.shape_, rhs.shape_);
+        auto dtype = common_dtype(lhs.dtype(), rhs.dtype());
 
-        auto lhs = expand(target);
+        lhs = lhs.to(dtype);
+        rhs = rhs.to(dtype);
+
+        lhs = lhs.expand(target);
         rhs = rhs.expand(target);
 
         return Tensor(lhs.ctx_, ggml_div(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_).to(dtype);
@@ -498,7 +514,7 @@ private:
     friend Tensor pow(float base, const Tensor& exponent);
 
     static int normalize_dim(const std::string& method, int64_t dim, int64_t rank, bool allow_end = false);
-    static ggml_type promote(ggml_type lhs, ggml_type rhs);
+    static ggml_type common_dtype(ggml_type lhs, ggml_type rhs);
 
     void throw_if_not_valid() const;
 };

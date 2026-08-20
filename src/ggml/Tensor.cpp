@@ -572,7 +572,7 @@ Tensor Tensor::expand(const Shape& new_shape) const {
     return src.repeat(repeats);
 }
 
-#if 1
+#if 0
 // without ggml_repeat
 
 Tensor Tensor::repeat(const Shape& repeats) const {
@@ -866,19 +866,55 @@ int Tensor::normalize_dim(const std::string& method, int64_t dim, int64_t rank, 
     return dim;
 }
 
-ggml_type Tensor::promote(ggml_type a, ggml_type b) {
+ggml_type Tensor::common_dtype(ggml_type a, ggml_type b) {
+    // Quantized types cannot generally participate directly in
+    // elementwise binary arithmetic. Promote them to a floating-point
+    // computation type.
+    //
+    // Q + Q       -> F32
+    // Q + F64     -> F64
+    // Q + F32     -> F32
+    // Q + F16     -> F16
+    // Q + BF16    -> BF16
+    // Q + integer -> F32
+    const bool a_quantized = ggml_is_quantized(a);
+    const bool b_quantized = ggml_is_quantized(b);
+
+    if (a_quantized || b_quantized) {
+        if (a_quantized && b_quantized)
+            return GGML_TYPE_F32;
+
+        const auto other = a_quantized ? b : a;
+
+        if (other == GGML_TYPE_F64)
+            return GGML_TYPE_F64;
+
+        if (other == GGML_TYPE_F32)
+            return GGML_TYPE_F32;
+
+        if (other == GGML_TYPE_F16)
+            return GGML_TYPE_F16;
+
+        if (other == GGML_TYPE_BF16)
+            return GGML_TYPE_BF16;
+
+        // Quantized + integer has no useful common integer
+        // representation, so compute in F32.
+        return GGML_TYPE_F32;
+    }
+
     // Same type
      if (a == b)
         return a;
 
-    // Floating point promotion
+    // Floating point
     if (a == GGML_TYPE_F64 || b == GGML_TYPE_F64)
         return GGML_TYPE_F64;
 
     if (a == GGML_TYPE_F32 || b == GGML_TYPE_F32)
         return GGML_TYPE_F32;
 
-    // F16 + BF16 -> F32
+    // float16 + bfloat16 to float32
     if ((a == GGML_TYPE_F16  && b == GGML_TYPE_BF16) ||
         (a == GGML_TYPE_BF16 && b == GGML_TYPE_F16))
         return GGML_TYPE_F32;
@@ -889,7 +925,7 @@ ggml_type Tensor::promote(ggml_type a, ggml_type b) {
     if (a == GGML_TYPE_BF16 || b == GGML_TYPE_BF16)
         return GGML_TYPE_BF16;
 
-    // Integers promotion (wider wins)
+    // Signed integers: wider type wins
     if (a == GGML_TYPE_I64 || b == GGML_TYPE_I64)
         return GGML_TYPE_I64;
 

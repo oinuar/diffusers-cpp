@@ -692,8 +692,6 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& parent_runtime, Gene
             options.images
         ));
 
-        ggml_graph_dump_dot(*graph, NULL, "make_embeddings_graph.dot");
-
         progress.push("Preparing", 1 + options.images.size());
 
         Computation computation(graph, &progress);

@@ -17,13 +17,18 @@ public:
         auto inputs = graph.inputs();
 
         if (progress != nullptr)
-            progress->push("Computing", inputs.size() + 1);
+            progress->push("Initializing", inputs.size() + 1);
 
         for (auto& [tensor, provider] : inputs) {
             load(tensor, graph.provide(provider));
 
             if (progress != nullptr)
                 progress->next();
+        }
+
+        if (progress != nullptr) {
+            progress->pop();
+            progress->push("Computing", 1);
         }
 
         ggml_backend_sched_graph_compute(*graph.scheduler(), *graph);

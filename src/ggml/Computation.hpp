@@ -11,9 +11,11 @@
 class Computation {
 public:
     explicit Computation(Graph& graph, ProgressBar* progress = nullptr) : graph_(graph) {
-        ggml_backend_sched_reset(*graph.scheduler());
-        ggml_backend_sched_alloc_graph(*graph.scheduler(), *graph);
-
+        if (!graph_.is_computing_) {
+            ggml_backend_sched_reset(*graph.scheduler());
+            ggml_backend_sched_alloc_graph(*graph.scheduler(), *graph);
+        }
+        
         auto inputs = graph.inputs();
 
         if (progress != nullptr)
@@ -28,15 +30,26 @@ public:
 
         if (progress != nullptr) {
             progress->pop();
-            progress->push("Computing", 1);
+            progress->push("Computing", ggml_graph_n_nodes(*graph));
+        
+            if (!graph.is_computing_)
+                ggml_backend_sched_set_eval_callback(
+                    *graph.scheduler(),
+                    progress_callback,
+                    progress
+                );
         }
+        
 
+        graph_.is_computing_ = true;
         ggml_backend_sched_graph_compute(*graph.scheduler(), *graph);
 
-        if (progress != nullptr) {
-            progress->next();
-            progress->pop();
-        }
+        if (progress != nullptr)
+            progress->pop();        
+    }
+
+    ~Computation() {
+        graph_.is_computing_ = false;
     }
 
     const std::vector<Tensor>& results() const {
@@ -61,5 +74,14 @@ private:
             0,
             ggml_nbytes(*tensor)
         );
+    }
+
+    static bool progress_callback(ggml_tensor* t, bool ask, void* user_data) {
+        auto progress = static_cast<ProgressBar*>(user_data);
+
+        if (!ask)
+            progress->next();
+
+        return true;
     }
 };

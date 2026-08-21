@@ -54,6 +54,8 @@ set(CMAKE_C_STANDARD_REQUIRED true)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED true)
 
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
 # ---------------------------------------------------------------------------
 # GPU backend options (forwarded to ggml)
 # ---------------------------------------------------------------------------
@@ -110,6 +112,8 @@ endif()
 # ggml dependency
 # ---------------------------------------------------------------------------
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+set(GGML_STATIC ON CACHE BOOL "" FORCE)
+set(GGML_BACKEND_DL OFF CACHE BOOL "" FORCE)
 add_subdirectory(ggml)
 
 # ---------------------------------------------------------------------------

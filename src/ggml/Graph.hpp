@@ -2,8 +2,8 @@
 
 #include "ggml/Tensor.hpp"
 #include "ggml/Runtime.hpp"
-#include "ggml.h"
-#include "ggml-backend.h"
+#include <ggml.h>
+#include <ggml-backend.h>
 #include <vector>
 #include <random>
 #include <iostream>
@@ -13,7 +13,8 @@ public:
     Graph(Runtime& runtime, std::vector<Tensor>&& tensors)
         : runtime_(runtime),
           gf_(ggml_new_graph_custom(*runtime.context(), runtime.scheduler_.capacity(), false)),
-          tensors_(std::move(tensors))
+          tensors_(std::move(tensors)),
+          is_computing_(false)
     {
         for (auto& tensor : tensors_) {
             // Materialize tensor if needed
@@ -57,22 +58,6 @@ public:
         return tensors_;
     }
 
-    Scheduler& scheduler() {
-        return runtime_.scheduler_;
-    }
-
-    size_t size() const {
-        size_t result = 0;
-
-        // Count only tensors whose buffer has been bound
-        for (auto& pair : runtime_.inputs_) {
-            if ((*pair.first)->buffer != nullptr)
-                ++result;
-        }
-
-        return result;
-    }
-
     Graph(Graph&) = delete;
     Graph& operator =(const Graph&) = delete;
     Graph& operator =(Graph&&) = delete;
@@ -80,4 +65,11 @@ private:
     Runtime& runtime_;
     ggml_cgraph* gf_;
     std::vector<Tensor> tensors_;
+    bool is_computing_;
+
+    Scheduler& scheduler() {
+        return runtime_.scheduler_;
+    }
+
+    friend class Computation;
 };

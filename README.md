@@ -25,6 +25,7 @@ This project ports selected Python diffusers pipelines to C++, providing a drop-
 
 - CMake 3.23+
 - C++17 compiler (GCC 9+, Clang 10+, MSVC 19.20+)
+- [docker](https://www.docker.com/get-started/) (for build sandbox)
 - [uv](https://docs.astral.sh/uv/) (for running tests)
 
 ### Clone & Build

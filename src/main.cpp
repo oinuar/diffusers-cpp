@@ -15,8 +15,8 @@ int main() {
     ggml_backend_load_all();
 
     Backend cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-    Backend gpu(GGML_BACKEND_DEVICE_TYPE_GPU);
-    Scheduler scheduler({*gpu, *cpu}, 65536);
+    //Backend gpu(GGML_BACKEND_DEVICE_TYPE_GPU);
+    Scheduler scheduler({*cpu}, 65536);
     Context context(65536);
     Runtime runtime(scheduler, context);
 
@@ -24,6 +24,8 @@ int main() {
 
     Flux2KleinPipeline::GenerationOptions options;
     options.prompt = "a lovely cat";
+    options.width = 256;
+    options.height = 256;
 
     auto images = pipeline(runtime, std::move(options));
 

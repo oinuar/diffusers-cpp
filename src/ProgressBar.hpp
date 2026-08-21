@@ -201,6 +201,7 @@ private:
 
     void render()
     {
+#if 1
         move_to_first_line();
 
         clear_previous_output();
@@ -215,6 +216,7 @@ private:
         rendered_lines_ = line_count;
 
         std::cerr << std::flush;
+#endif
     }
 
     void render_node(

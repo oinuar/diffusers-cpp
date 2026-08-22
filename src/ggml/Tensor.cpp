@@ -169,7 +169,11 @@ Tensor Tensor::reshape(const Shape& shape) const {
             "reshape(): shape is incompatible with tensor size");
     }
 
-    auto src = clone_as_contiguous();
+    auto src = *this;
+
+    // ggml_reshape expects the tensor to be contiguous.
+    if (!src.is_contiguous())
+        src = src.contiguous();
 
     switch (out.rank()) {
     case 0:
@@ -244,10 +248,8 @@ Tensor Tensor::permute(const Shape& order) const {
         int new_ggml_pos = rank - 1 - new_logical_pos;
         ggml_permute_args[old_ggml_axis] = new_ggml_pos;
     }
-    
-    auto src = clone_as_contiguous();
 
-    return Tensor(ctx_, ggml_permute(ctx_, *src, 
+    return Tensor(ctx_, ggml_permute(ctx_, t_, 
                   ggml_permute_args[0], ggml_permute_args[1], 
                   ggml_permute_args[2], ggml_permute_args[3]), out);
 }
@@ -433,21 +435,20 @@ Tensor Tensor::narrow(int64_t dim, int64_t start, int64_t length) const {
     Shape out = shape_;
     out[dim] = length;
 
-    auto src = clone_as_contiguous();
-    const size_t offset = static_cast<size_t>(start) * src.t_->nb[rank - 1 - dim];
+    const size_t offset = static_cast<size_t>(start) * t_->nb[rank - 1 - dim];
 
     switch (rank) {
     case 1:
-        return Tensor(ctx_, ggml_view_1d(ctx_, *src, out.ne_[0], offset), out);
+        return Tensor(ctx_, ggml_view_1d(ctx_, t_, out.ne_[0], offset), out);
 
     case 2:
-        return Tensor(ctx_, ggml_view_2d(ctx_, *src, out.ne_[0], out.ne_[1], src.t_->nb[1], offset), out);
+        return Tensor(ctx_, ggml_view_2d(ctx_, t_, out.ne_[0], out.ne_[1], t_->nb[1], offset), out);
 
     case 3:
-        return Tensor(ctx_, ggml_view_3d(ctx_, *src, out.ne_[0], out.ne_[1], out.ne_[2], src.t_->nb[1], src.t_->nb[2], offset), out);
+        return Tensor(ctx_, ggml_view_3d(ctx_, t_, out.ne_[0], out.ne_[1], out.ne_[2], t_->nb[1], t_->nb[2], offset), out);
 
     case 4:
-        return Tensor(ctx_, ggml_view_4d(ctx_, *src, out.ne_[0], out.ne_[1], out.ne_[2], out.ne_[3], src.t_->nb[1], src.t_->nb[2], src.t_->nb[3], offset), out);
+        return Tensor(ctx_, ggml_view_4d(ctx_, t_, out.ne_[0], out.ne_[1], out.ne_[2], out.ne_[3], t_->nb[1], t_->nb[2], t_->nb[3], offset), out);
     }
 
     throw std::runtime_error("narrow(): invalid rank");
@@ -688,12 +689,10 @@ Tensor Tensor::sum(int64_t dim, bool keepdim) const {
 
     order[dst] = dim;
 
-    Tensor x;
+    auto x = *this;
 
     if (dim != rank - 1)
-        x = permute(order).contiguous();
-    else
-        x = clone();
+        x = permute(order);
 
     Shape out(rank - 1);
 
@@ -701,6 +700,10 @@ Tensor Tensor::sum(int64_t dim, bool keepdim) const {
         if (src != dim)
             out[dst++] = shape_[src];
     }
+
+    // Tensor is required to be contiguous to sum the correct rows.
+    if (!x.is_contiguous())
+        x = x.contiguous();
 
     // GGML sum_rows reduces ne0 (fastest dimension).
     auto y = Tensor(x.ctx_, ggml_sum_rows(x.ctx_, *x), out);
@@ -776,13 +779,11 @@ Tensor Tensor::operator[](const std::vector<Slice>& indices) const {
 
     auto result = *this;
     auto output_dim = 0;
-    auto cloned = false;
 
     for (const Slice& item : expanded) {
         switch (item.kind) {
             case Slice::Kind::NewAxis:
                 result = result.unsqueeze(output_dim);
-                cloned = true;
                 ++output_dim;
                 break;
 
@@ -802,7 +803,6 @@ Tensor Tensor::operator[](const std::vector<Slice>& indices) const {
 
                 result = result.narrow(output_dim, normalized_index, 1);
                 result = result.squeeze(output_dim);
-                cloned = true;
                 // Do not increment output_dim: integer indexing removed it.
                 break;
             }
@@ -836,7 +836,6 @@ Tensor Tensor::operator[](const std::vector<Slice>& indices) const {
                     normalized_start,
                     normalized_stop - normalized_start);
 
-                cloned = true;
                 ++output_dim;
                 break;
             }
@@ -845,10 +844,6 @@ Tensor Tensor::operator[](const std::vector<Slice>& indices) const {
                 break;
         }
     }
-
-    // Clone tensor if not already cloned
-    if (!cloned)
-        result = result.clone();
 
     return result;
 }

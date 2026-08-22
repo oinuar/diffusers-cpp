@@ -13,8 +13,7 @@ public:
     Graph(Runtime& runtime, std::vector<Tensor>&& tensors)
         : runtime_(runtime),
           gf_(ggml_new_graph_custom(*runtime.context(), runtime.scheduler_.capacity(), false)),
-          tensors_(std::move(tensors)),
-          is_computing_(false)
+          tensors_(std::move(tensors))
     {
         for (auto& tensor : tensors_) {
             // Materialize tensor if needed
@@ -54,6 +53,10 @@ public:
         return std::move(inputs);
     }
 
+    Scheduler& scheduler() {
+        return runtime_.scheduler_;
+    }
+
     std::vector<Tensor>& tensors() {
         return tensors_;
     }
@@ -61,15 +64,9 @@ public:
     Graph(Graph&) = delete;
     Graph& operator =(const Graph&) = delete;
     Graph& operator =(Graph&&) = delete;
+
 private:
     Runtime& runtime_;
     ggml_cgraph* gf_;
     std::vector<Tensor> tensors_;
-    bool is_computing_;
-
-    Scheduler& scheduler() {
-        return runtime_.scheduler_;
-    }
-
-    friend class Computation;
 };

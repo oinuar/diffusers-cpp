@@ -9,10 +9,11 @@
 #include "./ArgumentParser.hpp"
 #include "ggml/Tensor.hpp"
 #include "ggml/Runtime.hpp"
+#include "nn/Parameter.hpp"
 
 template <>
 struct ArgumentParser::parser<Tensor> {
-    parser(Runtime& runtime) : runtime_(runtime) {
+    parser(Runtime& runtime, Parameter* param = nullptr) : runtime_(runtime), param_(param) {
 
     }
 
@@ -24,6 +25,20 @@ struct ArgumentParser::parser<Tensor> {
 
             // std::cerr << "inferred shape for " << option << ": " << shape.to_string() << std::endl;
 
+            if (param_ != nullptr && runtime_.meta_device() != nullptr) {
+                // Multi-device runtime: the parameter lives in a meta buffer
+                // (usage WEIGHTS) and is sharded per its split spec, instead of
+                // being a graph input copied onto the devices.
+                auto meta = runtime_.meta_device();
+                auto param = param_;
+
+                return runtime_.create_weight<float>(
+                    shape,
+                    [data](std::mt19937&) { return std::move(data); },
+                    meta->buffer_type(),
+                    [param, meta](ggml_tensor* t) { param->apply_split(*meta, t); });
+            }
+
             return runtime_.create<float>(shape, [data](std::mt19937&) {
                 return std::move(data);
             });
@@ -34,6 +49,7 @@ struct ArgumentParser::parser<Tensor> {
 
 private:
     Runtime& runtime_;
+    Parameter* param_ = nullptr;
 
 public:
     class TensorParser {

@@ -2,6 +2,8 @@
 
 #include "nn/Module.hpp"
 #include "nn/Visitor.hpp"
+#include "ggml/MetaDevice.hpp"
+#include <optional>
 #include "ggml/Tensor.hpp"
 
 class Parameter : public Module {
@@ -9,6 +11,28 @@ public:
     Parameter(const Tensor::Shape& shape)
         : shape_(shape), tensor_()
     {
+    }
+
+    /** @brief Marks this parameter to be sharded across the devices of a meta
+     *  device along the given PyTorch axis when materialized into a meta buffer.
+     *  The extent along the axis must be divisible by the device count. */
+    void set_split(int64_t pytorch_axis) {
+        split_axis_ = pytorch_axis;
+    }
+
+    /** @brief The PyTorch axis this parameter is sharded along, if any. */
+    std::optional<int64_t> split_axis() const {
+        return split_axis_;
+    }
+
+    /** @brief Registers this parameter's split state with a meta device.
+     *  Must be called before the tensor is allocated into a meta buffer. */
+    void apply_split(MetaDevice& meta, ggml_tensor* tensor) const {
+        if (!split_axis_)
+            return;
+
+        const auto ggml_axis = shape_.rank() - 1 - *split_axis_;
+        meta.split(tensor, SplitState::split(ggml_axis, shape_[*split_axis_], meta.n_devices()));
     }
 
     Tensor forward() {
@@ -47,4 +71,5 @@ public:
 private:
     Tensor::Shape shape_;
     Tensor tensor_;
+    std::optional<int64_t> split_axis_;
 };

@@ -117,47 +117,57 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
         throw std::runtime_error(
             "GGUF tensor has invalid dimensions");
 
-    auto ggml_tensor = ggml_new_tensor(*runtime_.context(), type, n_dims, ne);
+    auto t = ggml_new_tensor(*runtime_.context(), type, n_dims, ne);
 
-    if (!ggml_tensor)
+    if (!t)
         throw std::runtime_error(
             "Failed to create GGML tensor");
 
     auto name = gguf_get_tensor_name(gguf_ctx_, tensor_id);
 
-    ggml_set_name(ggml_tensor, name);
+    ggml_set_name(t, name);
 
     const std::streamoff offs = gguf_get_data_offset(gguf_ctx_) + gguf_get_tensor_offset(gguf_ctx_, tensor_id);
 
-    Tensor::Shape expected_shape(ggml_n_dims(ggml_tensor));
+    Tensor::Shape expected_shape(ggml_n_dims(t));
 
     for (auto r = 0; r < expected_shape.rank(); ++r)
-        expected_shape[r] = ggml_tensor->ne[expected_shape.rank() - 1 - r];
+        expected_shape[r] = t->ne[expected_shape.rank() - 1 - r];
 
     if (parameter.shape() != expected_shape)
         throw std::runtime_error("Error while loading Tensor '" + model_path + "': Parameter shape mismatch: expected " + parameter.shape().to_string() + ", got " + expected_shape.to_string());
 
-    Tensor tensor(*runtime_.context(), ggml_tensor);
+    Tensor tensor(*runtime_.context(), t);
 
-    runtime_.bind<std::byte>(tensor,
-        [ggml_tensor, expected_shape, offs, file = file_, model_path = std::move(model_path)/*, tensor_name = std::move(tensor_name)*/](std::mt19937&) {
-            std::vector<std::byte> buf(ggml_nbytes(ggml_tensor));
+    auto load = [t, expected_shape, offs, file = file_, model_path = std::move(model_path)/*, tensor_name = std::move(tensor_name)*/](std::mt19937&) {
+        std::vector<std::byte> buf(ggml_nbytes(t));
 
-            //std::cerr << "LOAD " << tensor_name.c_str() << " " << expected_shape.to_string() << std::endl;
+        //std::cerr << "LOAD " << tensor_name.c_str() << " " << expected_shape.to_string() << std::endl;
 
-            file->seekg(offs, file->beg);
-            
-            if (!*file)
-                throw std::runtime_error("Error while loading Tensor '" + model_path + "': seek failed");
+        file->seekg(offs, file->beg);
 
-            // Read the tensor data
-            file->read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(buf.size()));
+        if (!*file)
+            throw std::runtime_error("Error while loading Tensor '" + model_path + "': seek failed");
 
-            if (file->gcount() != static_cast<std::streamsize>(buf.size()))
-                throw std::runtime_error("Error while loading Tensor '" + model_path + "': read failed");
+        // Read the tensor data
+        file->read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(buf.size()));
 
-            return std::move(buf);
-        }, /*once=*/true);
+        if (file->gcount() != static_cast<std::streamsize>(buf.size()))
+            throw std::runtime_error("Error while loading Tensor '" + model_path + "': read failed");
+
+        return std::move(buf);
+    };
+
+    if (auto meta = runtime_.meta_device()) {
+        // Multi-device runtime: the weight is resident in a meta buffer (usage
+        // WEIGHTS) and sharded according to the parameter's split spec, instead
+        // of being a graph input copied onto the devices.
+        runtime_.create_weight(tensor, load, meta->buffer_type(), [&parameter, meta](ggml_tensor* t) {
+            parameter.apply_split(*meta, t);
+        });
+    } else {
+        runtime_.bind<std::byte>(tensor, load, /*once=*/true);
+    }
 
     parameter.set(tensor);
 }

@@ -1,9 +1,9 @@
+#include "ggml/Device.hpp"
+#include "ggml/MetaDevice.hpp"
 #include "ggml/Backend.hpp"
 #include "ggml/Runtime.hpp"
 #include "ggml/Scheduler.hpp"
-#include "ggml/Computation.hpp"
-#include "ggml/GGUFLoaderVisitor.hpp"
-#include "nn/RethrowVisitor.hpp"
+#include "ggml/BufferAllocatorVisitor.hpp"
 #include "diffusers/pipelines/flux2/Flux2KleinPipeline.hpp"
 #include <iostream>
 #include <filesystem>
@@ -14,13 +14,16 @@ int main() {
 
     ggml_backend_load_all();
 
-    Backend cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-    //Backend gpu(GGML_BACKEND_DEVICE_TYPE_GPU);
-    Scheduler scheduler({*cpu}, 65536);
+    auto gpus = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
+    Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+    Backend meta_backend(gpus);
+    Backend cpu_backend(cpu);
+    Scheduler scheduler({&meta_backend, &cpu_backend}, 65536);
     Context context(65536);
     Runtime runtime(scheduler, context);
+    BufferAllocatorVisitor weights_allocator(ggml_backend_dev_buffer_type(*gpus));
 
-    auto pipeline = std::move(Flux2KleinPipeline::from_pretrained(runtime, "../utils/convert-model"));
+    auto pipeline = std::move(Flux2KleinPipeline::from_pretrained(runtime, "../utils/convert-model", &weights_allocator));
 
     Flux2KleinPipeline::GenerationOptions options;
     options.prompt = "a lovely cat";

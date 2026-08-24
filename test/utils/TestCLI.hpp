@@ -4,6 +4,7 @@
 #include "ggml/Computation.hpp"
 #include "ggml/Context.hpp"
 #include "ggml/Backend.hpp"
+#include "ggml/MetaDevice.hpp"
 #include "ggml/Scheduler.hpp"
 #include "nn/Visitor.hpp"
 #include "nn/Parameter.hpp"
@@ -20,8 +21,12 @@ public:
 
         ggml_backend_load_all();
 
-        Backend cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-        Scheduler scheduler({*cpu}, get_graph_size());
+        
+        //auto gpus = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
+        Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+        //Backend gpus_backend(gpus);
+        Backend cpu_backend(cpu);
+        Scheduler scheduler({&cpu_backend}, get_graph_size());
         Context context(scheduler.capacity());
         Runtime runtime(scheduler, context);
 
@@ -127,7 +132,7 @@ public:
             // Otherwise, read inline tensor
             else
                 tensor = parser(joined_path, tensor_value);
-            
+
             parameter.set(tensor);
         }
 

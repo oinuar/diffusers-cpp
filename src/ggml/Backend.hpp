@@ -1,16 +1,13 @@
 #pragma once
 
-#include "ggml.h"
-#include "ggml-backend.h"
+#include "ggml/Device.hpp"
 
 class Backend {
 public:
-    Backend(enum ggml_backend_dev_type type) : backend_() {
-        backend_ = ggml_backend_init_by_type(type, nullptr);
-    }
-
-    Backend(Backend&& other) : backend_(other.backend_) {
-        other.backend_ = nullptr;
+    /** @brief Constructs a backend from a device. */
+    Backend(Device& device)
+        : device_(device), backend_(ggml_backend_dev_init(*device, nullptr))
+    {
     }
 
     ~Backend() {
@@ -22,10 +19,13 @@ public:
         return backend_;
     }
 
+    Device& device() {
+        return device_;
+    }
+
     Backend(Backend&) = delete;
     Backend& operator =(const Backend&) = delete;
 private:
+    Device& device_;
     ggml_backend_t backend_;
-
-    friend class Scheduler;
 };

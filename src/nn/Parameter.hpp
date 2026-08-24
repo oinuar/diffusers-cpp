@@ -2,12 +2,13 @@
 
 #include "nn/Module.hpp"
 #include "nn/Visitor.hpp"
+#include <optional>
 #include "ggml/Tensor.hpp"
 
 class Parameter : public Module {
 public:
-    Parameter(const Tensor::Shape& shape)
-        : shape_(shape), tensor_()
+    Parameter(const Tensor::Shape& shape, std::optional<int64_t> split_dim = std::nullopt)
+        : shape_(shape), tensor_(), split_dim_(split_dim)
     {
     }
 
@@ -40,6 +41,10 @@ public:
         return shape_;
     }
 
+    std::optional<int64_t> split_dim() const {
+        return split_dim_;
+    }
+
     virtual void accept(Visitor& visitor, std::vector<std::string> path) {
         visitor.visit(*this, std::move(path));
     }
@@ -47,4 +52,5 @@ public:
 private:
     Tensor::Shape shape_;
     Tensor tensor_;
+    std::optional<int64_t> split_dim_;
 };

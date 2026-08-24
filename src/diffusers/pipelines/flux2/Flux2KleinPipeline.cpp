@@ -3,6 +3,7 @@
 #include "nn/Parameter.hpp"
 #include "nn/modules/BatchNorm2d.hpp"
 #include "ggml/GGUFLoaderVisitor.hpp"
+#include "ggml/BufferAllocatorVisitor.hpp"
 #include "ggml/Runtime.hpp"
 #include "ggml/Scheduler.hpp"
 #include "ggml/Computation.hpp"
@@ -17,7 +18,13 @@
 #include <chrono>
 #include <optional>
 
-Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(Runtime& runtime, const std::filesystem::path& path) {
+Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(
+    Runtime& runtime,
+    const std::filesystem::path& path,
+    BufferAllocatorVisitor* vae_buffer_allocator,
+    BufferAllocatorVisitor* text_encoder_buffer_allocator,
+    BufferAllocatorVisitor* transformer_buffer_allocator
+) {
     // 1. Initialize models from config
     Qwen3ForCausalLM text_encoder(Qwen3Config::from_file(path / "text_encoder" / "config.json"));
     Flux2Transformer2DModel transformer(Flux2Transformer2DModel::Config::from_file(path / "transformer" / "config.json"));
@@ -25,7 +32,7 @@ Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(Runtime& runtime, const s
 
     // 2. Load VAE
     {
-        GGUFLoaderVisitor vae_loader(runtime, path / "vae");
+        GGUFLoaderVisitor vae_loader(runtime, path / "vae", vae_buffer_allocator);
         RethrowVisitor vae_visitor(vae_loader);
         vae.accept(vae_visitor);
         vae_visitor.rethrow();
@@ -34,7 +41,7 @@ Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(Runtime& runtime, const s
 
     // 3. Load text encoder
     {
-        GGUFLoaderVisitor text_encoder_loader(runtime, path / "text_encoder");
+        GGUFLoaderVisitor text_encoder_loader(runtime, path / "text_encoder", text_encoder_buffer_allocator);
         RethrowVisitor text_encoder_visitor(text_encoder_loader);
         text_encoder.accept(text_encoder_visitor);
         text_encoder_visitor.rethrow();
@@ -43,17 +50,22 @@ Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(Runtime& runtime, const s
 
     // 4. Load transformer
     {
-        GGUFLoaderVisitor transformer_loader(runtime, path / "transformer");
+        GGUFLoaderVisitor transformer_loader(runtime, path / "transformer", transformer_buffer_allocator);
         RethrowVisitor transformer_visitor(transformer_loader);
         transformer.accept(transformer_visitor);
         transformer_visitor.rethrow();
         transformer_loader.validate();
     }
 
-    // 5. Load tokenizer
+    // 5. Allocate weight buffers
+    if (vae_buffer_allocator != nullptr) vae_buffer_allocator->allocate();
+    if (text_encoder_buffer_allocator != nullptr) text_encoder_buffer_allocator->allocate();
+    if (transformer_buffer_allocator != nullptr) transformer_buffer_allocator->allocate();
+
+    // 6. Load tokenizer
     auto tokenizer = Qwen2TokenizerFast::from_pretrained(path / "tokenizer");
 
-    // 6. Construct the pipeline
+    // 7. Construct the pipeline
     Flux2KleinPipeline pipeline(
         std::move(transformer),
         std::move(vae),
@@ -576,6 +588,9 @@ Flux2KleinPipeline::Denoise Flux2KleinPipeline::make_denoise_graph(
     }
 
     auto timestep = Tensor::empty<float>(*runtime.context(), {batch});
+
+    ggml_set_input(*timestep);
+
     runtime.bind<float>(timestep, [batch, current_timestep](std::mt19937&) {
         return std::vector<float>(batch, *current_timestep);
     });
@@ -595,6 +610,9 @@ Flux2KleinPipeline::Denoise Flux2KleinPipeline::make_denoise_graph(
         noise_pred = noise_pred[{Tensor::Slice::all(), Tensor::Slice::range(0, latents.shape()[1])}];
 
     auto dt = Tensor::empty<float>(*runtime.context(), {1});
+
+    ggml_set_input(*dt);
+
     runtime.bind<float>(dt, [current_dt](std::mt19937&) {
         return std::vector<float>{*current_dt};
     });
@@ -691,6 +709,8 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& parent_runtime, Gene
             packed_w,
             options.images
         ));
+
+        ggml_graph_dump_dot(*graph, *graph, "make_embeddings_graph.dot");
 
         progress.push("Preparing", 1 + options.images.size());
 

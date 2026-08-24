@@ -17,6 +17,7 @@
 class Backend;
 class Runtime;
 class Scheduler;
+class BufferAllocatorVisitor;
 
 // 
 //                     ┌────────────────────┐
@@ -69,7 +70,13 @@ public:
         size_t max_sequence_length = 512;
     };
 
-    static Flux2KleinPipeline from_pretrained(Runtime& runtime, const std::filesystem::path& path);
+    static Flux2KleinPipeline from_pretrained(
+        Runtime& runtime,
+        const std::filesystem::path& path,
+        BufferAllocatorVisitor* vae_buffer_allocator = nullptr,
+        BufferAllocatorVisitor* text_encoder_buffer_allocator = nullptr,
+        BufferAllocatorVisitor* transformer_buffer_allocator = nullptr
+    );
 
     // Latent shape conversions mirroring the static methods of the Python
     // Flux2KleinPipeline. Pure tensor ops with no model state.

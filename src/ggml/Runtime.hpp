@@ -36,16 +36,18 @@ public:
     }
 
     template <class T>
-    Tensor create(const Tensor::Shape& shape, const Provider<T>& provider) {
+    Tensor create(const Tensor::Shape& shape, const Provider<T>& provider, bool input = true) {
         auto tensor = Tensor::empty<T>(*context(), shape);
+
+        if (input)
+            (*tensor)->flags |= GGML_TENSOR_FLAG_INPUT;
+
         bind(tensor, provider, true);
         return tensor;
     }
 
     template <class T>
     void bind(Tensor tensor, const Provider<T>& provider, bool once = false) {
-        (*tensor)->flags |= GGML_TENSOR_FLAG_INPUT;
-
         inputs_[tensor] = [this, tensor, provider, once](std::mt19937& rng) {
             auto values = provider(rng);
 
@@ -69,6 +71,16 @@ public:
 
     void clear() {
         inputs_.clear();
+    }
+
+    void split(const Tensor& tensor, int64_t dim) {
+        for (auto& backend : scheduler_.backends())
+            backend->device().split(tensor, dim);
+    }
+
+    void mirror(const Tensor& tensor) {
+        for (auto& backend : scheduler_.backends())
+            backend->device().mirror(tensor);
     }
 
     template<class T>

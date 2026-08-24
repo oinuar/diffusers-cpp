@@ -1,5 +1,6 @@
 #include "ggml/GGUFLoaderVisitor.hpp"
 #include "ggml/Runtime.hpp"
+#include "ggml/BufferAllocatorVisitor.hpp"
 #include "nn/Parameter.hpp"
 #include <string>
 #include <fstream>
@@ -31,8 +32,8 @@ static std::optional<std::filesystem::path> find_first_gguf(const std::filesyste
     return std::nullopt;
 }
 
-GGUFLoaderVisitor::GGUFLoaderVisitor(Runtime& runtime, const std::filesystem::path& path)
-    : runtime_(runtime), gguf_ctx_(nullptr), file_(std::make_shared<std::ifstream>()), lookup_()
+GGUFLoaderVisitor::GGUFLoaderVisitor(Runtime& runtime, const std::filesystem::path& path, BufferAllocatorVisitor* buffer_allocator)
+    : runtime_(runtime), gguf_ctx_(nullptr), file_(std::make_shared<std::ifstream>()), lookup_(), buffer_allocator_(buffer_allocator)
 {
     auto gguf_path = find_first_gguf(path);
 
@@ -117,13 +118,13 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
         throw std::runtime_error(
             "GGUF tensor has invalid dimensions");
 
+    auto name = gguf_get_tensor_name(gguf_ctx_, tensor_id);
+
     auto ggml_tensor = ggml_new_tensor(*runtime_.context(), type, n_dims, ne);
 
     if (!ggml_tensor)
         throw std::runtime_error(
             "Failed to create GGML tensor");
-
-    auto name = gguf_get_tensor_name(gguf_ctx_, tensor_id);
 
     ggml_set_name(ggml_tensor, name);
 
@@ -137,7 +138,7 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
     if (parameter.shape() != expected_shape)
         throw std::runtime_error("Error while loading Tensor '" + model_path + "': Parameter shape mismatch: expected " + parameter.shape().to_string() + ", got " + expected_shape.to_string());
 
-    Tensor tensor(*runtime_.context(), ggml_tensor);
+    Tensor tensor(*runtime_.context(), ggml_tensor, parameter.shape());
 
     runtime_.bind<std::byte>(tensor,
         [ggml_tensor, expected_shape, offs, file = file_, model_path = std::move(model_path)/*, tensor_name = std::move(tensor_name)*/](std::mt19937&) {
@@ -160,4 +161,10 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
         }, /*once=*/true);
 
     parameter.set(tensor);
+
+    for (auto& backend : runtime_.scheduler().backends())
+        backend->device().visit(parameter, path);
+    
+    if (buffer_allocator_ != nullptr)
+        buffer_allocator_->visit(parameter, path);
 }

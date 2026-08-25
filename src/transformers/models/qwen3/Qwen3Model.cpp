@@ -93,6 +93,32 @@ static Tensor create_causal_mask(
     return mask;
 }
 
+static Tensor arange(
+    Runtime& runtime,
+    float start,
+    float stop,
+    float step = 1.0f)
+{
+    const int64_t size =
+        static_cast<int64_t>(std::ceil((stop - start) / step));
+
+    auto tensor = Tensor::empty<float>(*runtime.context(), {size});
+
+    runtime.bind<float>(tensor,
+        [start, step, size](std::mt19937&) {
+            std::vector<float> values(size);
+
+            for (int64_t i = 0; i < size; ++i) {
+                values[i] = start + static_cast<float>(i) * step;
+            }
+
+            return values;
+        }
+    );
+
+    return tensor;
+}
+
 Tensor Qwen3Model::forward(
     Runtime& runtime,
     std::optional<Tensor> input_ids,
@@ -123,7 +149,8 @@ Tensor Qwen3Model::forward(
     auto past_seen_tokens = 0;
 
     if (!position_ids) {
-        position_ids = Tensor::arange(*runtime.context(), 0, seq_len);
+
+        position_ids = arange(runtime, 0, seq_len);
         position_ids = *position_ids + (float)past_seen_tokens;
         position_ids = position_ids.value().unsqueeze(0);
     }

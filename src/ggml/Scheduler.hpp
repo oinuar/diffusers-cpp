@@ -1,18 +1,21 @@
 #pragma once
 
-#include "Context.hpp"
-#include "ggml.h"
-#include "ggml-backend.h"
+#include "ggml/Backend.hpp"
 #include <vector>
 
 class Graph;
 
 class Scheduler {
 public:
-    Scheduler(std::vector<ggml_backend_t>&& backends, size_t graph_size = GGML_DEFAULT_GRAPH_SIZE)
+    Scheduler(std::vector<Backend*>&& backends, size_t graph_size = GGML_DEFAULT_GRAPH_SIZE)
         : backends_(std::move(backends)), sched_(nullptr), allocated_graph_(nullptr), graph_size_(graph_size)
     {
-        sched_ = ggml_backend_sched_new(backends_.data(), nullptr, backends_.size(), graph_size, false, true);
+        std::vector<ggml_backend_t> ggml_backends;
+
+        for (auto backend : backends_)
+            ggml_backends.push_back(**backend);
+
+        sched_ = ggml_backend_sched_new(ggml_backends.data(), nullptr, ggml_backends.size(), graph_size, false, true);
     }
 
     Scheduler(Scheduler&& other)
@@ -47,11 +50,15 @@ public:
         allocated_graph_ = graph;
     }
 
+    std::vector<Backend*>& backends() {
+        return backends_;
+    }
+
     Scheduler(Scheduler&) = delete;
     Scheduler& operator =(const Scheduler&) = delete;
 
 private:
-    std::vector<ggml_backend_t> backends_;
+    std::vector<Backend*> backends_;
     ggml_backend_sched_t sched_;
     ggml_cgraph* allocated_graph_;
     size_t graph_size_;

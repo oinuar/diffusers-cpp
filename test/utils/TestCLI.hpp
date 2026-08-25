@@ -11,10 +11,7 @@
 #include "./ArgumentParser.hpp"
 #include <iostream>
 #include <fstream>
-#include <memory>
-#include <optional>
 #include <sstream>
-#include <vector>
 
 class TestCLI {
 public:
@@ -23,31 +20,15 @@ public:
         ggml_log_set([](ggml_log_level, const char* text, void*) { std::cerr << text; }, nullptr);
 
         ggml_backend_load_all();
-        // With --n-devices N, run on a meta device sharded across N CPU
-        // backends (tensor parallelism); the plain CPU backend stays last,
-        // as the ggml scheduler requires.
-        std::unique_ptr<MetaDevice> meta_dev;
-        std::vector<Backend> backends; // wrappers keep the ggml backends alive
 
-        if (auto n_devices = args_.get_optional<int>("--n-devices")) {
-            const auto cpu_dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
-            if (cpu_dev == nullptr)
-                throw std::runtime_error("no CPU device found for --n-devices");
-
-            meta_dev = std::make_unique<MetaDevice>(std::vector<ggml_backend_dev_t>(*n_devices, cpu_dev));
-            backends.emplace_back(**meta_dev);
-            backends.emplace_back(GGML_BACKEND_DEVICE_TYPE_CPU);
-        } else {
-            backends.emplace_back(GGML_BACKEND_DEVICE_TYPE_CPU);
-        }
-
-        std::vector<ggml_backend_t> backend_pointers;
-        for (auto& backend : backends)
-            backend_pointers.push_back(*backend);
-
-        Scheduler scheduler(std::move(backend_pointers), get_graph_size());
+        
+        //auto gpus = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
+        Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+        //Backend gpus_backend(gpus);
+        Backend cpu_backend(cpu);
+        Scheduler scheduler({&cpu_backend}, get_graph_size());
         Context context(scheduler.capacity());
-        Runtime runtime(scheduler, context, std::random_device{}(), meta_dev.get());
+        Runtime runtime(scheduler, context);
 
         auto results = compute(runtime);
 
@@ -131,7 +112,7 @@ public:
             auto joined_path = join_path(path, prefix_);
 
             auto tensor_value = args_.get_one<std::string>(joined_path);
-            ArgumentParser::parser<Tensor> parser(runtime_, &parameter);
+            ArgumentParser::parser<Tensor> parser(runtime_);
             Tensor tensor;
 
             // Read tensor value from file
@@ -151,7 +132,7 @@ public:
             // Otherwise, read inline tensor
             else
                 tensor = parser(joined_path, tensor_value);
-            
+
             parameter.set(tensor);
         }
 

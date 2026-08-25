@@ -11,18 +11,19 @@ Linear::Linear(
     // The weight (and bias) shard their output features across the devices of a
     // meta device, so the ggml_mul_mat in forward computes a slice of the output
     // rows per device with zero communication.
-    auto weight = std::make_shared<Parameter>(Tensor::Shape({out_features, in_features}));
-    weight->set_split(0);
+    auto weight = std::make_shared<Parameter>(Tensor::Shape({out_features, in_features}), /*split_dim=*/1);
     modules["weight"] = weight;
 
     if (bias_) {
         auto bias = std::make_shared<Parameter>(Tensor::Shape({out_features}));
-        bias->set_split(0);
         modules["bias"] = bias;
     }
 }
 
 Tensor Linear::forward(Runtime& runtime, Tensor x) {
+    // Setup matching split for input Tensor
+    runtime.split(x, 1);
+
     auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward();
 
     // Weight is logically shaped [out_features, in_features] (PyTorch),

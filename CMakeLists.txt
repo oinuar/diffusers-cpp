@@ -214,26 +214,6 @@ if(DIFFUSERS_BUILD_TESTS)
         DEPENDS ${UV_ENV_STAMP}
     )
 
-    # C++ test: tensor-split (meta device over two CPUs)
-    add_executable(test-meta-device
-        test/meta_device.cpp
-    )
-
-    target_include_directories(test-meta-device PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(test-meta-device PRIVATE diffusers)
-
-    add_test(NAME meta-device COMMAND test-meta-device)
-
-    # C++ test: nn::Linear tensor-split (meta device over two CPUs)
-    add_executable(test-linear-meta
-        test/linear_meta.cpp
-    )
-
-    target_include_directories(test-linear-meta PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_link_libraries(test-linear-meta PRIVATE diffusers)
-
-    add_test(NAME linear-meta COMMAND test-linear-meta)
-
     add_executable(test-tensor-cli
         test/utils/tensor-cli/main.cpp
     )

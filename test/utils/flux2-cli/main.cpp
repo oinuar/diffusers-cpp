@@ -686,8 +686,11 @@ int main(int argc, char** argv) {
 
         ggml_backend_load_all();
 
-        Backend cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-        Scheduler scheduler({*cpu}, cli.get_graph_size());
+        //auto gpus = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
+        Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+        //Backend gpus_backend(gpus);
+        Backend cpu_backend(cpu);
+        Scheduler scheduler({&cpu_backend}, cli.get_graph_size());
 
         Flux2Transformer2DModel::Config transformer_config;
         {

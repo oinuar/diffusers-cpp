@@ -140,6 +140,7 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
 
     Tensor tensor(*runtime_.context(), ggml_tensor, parameter.shape());
 
+    // Here we supply data to tensor. This is where buffer allocation should happen
     runtime_.bind<std::byte>(tensor,
         [ggml_tensor, expected_shape, offs, file = file_, model_path = std::move(model_path)/*, tensor_name = std::move(tensor_name)*/](std::mt19937&) {
             std::vector<std::byte> buf(ggml_nbytes(ggml_tensor));
@@ -162,9 +163,11 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
 
     parameter.set(tensor);
 
+    // TODO: This is separate responsibility because should work for all tensors, not just parameters
     for (auto& backend : runtime_.scheduler().backends())
         backend->device().visit(parameter, path);
     
+    // TODO: this shouldn't be here; separate reponsibility (should allocate tensors too, not just parameters)
     if (buffer_allocator_ != nullptr)
         buffer_allocator_->visit(parameter, path);
 }

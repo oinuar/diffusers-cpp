@@ -262,6 +262,7 @@ public:
     }
 
     /** @brief Creates an uninitialized tensor with the given shape and type. */
+    // TODO: remove this and move to runtime
     template <typename T> static Tensor empty(
         ggml_context* ctx,
         const Shape& shape)
@@ -270,6 +271,7 @@ public:
     }
 
     /** @brief Creates a scalar tensor filled with the given value. */
+    // TODO: remove this and move to runtime
     template <typename T> static Tensor scalar(ggml_context* ctx, const T& value) {
         // GGML supports filling only float tensors
         auto tensor = empty<float>(ctx, {});
@@ -279,6 +281,7 @@ public:
     }
 
     /** @brief Creates an uninitialized tensor with the given shape and type. */
+    // TODO: remove this and move to runtime
     static Tensor empty(
         ggml_context* ctx,
         const Shape& shape,
@@ -292,6 +295,7 @@ public:
     }
 
     /** @brief Creates a filled tensor with the given value, shape and type. */
+    // TODO: remove this and move to runtime
     static Tensor full(
         ggml_context* ctx,
         const Shape& shape,
@@ -304,6 +308,7 @@ public:
     }
 
     /** @brief Creates a zero-filled tensor with the given shape and type. */
+    // TODO: remove this and move to runtime
     static Tensor zeros(
         ggml_context* ctx,
         const Shape& shape)
@@ -312,6 +317,7 @@ public:
     }
 
     /** @brief Creates a one-filled tensor with the given shape and type. */
+    // TODO: remove this and move to runtime
     static Tensor ones(
         ggml_context* ctx,
         const Shape& shape)
@@ -319,6 +325,7 @@ public:
         return full(ctx, shape, 1.0f);
     }
 
+    // TODO: remove this and move to runtime
     static Tensor arange(
         ggml_context* ctx,
         float start,
@@ -385,22 +392,17 @@ public:
     /** @brief Splits a tensor into chunks of specified sizes along dimension `dim`. */
     std::vector<Tensor> split_with_sizes(const std::vector<int64_t>& split_sizes, int64_t dim = 0) const;
 
-    /** @brief Casts a tensor to type `type` if it is not already. */
+    /** @brief Makes sure a tensor is type `type` if it is not already. */
     Tensor to(ggml_type type) const {
         if (dtype() != type)
-            return astype(type);
+            return cast(type);
 
         return *this;
     }
 
     /** @brief Converts a tensor to type `type`. */
-    Tensor astype(ggml_type type) const {
+    Tensor cast(ggml_type type) const {
         return Tensor(ctx_, ggml_cast(ctx_, t_, type), shape_);
-    }
-
-    /** @brief Copies this tensor to another tensor. */
-    Tensor copy_to(Tensor dest) const {
-        return Tensor(ctx_, ggml_cpy(ctx_, t_, *dest), dest.shape_);
     }
 
     Tensor operator -() const {

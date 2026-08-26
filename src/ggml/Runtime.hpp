@@ -73,6 +73,10 @@ public:
         inputs_.clear();
     }
 
+    void copy(const Tensor& src, const Tensor& dst) {
+        ggml_backend_tensor_copy(*src, *dst);
+    }
+
     void split(const Tensor& tensor, int64_t dim) {
         for (auto& backend : scheduler_.backends())
             backend->device().split(tensor, dim);

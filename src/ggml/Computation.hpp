@@ -11,7 +11,8 @@
 class Computation {
 public:
     explicit Computation(Graph& graph, ProgressBar* progress = nullptr) : graph_(graph) {
-        graph.scheduler().allocate(*graph, progress == nullptr ? nullptr : progress_callback, progress);
+        ggml_backend_sched_reset(*graph.scheduler());
+        ggml_backend_sched_alloc_graph(*graph.scheduler(), *graph); // TODO: this alloates non-allocated tensor buffers so tensor buffer allocation should happen before this
 
         auto inputs = graph.inputs();
 
@@ -27,13 +28,15 @@ public:
 
         if (progress != nullptr) {
             progress->pop();
-            progress->push("Computing", ggml_graph_n_nodes(*graph));
+            progress->push("Computing", 1);
         }
 
         ggml_backend_sched_graph_compute(*graph.scheduler(), *graph);
 
-        if (progress != nullptr)
-            progress->pop();        
+        if (progress != nullptr) {
+            progress->next();
+            progress->pop();  
+        }
     }
 
     const std::vector<Tensor>& results() const {
@@ -58,14 +61,5 @@ private:
             0,
             ggml_nbytes(*tensor)
         );
-    }
-
-    static bool progress_callback(ggml_tensor* t, bool ask, void* user_data) {
-        auto progress = static_cast<ProgressBar*>(user_data);
-
-        if (!ask)
-            progress->next();
-
-        return true;
     }
 };

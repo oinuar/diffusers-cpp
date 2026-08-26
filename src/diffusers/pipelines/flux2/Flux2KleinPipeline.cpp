@@ -530,26 +530,6 @@ Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
     };
 }
 
-//
-// `latents` is the recurrent state. The following:
-//
-//     next_latents = ...;
-//     next_latents = next_latents.copy_to(latents);
-//
-// creates a feedback edge in the graph. After each Computation, the newly
-// computed value is copied into `latents`. Therefore repeated:
-//
-//     Computation computation(graph);
-//
-// behaves like:
-//
-//     latents = scheduler(latents, timestep_0)
-//     latents = scheduler(latents, timestep_1)
-//     latents = scheduler(latents, timestep_2)
-//     ...
-//
-// Timestep and dt are runtime-bound inputs. Their (pointer) values are
-// supplied anew for each Computation, while the graph topology remains unchanged.
 Flux2KleinPipeline::Denoise Flux2KleinPipeline::make_denoise_graph(
     Runtime& runtime,
     int batch,
@@ -619,9 +599,8 @@ Flux2KleinPipeline::Denoise Flux2KleinPipeline::make_denoise_graph(
 
     // Integrate latents over dt and assign latents <- latents+1
     auto next_latents = scheduler_.integrate(noise_pred, latents, dt);
-    next_latents = next_latents.copy_to(latents);
 
-    return {std::move(Graph(runtime, {next_latents})), latents};
+    return {std::move(Graph(runtime, {next_latents})), latents, next_latents};
 }
 
 Graph Flux2KleinPipeline::make_decode_graph(
@@ -710,8 +689,6 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& parent_runtime, Gene
             options.images
         ));
 
-        ggml_graph_dump_dot(*graph, *graph, "make_embeddings_graph.dot");
-
         progress.push("Preparing", 1 + options.images.size());
 
         Computation computation(graph, &progress);
@@ -778,7 +755,7 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& parent_runtime, Gene
         Runtime runtime(parent_runtime);
         float timestep, dt;
 
-        auto [graph, latents] = std::move(make_denoise_graph(
+        auto [graph, latents, next_latents] = std::move(make_denoise_graph(
             runtime,
             batch,
             packed_h,
@@ -807,6 +784,9 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& parent_runtime, Gene
             dt = step.dt;
 
             Computation computation(graph, &progress);
+
+            // Assign latents <- latents+1
+            runtime.copy(next_latents, latents);
 
             // Extract latents from the last denoising step
             if (i == schedule.size() - 1) {

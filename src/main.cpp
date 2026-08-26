@@ -21,7 +21,7 @@ int main() {
     Scheduler scheduler({&meta_backend, &cpu_backend}, 65536);
     Context context(65536);
     Runtime runtime(scheduler, context);
-    BufferAllocatorVisitor weights_allocator(ggml_backend_dev_buffer_type(*gpus));
+    BufferAllocatorVisitor weights_allocator(gpus.buffer_type());
 
     auto pipeline = std::move(Flux2KleinPipeline::from_pretrained(runtime, "../utils/convert-model", &weights_allocator));
 
@@ -34,3 +34,49 @@ int main() {
 
     images[0].save("test.png");
 }
+
+/*
+
+int main() {
+    ggml_time_init();
+    ggml_log_set([](ggml_log_level, const char* text, void*) { std::cerr << text; }, nullptr);
+
+    ggml_backend_load_all();
+
+    auto gpus = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
+    Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+    Backend meta_backend(gpus);
+    Backend cpu_backend(cpu);
+    Scheduler scheduler({&meta_backend, &cpu_backend});
+    Context context(scheduler.capacity());
+    Runtime runtime(scheduler, context);
+
+    // initial value
+    auto counter = runtime.create<float>({1}, [](std::mt19937&) {
+        return std::vector<float>({42});
+    });
+
+    // counter + 1
+    auto next_counter = counter + 1.0f;
+    
+    Graph graph(runtime, {next_counter});
+    std::vector<float> result;
+
+    // count to +10
+    for (auto i = 0; i < 10; ++i) {
+        Computation computation(graph);
+
+        // assign counter <- counter+1
+        runtime.copy(computation.results().at(0), counter);
+
+        // read results on the last step
+        if (i == 10 - 1)
+            result = runtime.value<float>(counter);
+    }
+
+    // print results
+    for (auto& x : result)
+        std::cout << "result: " << x << std::endl;
+}
+
+*/

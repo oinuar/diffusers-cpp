@@ -587,7 +587,7 @@ public:
                     image_latent_ids_data = std::move(image_latent_ids.second);
                 }
 
-                auto [graph, latents] = std::move(pipeline.make_denoise_graph(
+                auto [graph, latents, next_latents] = std::move(pipeline.make_denoise_graph(
                     runtime,
                     batch,
                     packed_h,
@@ -610,7 +610,7 @@ public:
 
                 Computation computation(graph);
 
-                return {latents};
+                return {next_latents};
             }
 
             if (args_.get(0) == "Flux2KleinPipeline_decode") {
@@ -686,11 +686,11 @@ int main(int argc, char** argv) {
 
         ggml_backend_load_all();
 
-        //auto gpus = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
+        auto gpus = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-        //Backend gpus_backend(gpus);
+        Backend gpus_backend(gpus);
         Backend cpu_backend(cpu);
-        Scheduler scheduler({&cpu_backend}, cli.get_graph_size());
+        Scheduler scheduler({&gpus_backend, &cpu_backend}, cli.get_graph_size());
 
         Flux2Transformer2DModel::Config transformer_config;
         {

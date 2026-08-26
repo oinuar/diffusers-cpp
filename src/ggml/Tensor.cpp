@@ -668,7 +668,7 @@ Tensor Tensor::repeat(const Shape& repeats) const {
 
     // GGML repeat requires the target tensor to describe the
     // desired output shape.
-    auto target = empty(ctx_, out, dtype());
+    auto target = empty(ctx_, out, dtype()); // TODO: what to do with this??? cannot really create leaf tensors here
 
     return Tensor(
         ctx_,

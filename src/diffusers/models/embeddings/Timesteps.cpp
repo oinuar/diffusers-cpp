@@ -13,6 +13,8 @@ static Tensor arange(
 
     auto tensor = Tensor::empty<float>(*runtime.context(), {size});
 
+    ggml_set_input(*tensor);
+
     runtime.bind<float>(tensor,
         [start, step, size](std::mt19937&) {
             std::vector<float> values(size);

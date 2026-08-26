@@ -121,6 +121,7 @@ public:
     struct Denoise {
         Graph graph;
         Tensor latents;
+        Tensor next_latents;
     };
 
     Denoise make_denoise_graph(

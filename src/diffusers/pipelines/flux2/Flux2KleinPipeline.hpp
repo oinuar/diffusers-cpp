@@ -17,7 +17,7 @@
 class Backend;
 class Runtime;
 class Scheduler;
-class BufferAllocatorVisitor;
+class Allocator;
 
 // 
 //                     ┌────────────────────┐
@@ -73,9 +73,9 @@ public:
     static Flux2KleinPipeline from_pretrained(
         Runtime& runtime,
         const std::filesystem::path& path,
-        BufferAllocatorVisitor* vae_buffer_allocator = nullptr,
-        BufferAllocatorVisitor* text_encoder_buffer_allocator = nullptr,
-        BufferAllocatorVisitor* transformer_buffer_allocator = nullptr
+        Allocator* vae_allocator = nullptr,
+        Allocator* text_encoder_allocator = nullptr,
+        Allocator* transformer_allocator = nullptr
     );
 
     // Latent shape conversions mirroring the static methods of the Python
@@ -93,12 +93,9 @@ public:
     Flux2KleinPipeline(Flux2Transformer2DModel&& transformer,
                        AutoencoderKLFlux2&& vae,
                        Qwen3ForCausalLM&& text_encoder,
-                       Qwen2TokenizerFast&& tokenizer)
-        : transformer_(std::move(transformer)), vae_(std::move(vae)),
-          scheduler_(), text_encoder_(std::move(text_encoder)),
-          tokenizer_(std::move(tokenizer)) {}
+                       Qwen2TokenizerFast&& tokenizer);
 
-    std::vector<Image> operator ()(Runtime& runtime, GenerationOptions&& options);
+    std::vector<Image> operator ()(Runtime& runtime, Allocator& allocator, GenerationOptions&& options);
 
     struct Embeddings {
         Graph graph;
@@ -116,31 +113,22 @@ public:
         int batch,
         int packed_h,
         int packed_w,
-        std::vector<Image>& images);
+        std::vector<Image>& images,
+        Allocator* allocator = nullptr
+    );
 
-    struct Denoise {
-        Graph graph;
-        Tensor latents;
-        Tensor next_latents;
-    };
-
-    Denoise make_denoise_graph(
+    Graph make_denoise_graph(
         Runtime& runtime,
         int batch,
         int packed_h,
         int packed_w,
         size_t num_ref_tokens,
-        Tensor::Shape prompt_embeds_shape,
-        Tensor::Shape img_ids_shape,
-        Tensor::Shape txt_ids_shape,
-        Tensor::Shape image_latents_shape,
-        Tensor::Shape image_latent_ids_shape,
-        std::vector<float>* packed_latents,
-        std::vector<float>* prompt_embeds_data,
-        std::vector<float>* img_ids_data,
-        std::vector<float>* txt_ids_data,
-        std::vector<float>* image_latents_data,
-        std::vector<float>* image_latent_ids_data,
+        Tensor prompt_embeds,
+        Tensor img_ids,
+        Tensor txt_ids,
+        Tensor latents,
+        std::optional<Tensor> image_latents,
+        std::optional<Tensor> image_latent_ids,
         float* timestep,
         float* dt
     );
@@ -149,8 +137,7 @@ public:
         Runtime& runtime,
         int packed_h,
         int packed_w,
-        Tensor::Shape latents_shape,
-        std::vector<float>* latents_data
+        Tensor latents
     );
 
     const FlowMatchEulerDiscreteScheduler& scheduler() const {
@@ -158,7 +145,7 @@ public:
     }
 
 private:
-    std::tuple<Tensor, Tensor> encode_prompt(Runtime& runtime, int batch, const std::string& prompt, size_t max_sequence_length);
+    std::tuple<Tensor, Tensor> encode_prompt(Runtime& runtime, Allocator* allocator, int batch, const std::string& prompt, size_t max_sequence_length);
 
     Flux2Transformer2DModel transformer_;
     AutoencoderKLFlux2 vae_;

@@ -2,34 +2,6 @@
 #include "ggml/Runtime.hpp"
 #include <cmath>
 
-static Tensor arange(
-    Runtime& runtime,
-    float start,
-    float stop,
-    float step = 1.0f)
-{
-    const int64_t size =
-        static_cast<int64_t>(std::ceil((stop - start) / step));
-
-    auto tensor = Tensor::empty<float>(*runtime.context(), {size});
-
-    ggml_set_input(*tensor);
-
-    runtime.bind<float>(tensor,
-        [start, step, size](std::mt19937&) {
-            std::vector<float> values(size);
-
-            for (int64_t i = 0; i < size; ++i) {
-                values[i] = start + static_cast<float>(i) * step;
-            }
-
-            return values;
-        }
-    );
-
-    return tensor;
-}
-
 Timesteps::Timesteps(
     int64_t num_channels,
     bool flip_sin_to_cos,
@@ -45,7 +17,7 @@ Timesteps::Timesteps(
 Tensor Timesteps::forward(Runtime& runtime, Tensor timesteps) {
     const int64_t half_dim = num_channels / 2;
 
-    auto exponent = arange(runtime, 0, half_dim);
+    auto exponent = Tensor::arange(*runtime.context(), 0, half_dim);
 
     exponent = exponent * (-std::log(10000.0f) / (half_dim - downscale_freq_shift));
 
@@ -64,6 +36,7 @@ Tensor Timesteps::forward(Runtime& runtime, Tensor timesteps) {
     else
         out = Tensor::cat({sin_emb, cos_emb}, -1);
 
+    // Pad
     if (num_channels % 2 == 1) {
         auto zeros = Tensor::zeros(*runtime.context(), {out.shape()[0], 1});
         out = Tensor::cat({out, zeros}, -1);

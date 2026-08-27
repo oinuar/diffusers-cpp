@@ -36,7 +36,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
         
         if (args_.get(0) == "SiLU") {
@@ -48,7 +48,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "RMSNorm") {
@@ -68,7 +68,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "LayerNorm") {
@@ -89,7 +89,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "GroupNorm") {
@@ -111,7 +111,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Conv2d") {
@@ -134,7 +134,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "FlashAttention") {
@@ -149,7 +149,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Embedding") {
@@ -169,7 +169,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));

@@ -7,6 +7,7 @@
 
 class Visitor;
 class Runtime;
+class Allocator;
 
 class Module {
 public:

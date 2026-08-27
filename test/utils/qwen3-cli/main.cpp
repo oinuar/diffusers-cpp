@@ -33,7 +33,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Qwen3MLP") {
@@ -54,7 +54,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Qwen3RotaryEmbedding") {
@@ -71,7 +71,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Qwen3Attention") {
@@ -99,7 +99,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Qwen3Attention") {
@@ -127,7 +127,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Qwen3DecoderLayer") {
@@ -154,7 +154,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Qwen3Model") {
@@ -201,12 +201,12 @@ public:
             if (output_hidden_states) {
                 Graph graph(runtime, std::move(hidden_states));
                 Computation computation(graph);
-                return computation.results();
+                return computation().results();
             }
             
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Qwen3ForCausalLM") {
@@ -249,7 +249,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));

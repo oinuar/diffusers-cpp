@@ -9,11 +9,11 @@
 #include <gguf.h>
 
 class Runtime;
-class BufferAllocatorVisitor;
+class Allocator;
 
 class GGUFLoaderVisitor : public Visitor {
 public:
-    GGUFLoaderVisitor(Runtime& runtime, const std::filesystem::path& path, BufferAllocatorVisitor* buffer_allocator = nullptr);
+    GGUFLoaderVisitor(Runtime& runtime, const std::filesystem::path& path, Allocator* allocator = nullptr);
     ~GGUFLoaderVisitor();
 
     virtual void visit(Parameter& parameter, std::vector<std::string> path);
@@ -29,5 +29,5 @@ private:
     gguf_context* gguf_ctx_;
     std::shared_ptr<std::ifstream> file_;
     std::unordered_map<std::string, size_t> lookup_;
-    BufferAllocatorVisitor* buffer_allocator_;
+    Allocator* allocator_;
 };

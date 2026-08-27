@@ -50,7 +50,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "SpatialNorm") {
@@ -70,7 +70,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Upsample2D") {
@@ -91,7 +91,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Downsample2D") {
@@ -112,7 +112,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "ResnetBlock2D") {
@@ -160,7 +160,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
 
@@ -192,7 +192,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Encoder") {
@@ -224,7 +224,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "AutoencoderKLFlux2") {
@@ -264,7 +264,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "TimestepEmbedding") {
@@ -287,7 +287,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Timesteps") {
@@ -308,7 +308,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Attention") {
@@ -346,7 +346,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
 
@@ -385,7 +385,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
         
         if (args_.get(0) == "DownEncoderBlock2D") {
@@ -420,7 +420,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "UpDecoderBlock2D") {
@@ -457,7 +457,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0).rfind("FlowMatchEulerDiscreteScheduler", 0) == 0) {
@@ -483,19 +483,19 @@ public:
             auto schedule = scheduler.schedule(num_inference_steps, mu);
 
             if (args_.get(0) == "FlowMatchEulerDiscreteScheduler_schedule") {
-                auto timesteps = runtime.create<float>(
+                auto timesteps = runtime.value<float>(
                     {static_cast<int64_t>(schedule.size())},
                     [&schedule](std::mt19937&) { return schedule.timesteps(); }
                 );
 
-                auto sigmas = runtime.create<float>(
+                auto sigmas = runtime.value<float>(
                     {static_cast<int64_t>(schedule.sigmas().size())},
                     [&schedule](std::mt19937&) { return schedule.sigmas(); }
                 );
 
                 Graph graph(runtime, {timesteps, sigmas});
                 Computation computation(graph);
-                return computation.results();
+                return computation().results();
             }
 
             if (args_.get(0) == "FlowMatchEulerDiscreteScheduler_step") {
@@ -503,7 +503,7 @@ public:
                 auto model_output = args_.get_one<Tensor>("--model_output", {runtime});
                 auto sample = args_.get_one<Tensor>("--sample", {runtime});
 
-                auto dt = runtime.create<float>(
+                auto dt = runtime.value<float>(
                     {1},
                     [dt = schedule[index].dt](std::mt19937&) { return std::vector<float>{dt}; }
                 );
@@ -512,7 +512,7 @@ public:
 
                 Graph graph(runtime, {next_sample});
                 Computation computation(graph);
-                return computation.results();
+                return computation().results();
             }
         }
 

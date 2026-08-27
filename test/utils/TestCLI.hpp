@@ -13,6 +13,8 @@
 #include <fstream>
 #include <sstream>
 
+class Allocator;
+
 class TestCLI {
 public:
     int main() {
@@ -21,7 +23,6 @@ public:
 
         ggml_backend_load_all();
 
-        
         //auto gpus = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
         //Backend gpus_backend(gpus);
@@ -36,28 +37,28 @@ public:
             switch (tensor.dtype()) {
             case Tensor::DType<float>::value:
             {
-                auto data = runtime.value<float>(tensor);
+                auto data = runtime.read<float>(tensor);
                 print_tensor_like(data, tensor.shape());
                 break;
             }
 
             case Tensor::DType<int8_t>::value:
             {
-                auto data = runtime.value<int8_t>(tensor);
+                auto data = runtime.read<int8_t>(tensor);
                 print_tensor_like(data, tensor.shape());
                 break;
             }
 
             case Tensor::DType<int16_t>::value:
             {
-                auto data = runtime.value<int16_t>(tensor);
+                auto data = runtime.read<int16_t>(tensor);
                 print_tensor_like(data, tensor.shape());
                 break;
             }
 
             case Tensor::DType<int32_t>::value:
             {
-                auto data = runtime.value<int32_t>(tensor);
+                auto data = runtime.read<int32_t>(tensor);
                 print_tensor_like(data, tensor.shape());
                 break;
             }
@@ -104,15 +105,15 @@ protected:
 public:
     class CreateParametersVisitor : public Visitor {
     public:
-        CreateParametersVisitor(Runtime& runtime, const ArgumentParser& args, const std::string& prefix = "")
-            : runtime_(runtime), args_(args), prefix_(prefix)
+        CreateParametersVisitor(Runtime& runtime, const ArgumentParser& args, const std::string& prefix = "", Allocator* allocator = nullptr)
+            : runtime_(runtime), args_(args), prefix_(prefix), allocator_(allocator)
         {}
 
         virtual void visit(Parameter& parameter, std::vector<std::string> path) {
             auto joined_path = join_path(path, prefix_);
 
             auto tensor_value = args_.get_one<std::string>(joined_path);
-            ArgumentParser::parser<Tensor> parser(runtime_);
+            ArgumentParser::parser<Tensor> parser(runtime_, allocator_);
             Tensor tensor;
 
             // Read tensor value from file
@@ -140,6 +141,7 @@ public:
         Runtime& runtime_;
         const ArgumentParser& args_;
         std::string prefix_;
+        Allocator* allocator_;
         
         static std::string join_path(const std::vector<std::string>& path, const std::string& prefix = "") {
             std::string seed("--param");

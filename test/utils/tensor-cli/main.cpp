@@ -14,7 +14,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
 
@@ -25,7 +25,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "zeros") {
@@ -35,7 +35,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "ones") {
@@ -45,7 +45,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "arange") {
@@ -57,7 +57,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         
@@ -69,7 +69,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "stack") {
@@ -80,7 +80,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
 
@@ -92,7 +92,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "permute") {
@@ -103,7 +103,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "squeeze") {
@@ -114,7 +114,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "unsqueeze") {
@@ -125,7 +125,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "flatten") {
@@ -137,7 +137,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "unflatten") {
@@ -149,7 +149,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "narrow") {
@@ -162,7 +162,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "expand") {
@@ -173,7 +173,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "repeat") {
@@ -184,7 +184,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "chunk") {
@@ -196,7 +196,7 @@ public:
 
             Graph graph(runtime, std::move(output));
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "split") {
@@ -208,7 +208,7 @@ public:
 
             Graph graph(runtime, std::move(output));
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "split_with_sizes") {
@@ -220,7 +220,7 @@ public:
 
             Graph graph(runtime, std::move(output));
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "to") {
@@ -231,7 +231,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
 
@@ -242,7 +242,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "add") {
@@ -253,7 +253,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "sub") {
@@ -264,7 +264,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "mul") {
@@ -275,7 +275,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "div") {
@@ -286,7 +286,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "add_scalar") {
@@ -297,7 +297,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "sub_scalar") {
@@ -308,7 +308,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "mul_scalar") {
@@ -319,7 +319,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "div_scalar") {
@@ -330,7 +330,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
 
@@ -342,7 +342,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "scalar_sub") {
@@ -353,7 +353,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "scalar_mul") {
@@ -364,7 +364,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "scalar_div") {
@@ -375,7 +375,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "pow_scalar") {
@@ -386,7 +386,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "scalar_pow") {
@@ -397,7 +397,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         
@@ -410,7 +410,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "sum") {
@@ -422,7 +422,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "mean") {
@@ -434,7 +434,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
 
@@ -446,7 +446,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "slice") {
@@ -457,7 +457,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
 
@@ -468,7 +468,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "sqrt") {
@@ -478,7 +478,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "exp") {
@@ -488,7 +488,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "log") {
@@ -498,7 +498,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "sin") {
@@ -508,7 +508,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "cos") {
@@ -518,7 +518,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "rsqrt") {
@@ -528,7 +528,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));

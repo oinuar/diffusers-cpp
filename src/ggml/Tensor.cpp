@@ -169,10 +169,6 @@ Tensor Tensor::reshape(const Shape& shape) const {
             "reshape(): shape is incompatible with tensor size");
     }
 
-    // Nothing to do if already in this shape.
-    if (out == shape_)
-        return *this;
-
     auto src = *this;
 
     // ggml_reshape expects the tensor to be contiguous.
@@ -548,10 +544,6 @@ Tensor Tensor::expand(const Shape& new_shape) const {
         return *this;
     }
 
-    // Nothing to do if already in this shape.
-    if (new_shape == shape_)
-        return *this;
-
     auto src = *this;
 
     // Pad rank with leading PyTorch singleton dimensions.
@@ -668,7 +660,7 @@ Tensor Tensor::repeat(const Shape& repeats) const {
 
     // GGML repeat requires the target tensor to describe the
     // desired output shape.
-    auto target = empty(ctx_, out, dtype()); // TODO: what to do with this??? cannot really create leaf tensors here
+    auto target = empty(ctx_, out, dtype());
 
     return Tensor(
         ctx_,

@@ -5,41 +5,54 @@
 #include "ggml/Graph.hpp"
 #include "ProgressBar.hpp"
 #include <ggml.h>
-#include <ggml-backend.h>
-#include <vector>
+#include <cassert>
 
 class Computation {
 public:
-    explicit Computation(Graph& graph, ProgressBar* progress = nullptr) : graph_(graph) {
-        ggml_backend_sched_reset(*graph.scheduler());
-        ggml_backend_sched_alloc_graph(*graph.scheduler(), *graph); // TODO: this alloates non-allocated tensor buffers so tensor buffer allocation should happen before this
+    explicit Computation(Graph& graph, ProgressBar* progress = nullptr) : graph_(graph), progress_(progress), computed_(false) {
+        ggml_backend_sched_reset(*graph_.runtime().scheduler());
+        
+        if (!ggml_backend_sched_alloc_graph(*graph_.runtime().scheduler(), *graph_))
+            throw std::runtime_error("Graph allocation failed");
+    }
+    
+    ~Computation() {
+        assert(computed_ && "Computation was never run. Don't create it if you don't need it.");
+    }
 
-        auto inputs = graph.inputs();
+    Computation& operator ()() {
+        auto bindings = graph_.runtime().bindings();
 
-        if (progress != nullptr)
-            progress->push("Initializing", inputs.size() + 1);
+        if (progress_ != nullptr)
+            progress_->push("Initializing", bindings.size() + 1);
 
-        for (auto& [tensor, provider] : inputs) {
-            load(tensor, graph.provide(provider));
+        for (auto& [tensor, provider] : bindings) {
+            graph_.runtime().write(tensor, provider(graph_.runtime().rng()));
 
-            if (progress != nullptr)
-                progress->next();
+            if (progress_ != nullptr)
+                progress_->next();
         }
 
-        if (progress != nullptr) {
-            progress->pop();
-            progress->push("Computing", 1);
+        if (progress_ != nullptr) {
+            progress_->pop();
+            progress_->push("Computing", 1);
         }
 
-        ggml_backend_sched_graph_compute(*graph.scheduler(), *graph);
+        ggml_backend_sched_graph_compute(*graph_.runtime().scheduler(), *graph_);
 
-        if (progress != nullptr) {
-            progress->next();
-            progress->pop();  
+        if (progress_ != nullptr) {
+            progress_->next();
+            progress_->pop();  
         }
+
+        computed_ = true;
+        return *this;
     }
 
     const std::vector<Tensor>& results() const {
+        if (!computed_)
+            throw std::runtime_error("Access of undefined results: computation was not run");
+
         return graph_.tensors();
     }
 
@@ -50,16 +63,6 @@ public:
 
 private:
     Graph& graph_;
-
-    void load(const Tensor& tensor, const std::vector<std::byte>& bytes) {
-        if (bytes.size() != ggml_nbytes(*tensor))
-            throw std::invalid_argument("load(): data size mismatch: expected " + std::to_string(bytes.size()) + ", but got " + std::to_string(ggml_nbytes(*tensor)));
-
-        ggml_backend_tensor_set(
-            *tensor,
-            bytes.data(),
-            0,
-            ggml_nbytes(*tensor)
-        );
-    }
+    ProgressBar* progress_;
+    bool computed_;
 };

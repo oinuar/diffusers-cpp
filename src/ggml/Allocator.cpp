@@ -1,34 +1,34 @@
-#include "ggml/BufferAllocatorVisitor.hpp"
-#include "nn/Parameter.hpp"
+#include "ggml/Allocator.hpp"
+#include "ggml/Tensor.hpp"
 
-BufferAllocatorVisitor::BufferAllocatorVisitor(ggml_backend_buffer_type_t buft)
-    : buft_(buft), layout_(), total_size_(0), buffer_()
+Allocator::Allocator(ggml_backend_buffer_type_t buft)
+    : buft_(buft), layout_(), total_size_(0), buffer_(std::nullopt)
 {
 }
 
-void BufferAllocatorVisitor::visit(Parameter& parameter, std::vector<std::string> path) {
+void Allocator::reserve(const Tensor& tensor) {
+    if (buffer_)
+        throw std::runtime_error("Already allocated");
+
     // Size required by this backend for this tensor
-    auto size = ggml_backend_buft_get_alloc_size(buft_, **parameter);
+    auto size = ggml_backend_buft_get_alloc_size(buft_, *tensor);
 
     // Align the start of the next tensor
     auto alignment = ggml_backend_buft_get_alignment(buft_);
 
     total_size_ = (total_size_ + alignment - 1) / alignment * alignment;
 
-    layout_.push_back({**parameter, total_size_, size});
+    layout_.push_back({*tensor, total_size_, size});
 
     total_size_ += size;
 }
 
-void BufferAllocatorVisitor::allocate() {
-    // Already allocated
+void Allocator::allocate(const ggml_backend_buffer_usage& usage) {
+    // Nothing to do if already allocated
     if (buffer_)
         return;
 
-    if (total_size_ == 0 || layout_.empty())
-        throw std::runtime_error("Nothing to allocate. Did you forget to visit() module tree first?");
-
-    buffer_.emplace(buft_, total_size_);
+    buffer_.emplace(buft_, total_size_, usage);
 
     auto base = ggml_backend_buffer_get_base(**buffer_);
 

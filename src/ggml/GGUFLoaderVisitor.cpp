@@ -1,6 +1,6 @@
 #include "ggml/GGUFLoaderVisitor.hpp"
 #include "ggml/Runtime.hpp"
-#include "ggml/BufferAllocatorVisitor.hpp"
+#include "ggml/Allocator.hpp"
 #include "nn/Parameter.hpp"
 #include <string>
 #include <fstream>
@@ -32,8 +32,8 @@ static std::optional<std::filesystem::path> find_first_gguf(const std::filesyste
     return std::nullopt;
 }
 
-GGUFLoaderVisitor::GGUFLoaderVisitor(Runtime& runtime, const std::filesystem::path& path, BufferAllocatorVisitor* buffer_allocator)
-    : runtime_(runtime), gguf_ctx_(nullptr), file_(std::make_shared<std::ifstream>()), lookup_(), buffer_allocator_(buffer_allocator)
+GGUFLoaderVisitor::GGUFLoaderVisitor(Runtime& runtime, const std::filesystem::path& path, Allocator* allocator)
+    : runtime_(runtime), gguf_ctx_(nullptr), file_(std::make_shared<std::ifstream>()), lookup_(), allocator_(allocator)
 {
     auto gguf_path = find_first_gguf(path);
 
@@ -111,8 +111,11 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
     auto ne = gguf_get_tensor_ne(gguf_ctx_, tensor_id);
     int n_dims = 0;
 
-    while (n_dims < GGML_MAX_DIMS && ne[n_dims] > 0)
-        ++n_dims;
+    for (int i = 0; i < GGML_MAX_DIMS; i++) {
+        if (ne[i] > 1 || (i == 0 && ne[0] == 1)) {
+            n_dims = i + 1;
+        }
+    }
 
     if (n_dims == 0)
         throw std::runtime_error(
@@ -120,30 +123,26 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
 
     auto name = gguf_get_tensor_name(gguf_ctx_, tensor_id);
 
-    auto ggml_tensor = ggml_new_tensor(*runtime_.context(), type, n_dims, ne);
-
-    if (!ggml_tensor)
-        throw std::runtime_error(
-            "Failed to create GGML tensor");
-
-    ggml_set_name(ggml_tensor, name);
-
     const std::streamoff offs = gguf_get_data_offset(gguf_ctx_) + gguf_get_tensor_offset(gguf_ctx_, tensor_id);
 
-    Tensor::Shape expected_shape(ggml_n_dims(ggml_tensor));
+    Tensor::Shape expected_shape(n_dims);
 
     for (auto r = 0; r < expected_shape.rank(); ++r)
-        expected_shape[r] = ggml_tensor->ne[expected_shape.rank() - 1 - r];
+        expected_shape[r] = ne[expected_shape.rank() - 1 - r];
 
     if (parameter.shape() != expected_shape)
         throw std::runtime_error("Error while loading Tensor '" + model_path + "': Parameter shape mismatch: expected " + parameter.shape().to_string() + ", got " + expected_shape.to_string());
 
-    Tensor tensor(*runtime_.context(), ggml_tensor, parameter.shape());
+    auto tensor = Tensor::empty(*runtime_.context(), expected_shape, type, allocator_);
+
+    ggml_set_name(*tensor, name);
+
+    auto n_bytes = ggml_nbytes(*tensor);
 
     // Here we supply data to tensor. This is where buffer allocation should happen
     runtime_.bind<std::byte>(tensor,
-        [ggml_tensor, expected_shape, offs, file = file_, model_path = std::move(model_path)/*, tensor_name = std::move(tensor_name)*/](std::mt19937&) {
-            std::vector<std::byte> buf(ggml_nbytes(ggml_tensor));
+        [n_bytes, expected_shape, offs, file = file_, model_path = std::move(model_path)/*, tensor_name = std::move(tensor_name)*/](std::mt19937&) {
+            std::vector<std::byte> buf(n_bytes);
 
             //std::cerr << "LOAD " << tensor_name.c_str() << " " << expected_shape.to_string() << std::endl;
 
@@ -158,16 +157,12 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
             if (file->gcount() != static_cast<std::streamsize>(buf.size()))
                 throw std::runtime_error("Error while loading Tensor '" + model_path + "': read failed");
 
-            return std::move(buf);
-        }, /*once=*/true);
+            return buf;
+        });
 
     parameter.set(tensor);
 
     // TODO: This is separate responsibility because should work for all tensors, not just parameters
     for (auto& backend : runtime_.scheduler().backends())
         backend->device().visit(parameter, path);
-    
-    // TODO: this shouldn't be here; separate reponsibility (should allocate tensors too, not just parameters)
-    if (buffer_allocator_ != nullptr)
-        buffer_allocator_->visit(parameter, path);
 }

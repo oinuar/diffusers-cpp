@@ -34,7 +34,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Flux2FeedForward") {
@@ -56,7 +56,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Flux2Modulation") {
@@ -76,7 +76,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Flux2TimestepGuidanceEmbeddings") {
@@ -98,7 +98,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Flux2PosEmbed") {
@@ -118,7 +118,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Flux2Attention") {
@@ -174,7 +174,7 @@ public:
 
             Graph graph(runtime, std::move(results));
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Flux2ParallelSelfAttention") {
@@ -223,7 +223,7 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Flux2SingleTransformerBlock") {
@@ -280,7 +280,7 @@ public:
 
             Graph graph(runtime, std::move(results));
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Flux2TransformerBlock") {
@@ -328,7 +328,7 @@ public:
 
             Graph graph(runtime, {y1, y2});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Flux2Transformer2DModel") {
@@ -384,15 +384,14 @@ public:
 
             Graph graph(runtime, {output});
             Computation computation(graph);
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0) == "Flux2KleinPipeline_pack_latents" ||
             args_.get(0) == "Flux2KleinPipeline_unpack_latents" ||
             args_.get(0) == "Flux2KleinPipeline_patchify_latents" ||
             args_.get(0) == "Flux2KleinPipeline_unpatchify_latents") {
-            auto [latents_shape, latents_data] = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--latents")).parse();
-            auto latents = runtime.create<float>(latents_shape, [latents_data](std::mt19937&) { return std::move(latents_data); });
+            auto latents = args_.get_one<Tensor>("--latents", {runtime});
 
             Tensor result;
 
@@ -423,7 +422,7 @@ public:
             Graph graph(runtime, {result});
             Computation computation(graph);
 
-            return computation.results();
+            return computation().results();
         }
 
         if (args_.get(0).rfind("Flux2KleinPipeline", 0) == 0) {
@@ -557,6 +556,8 @@ public:
                 if (image_latent_ids_concat)
                     results.push_back(*image_latent_ids_concat);
 
+                computation();
+
                 return std::move(results);
             }
 
@@ -567,68 +568,50 @@ public:
                 auto num_ref_tokens = args_.get_one<int>("--num_ref_tokens");
                 auto timestep = args_.get_one<float>("--timestep");
                 auto dt = args_.get_one<float>("--dt");
-                auto [_, init_latents] = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--init_latents")).parse();
-                auto [prompt_embeds_shape, prompt_embeds_data] = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--prompt_embeds")).parse();
-                auto [img_ids_shape, img_ids_data] = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--img_ids")).parse();
-                auto [txt_ids_shape, txt_ids_data] = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--txt_ids")).parse();
+                auto init_latents = args_.get_one<Tensor>("--init_latents", {runtime});
+                auto prompt_embeds = args_.get_one<Tensor>("--prompt_embeds", {runtime});
+                auto img_ids = args_.get_one<Tensor>("--img_ids", {runtime});
+                auto txt_ids = args_.get_one<Tensor>("--txt_ids", {runtime});
 
-                Tensor::Shape image_latents_shape;
-                Tensor::Shape image_latent_ids_shape;
-                std::vector<float> image_latents_data;
-                std::vector<float> image_latent_ids_data;
+                auto image_latents = args_.get_optional<Tensor>("--image_latents", {runtime});
+                auto image_latent_ids = args_.get_optional<Tensor>("--image_latent_ids", {runtime});
 
-                if (num_ref_tokens > 0) {
-                    auto image_latents = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--image_latents")).parse();
-                    auto image_latent_ids = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--image_latent_ids")).parse();
-
-                    image_latents_shape = image_latents.first;
-                    image_latent_ids_shape = image_latent_ids.first;
-                    image_latents_data = std::move(image_latents.second);
-                    image_latent_ids_data = std::move(image_latent_ids.second);
-                }
-
-                auto [graph, latents, next_latents] = std::move(pipeline.make_denoise_graph(
+                auto graph = std::move(pipeline.make_denoise_graph(
                     runtime,
                     batch,
                     packed_h,
                     packed_w,
                     num_ref_tokens,
-                    prompt_embeds_shape,
-                    img_ids_shape,
-                    txt_ids_shape,
-                    image_latents_shape,
-                    image_latent_ids_shape,
-                    &init_latents,
-                    &prompt_embeds_data,
-                    &img_ids_data,
-                    &txt_ids_data,
-                    &image_latents_data,
-                    &image_latent_ids_data,
+                    prompt_embeds,
+                    img_ids,
+                    txt_ids,
+                    init_latents,
+                    image_latents,
+                    image_latent_ids,
                     &timestep,
                     &dt
                 ));
 
                 Computation computation(graph);
 
-                return {next_latents};
+                return computation().results();
             }
 
             if (args_.get(0) == "Flux2KleinPipeline_decode") {
                 auto packed_h = args_.get_one<int>("--packed_h");
                 auto packed_w = args_.get_one<int>("--packed_w");
-                auto [latents_shape, latents_data] = ArgumentParser::parser<Tensor>::TensorParser(args_.get_one<std::string>("--latents")).parse();
+                auto latents = args_.get_one<Tensor>("--latents", {runtime});
 
                 auto graph = std::move(pipeline.make_decode_graph(
                     runtime,
                     packed_h,
                     packed_w,
-                    latents_shape,
-                    &latents_data
+                    latents
                 ));
 
                 Computation computation(graph);
                 
-                return computation.results();
+                return computation().results();
             }
 
             /*if (args_.get(0) == "Flux2KleinPipeline_call") {
@@ -660,7 +643,7 @@ public:
                 Graph graph(runtime, std::move(results));
                 Computation computation(graph);
 
-                return computation.results();
+                return computation().results();
             }*/
         }
 
@@ -752,6 +735,7 @@ int main(int argc, char** argv) {
 
         Context context(scheduler.capacity());
         Runtime runtime(scheduler, context);
+        Allocator state_allocator(gpus.buffer_type());
 
         Flux2Transformer2DModel transformer(transformer_config);
         {
@@ -798,7 +782,7 @@ int main(int argc, char** argv) {
             options.init_latents = std::move(
                 ArgumentParser::parser<Tensor>::TensorParser(*init_latents).parse().second);
 
-        auto images = pipeline(runtime, std::move(options));
+        auto images = pipeline(runtime, state_allocator, std::move(options));
         std::vector<Tensor> results;
 
         for (const auto& image : images) {

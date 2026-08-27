@@ -8,6 +8,8 @@
 #include <random>
 #include <cstring>
 
+class Allocator;
+
 class Runtime {
 public:
     template<typename T>
@@ -25,34 +27,20 @@ public:
         }
     };
 
-    typedef std::unordered_map<Tensor, Provider<std::byte>, TensorInputHash, TensorInputEqual> Inputs;
+    typedef std::unordered_map<Tensor, Provider<std::byte>, TensorInputHash, TensorInputEqual> Bindings;
 
     explicit Runtime(Scheduler& scheduler, Context& context, uint64_t seed = std::random_device{}())
         : scheduler_(scheduler), context_(context), rng_(seed) {}
 
     Runtime(Runtime& other)
-        : scheduler_(other.scheduler_), context_(other.context_), rng_(other.rng_), inputs_(other.inputs_)
+        : scheduler_(other.scheduler_), context_(other.context_), rng_(other.rng_), bindings_(other.bindings_)
     {
     }
 
-    template <class T>
-    Tensor create(const Tensor::Shape& shape, const Provider<T>& provider, bool input = true) {
-        auto tensor = Tensor::empty<T>(*context(), shape);
-
-        if (input)
-            (*tensor)->flags |= GGML_TENSOR_FLAG_INPUT;
-
-        bind(tensor, provider, true);
-        return tensor;
-    }
-
-    template <class T>
-    void bind(Tensor tensor, const Provider<T>& provider, bool once = false) {
-        inputs_[tensor] = [this, tensor, provider, once](std::mt19937& rng) {
+    template <typename T>
+    void bind(Tensor tensor, const Provider<T>& provider) {
+        bindings_[tensor] = [tensor, provider](std::mt19937& rng) {
             auto values = provider(rng);
-
-            if (once)
-                this->unbind(tensor);
 
             if constexpr (std::is_same_v<T, std::byte>)
                 return std::move(values);
@@ -65,31 +53,34 @@ public:
     }
 
     void unbind(Tensor tensor) {
-        (*tensor)->flags &= ~GGML_TENSOR_FLAG_INPUT;
-        inputs_.erase(tensor);
+        bindings_.erase(tensor);
     }
 
-    void clear() {
-        inputs_.clear();
+    template <typename T>
+    Tensor value(const Tensor::Shape& shape, const Provider<T>& provider, Allocator* allocator = nullptr) {
+        auto tensor = Tensor::empty<T>(*context(), shape, allocator);
+        bind(tensor, provider);
+        return tensor;
     }
 
     void copy(const Tensor& src, const Tensor& dst) {
         ggml_backend_tensor_copy(*src, *dst);
     }
 
+    // TODO: refactor this
     void split(const Tensor& tensor, int64_t dim) {
         for (auto& backend : scheduler_.backends())
             backend->device().split(tensor, dim);
     }
 
+    // TODO: refactor this
     void mirror(const Tensor& tensor) {
         for (auto& backend : scheduler_.backends())
             backend->device().mirror(tensor);
     }
 
     template<class T>
-    std::vector<T> value(const Tensor& tensor)
-    {
+    std::vector<T> read(const Tensor& tensor) {
         constexpr auto expected = Tensor::DType<T>::value;
 
         if (tensor.dtype() != expected)
@@ -112,6 +103,18 @@ public:
         return std::move(data);
     }
 
+    void write(const Tensor& tensor, const std::vector<std::byte>& bytes) {
+        if (bytes.size() != ggml_nbytes(*tensor))
+            throw std::invalid_argument("write(): data size mismatch: expected " + std::to_string(bytes.size()) + ", but got " + std::to_string(ggml_nbytes(*tensor)));
+
+        ggml_backend_tensor_set(
+            *tensor,
+            bytes.data(),
+            0,
+            ggml_nbytes(*tensor)
+        );
+    }
+
     Scheduler& scheduler() {
         return scheduler_;
     }
@@ -124,6 +127,20 @@ public:
         return rng_;
     }
 
+    Bindings bindings() const {
+        auto bindings = bindings_;
+
+        // Remove tensors that have no bound buffer
+        for (auto it = std::begin(bindings); it != std::end(bindings); ) {
+            if ((*it->first)->buffer == nullptr)
+                it = bindings.erase(it);
+            else
+                ++it;
+        }
+
+        return std::move(bindings);
+    }
+
     Runtime(const Runtime&) = delete;
     Runtime& operator =(const Runtime&) = delete;
 
@@ -131,7 +148,5 @@ private:
     Scheduler& scheduler_;
     Context& context_;
     std::mt19937 rng_;
-    Inputs inputs_;
-
-    friend class Graph;
+    Bindings bindings_;
 };

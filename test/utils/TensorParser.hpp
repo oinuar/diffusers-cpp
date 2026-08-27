@@ -12,7 +12,7 @@
 
 template <>
 struct ArgumentParser::parser<Tensor> {
-    parser(Runtime& runtime) : runtime_(runtime) {
+    parser(Runtime& runtime, Allocator* allocator = nullptr) : runtime_(runtime), allocator_(allocator) {
 
     }
 
@@ -22,11 +22,15 @@ struct ArgumentParser::parser<Tensor> {
         try {
             auto [shape, data] = parser.parse();
 
-            // std::cerr << "inferred shape for " << option << ": " << shape.to_string() << std::endl;
+            // std::cerr << "inferred shape for " << option << ": " << shape.to_string() << " (data size = " << data.size() << ')' << std::endl;
 
-            return runtime_.create<float>(shape, [data](std::mt19937&) {
-                return std::move(data);
-            });
+            auto tensor = runtime_.value<float>(shape, [data = std::move(data)](std::mt19937&) {
+                return data;
+            }, allocator_);
+
+            ggml_set_name(*tensor, option.c_str());
+
+            return tensor;
         } catch (const std::runtime_error& error) {
             throw std::runtime_error("invalid argument " + option + ": " + error.what());
         }
@@ -34,6 +38,7 @@ struct ArgumentParser::parser<Tensor> {
 
 private:
     Runtime& runtime_;
+    Allocator* allocator_;
 
 public:
     class TensorParser {

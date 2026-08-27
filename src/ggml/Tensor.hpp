@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ggml/Allocator.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -7,8 +8,7 @@
 #include <vector>
 #include <cmath>
 #include <optional>
-
-#include "ggml.h"
+#include <ggml.h>
 
 /** @file Tensor.hpp
  *
@@ -252,80 +252,75 @@ public:
     Tensor clone() const {
         return Tensor(ctx_, ggml_dup(ctx_, t_), shape_);
     }
-    
-    /** @brief Returns a contiguous copy of this tensor. */
-    Tensor clone_as_contiguous() const {
-        if (!is_contiguous())
-            return contiguous();
-
-        return clone();
-    }
 
     /** @brief Creates an uninitialized tensor with the given shape and type. */
-    // TODO: remove this and move to runtime
     template <typename T> static Tensor empty(
         ggml_context* ctx,
-        const Shape& shape)
+        const Shape& shape,
+        Allocator* allocator = nullptr)
     {
-        return empty(ctx, shape, DType<T>::value);
+        return empty(ctx, shape, DType<T>::value, allocator);
     }
 
     /** @brief Creates a scalar tensor filled with the given value. */
-    // TODO: remove this and move to runtime
-    template <typename T> static Tensor scalar(ggml_context* ctx, const T& value) {
-        // GGML supports filling only float tensors
-        auto tensor = empty<float>(ctx, {});
-        tensor.t_ = ggml_fill_inplace(tensor.ctx_, tensor.t_, (float)value);
-
+    template <typename T>
+    static Tensor scalar(ggml_context* ctx, const T& value, Allocator* allocator = nullptr) {
+        auto tensor = full(ctx, {}, value, allocator);
         return tensor.to(DType<T>::value);
     }
 
     /** @brief Creates an uninitialized tensor with the given shape and type. */
-    // TODO: remove this and move to runtime
     static Tensor empty(
         ggml_context* ctx,
         const Shape& shape,
-        ggml_type type)
+        ggml_type type,
+        Allocator* allocator = nullptr)
     {
-        // GGML does not support 0d tensors, let's fake it with 1d tensor
-        if (shape.rank() == 0)
-            return Tensor(ctx, ggml_new_tensor_1d(ctx, type, 1), shape);
+        // GGML does not support scalar tensors, let's fake it with 1D tensor
+        auto tensor = shape.rank() == 0
+            ? Tensor(ctx, ggml_new_tensor_1d(ctx, type, 1), shape)
+            : Tensor(ctx, ggml_new_tensor(ctx, type, shape.rank(), shape.data()), shape);
 
-        return Tensor(ctx, ggml_new_tensor(ctx, type, shape.rank(), shape.data()), shape);
+        if (allocator == nullptr)
+            ggml_set_input(*tensor);
+        else
+            allocator->reserve(tensor);
+
+        return tensor;
     }
 
     /** @brief Creates a filled tensor with the given value, shape and type. */
-    // TODO: remove this and move to runtime
     static Tensor full(
         ggml_context* ctx,
         const Shape& shape,
-        float value)
+        float value,
+        Allocator* allocator = nullptr)
     {
-        auto tensor = empty<float>(ctx, shape);
+        // GGML supports filling only float tensors
+        auto tensor = empty<float>(ctx, shape, allocator);
         tensor.t_ = ggml_fill_inplace(ctx, tensor.t_, value);
         
         return tensor;
     }
 
     /** @brief Creates a zero-filled tensor with the given shape and type. */
-    // TODO: remove this and move to runtime
     static Tensor zeros(
         ggml_context* ctx,
-        const Shape& shape)
+        const Shape& shape,
+        Allocator* allocator = nullptr)
     {
-        return full(ctx, shape, 0.0f);
+        return full(ctx, shape, 0.0f, allocator);
     }
 
     /** @brief Creates a one-filled tensor with the given shape and type. */
-    // TODO: remove this and move to runtime
     static Tensor ones(
         ggml_context* ctx,
-        const Shape& shape)
+        const Shape& shape,
+        Allocator* allocator = nullptr)
     {
-        return full(ctx, shape, 1.0f);
+        return full(ctx, shape, 1.0f, allocator);
     }
 
-    // TODO: remove this and move to runtime
     static Tensor arange(
         ggml_context* ctx,
         float start,
@@ -392,17 +387,22 @@ public:
     /** @brief Splits a tensor into chunks of specified sizes along dimension `dim`. */
     std::vector<Tensor> split_with_sizes(const std::vector<int64_t>& split_sizes, int64_t dim = 0) const;
 
-    /** @brief Makes sure a tensor is type `type` if it is not already. */
+    /** @brief Casts a tensor to type `type` if it is not already. */
     Tensor to(ggml_type type) const {
         if (dtype() != type)
-            return cast(type);
+            return astype(type);
 
         return *this;
     }
 
     /** @brief Converts a tensor to type `type`. */
-    Tensor cast(ggml_type type) const {
+    Tensor astype(ggml_type type) const {
         return Tensor(ctx_, ggml_cast(ctx_, t_, type), shape_);
+    }
+
+    /** @brief Copies this tensor to another tensor. */
+    Tensor copy_to(Tensor dest) const {
+        return Tensor(ctx_, ggml_cpy(ctx_, t_, *dest), dest.shape_);
     }
 
     Tensor operator -() const {

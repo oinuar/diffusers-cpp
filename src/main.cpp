@@ -2,8 +2,8 @@
 #include "ggml/MetaDevice.hpp"
 #include "ggml/Backend.hpp"
 #include "ggml/Runtime.hpp"
+#include "ggml/Allocator.hpp"
 #include "ggml/Scheduler.hpp"
-#include "ggml/BufferAllocatorVisitor.hpp"
 #include "diffusers/pipelines/flux2/Flux2KleinPipeline.hpp"
 #include <iostream>
 #include <filesystem>
@@ -21,16 +21,19 @@ int main() {
     Scheduler scheduler({&meta_backend, &cpu_backend}, 65536);
     Context context(65536);
     Runtime runtime(scheduler, context);
-    BufferAllocatorVisitor weights_allocator(gpus.buffer_type());
+    Allocator weights_allocator(gpus.buffer_type());
+    Allocator state_allocator(gpus.buffer_type());
 
-    auto pipeline = std::move(Flux2KleinPipeline::from_pretrained(runtime, "../utils/convert-model", &weights_allocator));
+    auto pipeline = std::move(Flux2KleinPipeline::from_pretrained(runtime, "../utils/convert-model", &weights_allocator, &weights_allocator, &weights_allocator));
+
+    weights_allocator.allocate();
 
     Flux2KleinPipeline::GenerationOptions options;
     options.prompt = "a lovely cat";
     options.width = 256;
     options.height = 256;
 
-    auto images = pipeline(runtime, std::move(options));
+    auto images = pipeline(runtime, state_allocator, std::move(options));
 
     images[0].save("test.png");
 }

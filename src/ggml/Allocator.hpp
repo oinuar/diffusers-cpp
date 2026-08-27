@@ -1,18 +1,18 @@
 #pragma once
 
-#include "nn/Visitor.hpp"
 #include "ggml/Buffer.hpp"
 #include <ggml.h>
 #include <vector>
 #include <optional>
 
-class BufferAllocatorVisitor : public Visitor {
+class Tensor;
+
+class Allocator {
 public:
-    BufferAllocatorVisitor(ggml_backend_buffer_type_t buft);
+    Allocator(ggml_backend_buffer_type_t buft);
 
-    virtual void visit(Parameter& parameter, std::vector<std::string> path);
-
-    void allocate();
+    void reserve(const Tensor& tensor);
+    void allocate(const ggml_backend_buffer_usage& usage = GGML_BACKEND_BUFFER_USAGE_ANY);
 
 private:
     struct Layout {

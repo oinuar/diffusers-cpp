@@ -1,6 +1,5 @@
 #pragma once
 
-#include "ggml/Allocator.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -10,44 +9,13 @@
 #include <optional>
 #include <ggml.h>
 
-/** @file Tensor.hpp
- *
- * Core tensor abstraction for the diffusers pipeline implementation in C++/.
- * Provides a PyTorch-like API that constructs ggml computation graph nodes without
- * executing computation. Actual execution happens via the backend scheduler (Scheduler).
- */
+class Allocator;
 
-/** @brief Non-owning handle to a ggml_tensor within a ggml_context.
- *
- * - **Non-owning**: Tensor does not own its ggml_context or storage. This avoids per-tensor
- *   allocations and matches ggml's single-context model. In diffusers pipelines, forward passes
- *   construct long chains of tensor operations — materializing each as owned objects would add
- *   significant overhead. Tensors are valid only while the parent context remains alive.
- * - **Graph-building semantics**: All operations construct ggml graph nodes in-place; no computation
- *   occurs at construction time. The caller builds and executes the complete compute graph via
- *   Scheduler, matching PyTorch's lazy autograd but delegating execution to ggml.
- * - **View vs copy semantics**: `narrow` and `permute` produce view tensors that share the underlying
- *   buffer. `contiguous` always produces a copy tensor. Shape-changing operations require contiguous
- *   storage and rely on linear element counts rather than stride information.
- * - **Max rank of 4**: ggml tensors have a maximum rank of 4; Tensor::Shape enforces this with exactly
- *   4 dimension slots plus a logical size field indicating the actual number of dimensions used.
- */
 class Tensor {
 public:
     template<typename T>
     struct DType;
 
-    /** @brief Shape descriptor for tensors with up to 4 dimensions.
-     *
-     * Stores exactly 4 dimension slots (matching ggml's maximum tensor rank) plus a logical size field
-     * indicating how many dimensions are actually in use. The size field allows representing tensors of
-     * any rank from 0 to 4 within the fixed 4-element array. Negative indexing is supported for operator[]
-     * access (e.g., -1 refers to the last dimension).
-     * 
-     * GGML defines tensor dimensions as (ne0, ne1, ne2, ne3) where ne0 is the fastest-varying (innermost) dimension,
-     * while PyTorch displays shapes in outermost → innermost order (left → right). From that, the “reverse ordering”
-     * is a derived consequence, not a formally stated rule.
-     */
     class Shape {
     public:
         static Shape broadcast(const Shape& lhs, const Shape& rhs);
@@ -105,11 +73,6 @@ public:
         friend class Tensor;
     };
 
-    /** @brief Describes a dimension slice for indexing operations.
-     *
-     * Supports PyTorch-like slicing syntax: full slice (:), single index (i), range with step (start:stop:step),
-     * new axis insertion (None), and ellipsis (...). Used by operator[] with a vector of Slices for advanced indexing.
-     */
     struct Slice {
         /** @brief The type of slice operation to perform. */
         enum class Kind {
@@ -264,41 +227,23 @@ public:
 
     /** @brief Creates a scalar tensor filled with the given value. */
     template <typename T>
-    static Tensor scalar(ggml_context* ctx, const T& value, Allocator* allocator = nullptr) {
-        auto tensor = full(ctx, {}, value, allocator);
+    static Tensor scalar(ggml_context* ctx, const T& value) {
+        auto tensor = full(ctx, {}, (float)value);
         return tensor.to(DType<T>::value);
     }
 
     /** @brief Creates an uninitialized tensor with the given shape and type. */
-    static Tensor empty(
-        ggml_context* ctx,
-        const Shape& shape,
-        ggml_type type,
-        Allocator* allocator = nullptr)
-    {
-        // GGML does not support scalar tensors, let's fake it with 1D tensor
-        auto tensor = shape.rank() == 0
-            ? Tensor(ctx, ggml_new_tensor_1d(ctx, type, 1), shape)
-            : Tensor(ctx, ggml_new_tensor(ctx, type, shape.rank(), shape.data()), shape);
-
-        if (allocator == nullptr)
-            ggml_set_input(*tensor);
-        else
-            allocator->reserve(tensor);
-
-        return tensor;
-    }
+    static Tensor empty(ggml_context* ctx, const Shape& shape, ggml_type type, Allocator* allocator = nullptr);
 
     /** @brief Creates a filled tensor with the given value, shape and type. */
     static Tensor full(
         ggml_context* ctx,
         const Shape& shape,
-        float value,
-        Allocator* allocator = nullptr)
+        float value)
     {
-        // GGML supports filling only float tensors
-        auto tensor = empty<float>(ctx, shape, allocator);
-        tensor.t_ = ggml_fill_inplace(ctx, tensor.t_, value);
+        // GGML supports filling only float tensors.
+        auto tensor = empty<float>(ctx, shape);
+        tensor.t_ = ggml_fill(ctx, tensor.t_, value);
         
         return tensor;
     }
@@ -306,19 +251,17 @@ public:
     /** @brief Creates a zero-filled tensor with the given shape and type. */
     static Tensor zeros(
         ggml_context* ctx,
-        const Shape& shape,
-        Allocator* allocator = nullptr)
+        const Shape& shape)
     {
-        return full(ctx, shape, 0.0f, allocator);
+        return full(ctx, shape, 0.0f);
     }
 
     /** @brief Creates a one-filled tensor with the given shape and type. */
     static Tensor ones(
         ggml_context* ctx,
-        const Shape& shape,
-        Allocator* allocator = nullptr)
+        const Shape& shape)
     {
-        return full(ctx, shape, 1.0f, allocator);
+        return full(ctx, shape, 1.0f);
     }
 
     static Tensor arange(
@@ -571,11 +514,11 @@ inline Tensor pow(const Tensor& base, const Tensor& exponent) {
 }
 
 inline Tensor pow(const Tensor& base, float exponent) {
-    return pow(base, Tensor::scalar(base.ctx_, exponent));
+    return exp(log(base) * exponent);
 }
 
 inline Tensor pow(float base, const Tensor& exponent) {
-    return pow(Tensor::scalar(exponent.ctx_, base), exponent);
+    return exp(log(base) * exponent);
 }
 
 inline Tensor rsqrt(const Tensor& tensor) {

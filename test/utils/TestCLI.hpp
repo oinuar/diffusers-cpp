@@ -6,14 +6,13 @@
 #include "ggml/Backend.hpp"
 #include "ggml/MetaDevice.hpp"
 #include "ggml/Scheduler.hpp"
+#include "ggml/Allocator.hpp"
 #include "nn/Visitor.hpp"
 #include "nn/Parameter.hpp"
 #include "./ArgumentParser.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
-
-class Allocator;
 
 class TestCLI {
 public:
@@ -24,14 +23,18 @@ public:
         ggml_backend_load_all();
 
         //auto gpus = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
+        Device gpu(GGML_BACKEND_DEVICE_TYPE_GPU);
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
         //Backend gpus_backend(gpus);
+        Backend gpu_backend(gpu);
         Backend cpu_backend(cpu);
-        Scheduler scheduler({&cpu_backend}, get_graph_size());
+        Scheduler scheduler({&gpu_backend, &cpu_backend}, get_graph_size());
         Context context(scheduler.capacity());
         Runtime runtime(scheduler, context);
 
-        auto results = compute(runtime);
+        Allocator allocator(gpu.buffer_type()); // use weight buffer for params()
+
+        auto results = compute(runtime, &allocator);
 
         for (auto& tensor : results) {
             switch (tensor.dtype()) {
@@ -71,7 +74,7 @@ public:
         return EXIT_SUCCESS;
     }
 
-    virtual std::vector<Tensor> compute(Runtime& runtime) = 0;
+    virtual std::vector<Tensor> compute(Runtime& runtime, Allocator* allocator = nullptr) = 0;
 
     virtual size_t get_graph_size() const {
         return GGML_DEFAULT_GRAPH_SIZE;
@@ -105,7 +108,7 @@ protected:
 public:
     class CreateParametersVisitor : public Visitor {
     public:
-        CreateParametersVisitor(Runtime& runtime, const ArgumentParser& args, const std::string& prefix = "", Allocator* allocator = nullptr)
+        CreateParametersVisitor(Runtime& runtime, const ArgumentParser& args, Allocator* allocator = nullptr, const std::string& prefix = "")
             : runtime_(runtime), args_(args), prefix_(prefix), allocator_(allocator)
         {}
 
@@ -135,6 +138,11 @@ public:
                 tensor = parser(joined_path, tensor_value);
 
             parameter.set(tensor);
+        }
+
+        void allocate() {
+            if (allocator_ != nullptr)
+                allocator_->allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
         }
 
     private:

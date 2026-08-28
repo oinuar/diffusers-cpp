@@ -28,7 +28,7 @@ class TestDiffusersCLI : public TestCLI {
 public:
     TestDiffusersCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Runtime& runtime) {
+    virtual std::vector<Tensor> compute(Runtime& runtime, Allocator* allocator) {
 
         if (args_.get(0) == "AdaLayerNormContinuous") {
             auto embedding_dim = args_.get_one<int64_t>("--embedding_dim");
@@ -41,10 +41,11 @@ public:
 
             AdaLayerNormContinuous<> model(embedding_dim, conditioning_embedding_dim, elementwise_affine, eps, bias);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, hidden_states, conditioning_embedding);
 
@@ -61,10 +62,11 @@ public:
 
             SpatialNorm model(f_channels, zq_channels);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, f, zq);
 
@@ -82,10 +84,11 @@ public:
 
             Upsample2D model(channels, use_conv, out_channels, use_conv_transpose);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, hidden_states);
 
@@ -103,10 +106,11 @@ public:
 
             Downsample2D model(channels, use_conv, out_channels, padding);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, hidden_states);
 
@@ -151,10 +155,11 @@ public:
                 conv_2d_out_channels
             );
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, hidden_states, temb);
 
@@ -183,10 +188,11 @@ public:
                 mid_block_add_attention
             );
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, sample, latent_embeds);
 
@@ -215,10 +221,11 @@ public:
                 mid_block_add_attention
             );
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, sample);
 
@@ -255,10 +262,11 @@ public:
 
             AutoencoderKLFlux2 model(config);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, sample, sample_posterior);
 
@@ -278,10 +286,11 @@ public:
 
             TimestepEmbedding<> model(in_channels, time_embed_dim, out_dim, cond_proj_dim, sample_proj_bias);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, sample, condition);
 
@@ -299,10 +308,11 @@ public:
 
             Timesteps model(num_channels, flip_sin_to_cos, downscale_freq_shift, scale);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, timesteps);
 
@@ -337,10 +347,11 @@ public:
                 upcast_softmax
             );
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, hidden_states);
 
@@ -376,10 +387,11 @@ public:
                 output_scale_factor
             );
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, sample, temb);
 
@@ -411,10 +423,11 @@ public:
                 downsample_padding
             );
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, hidden_states);
 
@@ -448,10 +461,11 @@ public:
                 temb_channels
             );
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, hidden_states, temb);
 

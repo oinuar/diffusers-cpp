@@ -5,7 +5,7 @@ class TestTensorCLI : public TestCLI {
 public:
     TestTensorCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Runtime& runtime) {
+    virtual std::vector<Tensor> compute(Runtime& runtime, Allocator*) {
 
         if (args_.get(0) == "contiguous") {
             auto self = args_.get_one<Tensor>("--this", {runtime});

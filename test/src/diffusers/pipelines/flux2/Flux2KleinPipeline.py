@@ -21,7 +21,7 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tokenizer_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "transformers", "models", "qwen2")
-        cls.tmpdir = tempfile.TemporaryDirectory()
+        cls.tmpdir = tempfile.TemporaryDirectory(delete=False)
 
     def make_ref_image(self, width, height, generator):
         # Deterministic 8-bit RGB reference image. Saved as PNG (lossless) so

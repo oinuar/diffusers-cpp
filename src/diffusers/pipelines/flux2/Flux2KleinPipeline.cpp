@@ -58,9 +58,9 @@ Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(
     }
 
     // 5. Allocate buffers
-    vae_allocator->allocate();
-    text_encoder_allocator->allocate();
-    transformer_allocator->allocate();
+    vae_allocator->allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+    text_encoder_allocator->allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+    transformer_allocator->allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
     // 6. Load tokenizer
     auto tokenizer = Qwen2TokenizerFast::from_pretrained(path / "tokenizer");

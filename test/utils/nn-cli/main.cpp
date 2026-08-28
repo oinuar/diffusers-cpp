@@ -17,7 +17,7 @@ class TestNnCLI : public TestCLI {
 public:
     TestNnCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Runtime& runtime) {
+    virtual std::vector<Tensor> compute(Runtime& runtime, Allocator* allocator) {
 
         if (args_.get(0) == "Linear") {
             auto in_features = args_.get_one<int64_t>("--in_features");
@@ -27,10 +27,11 @@ public:
 
             Linear model(in_features, out_features, bias);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, x);
 
@@ -59,10 +60,11 @@ public:
 
             RMSNorm model(dim, eps, elementwise_affine);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, x);
 
@@ -80,10 +82,11 @@ public:
 
             LayerNorm model(dim, eps, elementwise_affine, bias);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, x);
 
@@ -102,10 +105,11 @@ public:
 
             GroupNorm model(num_groups, num_channels, eps, affine, bias);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, input);
 
@@ -125,10 +129,11 @@ public:
 
             Conv2d model(in_channels, out_channels, kernel_size, stride, padding, bias);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, x);
 
@@ -160,10 +165,11 @@ public:
 
             Embedding model(num_embeddings, embedding_dim, padding_idx);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, input);
 

@@ -23,7 +23,7 @@ class TestFlux2CLI : public TestCLI {
 public:
     TestFlux2CLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Runtime& runtime) {
+    virtual std::vector<Tensor> compute(Runtime& runtime, Allocator* allocator) {
 
         if (args_.get(0) == "Flux2SwiGLU") {
             auto x = args_.get_one<Tensor>("--x", {runtime});
@@ -47,10 +47,11 @@ public:
 
             Flux2FeedForward model(dim, dim_out, mult, inner_dim, bias);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, x);
 
@@ -67,10 +68,11 @@ public:
 
             Flux2Modulation model(dim, mod_param_sets, bias);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, temb);
 
@@ -89,10 +91,11 @@ public:
 
             Flux2TimestepGuidanceEmbeddings model(in_channels, embedding_dim, bias, guidance_embeds);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, timestep, guidance);
 
@@ -109,10 +112,11 @@ public:
 
             Flux2PosEmbed model(theta, axes_dim);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, x, position_ids);
 
@@ -159,10 +163,11 @@ public:
                 elementwise_affine
             );
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto [y1, y2] = model.forward(runtime, hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb);
             std::vector<Tensor> results;
@@ -214,10 +219,11 @@ public:
                 mlp_mult_factor
             );
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, hidden_states, attention_mask, image_rotary_emb);
 
@@ -256,10 +262,11 @@ public:
                 bias
             );
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto [y1, y2] = model.forward(
                 runtime,
@@ -312,10 +319,11 @@ public:
                 bias
             );
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto [y1, y2] = model.forward(
                 runtime,
@@ -363,10 +371,11 @@ public:
 
             Flux2Transformer2DModel model(config);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(
                 runtime,
@@ -486,7 +495,7 @@ public:
 
             Flux2Transformer2DModel transformer(transformer_config);
             {
-                CreateParametersVisitor create_parameters(runtime, args_, "transformer");
+                CreateParametersVisitor create_parameters(runtime, args_, allocator, "transformer");
                 RethrowVisitor visitor(create_parameters);
                 transformer.accept(visitor);
                 visitor.rethrow();
@@ -494,7 +503,7 @@ public:
             
             AutoencoderKLFlux2 vae(vae_config);
             {
-                CreateParametersVisitor create_parameters(runtime, args_, "vae");
+                CreateParametersVisitor create_parameters(runtime, args_, allocator, "vae");
                 RethrowVisitor visitor(create_parameters);
                 vae.accept(visitor);
                 visitor.rethrow();
@@ -502,11 +511,14 @@ public:
 
             Qwen3ForCausalLM text_encoder(qwen_config);
             {
-                CreateParametersVisitor create_parameters(runtime, args_, "text_encoder");
+                CreateParametersVisitor create_parameters(runtime, args_, allocator, "text_encoder");
                 RethrowVisitor visitor(create_parameters);
                 text_encoder.accept(visitor);
                 visitor.rethrow();
             }
+
+            if (allocator != nullptr)
+                allocator->allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
             auto tokenizer = Qwen2TokenizerFast::from_pretrained(tokenizer_dir);
 
@@ -669,11 +681,12 @@ int main(int argc, char** argv) {
 
         ggml_backend_load_all();
 
-        auto gpus = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
+        //auto gpus = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
+        Device gpu(GGML_BACKEND_DEVICE_TYPE_GPU);
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-        Backend gpus_backend(gpus);
+        Backend gpu_backend(gpu);
         Backend cpu_backend(cpu);
-        Scheduler scheduler({&gpus_backend, &cpu_backend}, cli.get_graph_size());
+        Scheduler scheduler({&gpu_backend, &cpu_backend}, cli.get_graph_size());
 
         Flux2Transformer2DModel::Config transformer_config;
         {
@@ -735,11 +748,12 @@ int main(int argc, char** argv) {
 
         Context context(scheduler.capacity());
         Runtime runtime(scheduler, context);
-        Allocator state_allocator(gpus.buffer_type());
+        Allocator weights_allocator(gpu.buffer_type());
+        Allocator state_allocator(gpu.buffer_type());
 
         Flux2Transformer2DModel transformer(transformer_config);
         {
-            TestCLI::CreateParametersVisitor create_parameters(runtime, args_, "transformer");
+            TestCLI::CreateParametersVisitor create_parameters(runtime, args_, &weights_allocator, "transformer");
             RethrowVisitor visitor(create_parameters);
             transformer.accept(visitor);
             visitor.rethrow();
@@ -747,7 +761,7 @@ int main(int argc, char** argv) {
         
         AutoencoderKLFlux2 vae(vae_config);
         {
-            TestCLI::CreateParametersVisitor create_parameters(runtime, args_, "vae");
+            TestCLI::CreateParametersVisitor create_parameters(runtime, args_, &weights_allocator, "vae");
             RethrowVisitor visitor(create_parameters);
             vae.accept(visitor);
             visitor.rethrow();
@@ -755,11 +769,13 @@ int main(int argc, char** argv) {
 
         Qwen3ForCausalLM text_encoder(qwen_config);
         {
-            TestCLI::CreateParametersVisitor create_parameters(runtime, args_, "text_encoder");
+            TestCLI::CreateParametersVisitor create_parameters(runtime, args_, &weights_allocator, "text_encoder");
             RethrowVisitor visitor(create_parameters);
             text_encoder.accept(visitor);
             visitor.rethrow();
         }
+
+        weights_allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
         auto tokenizer = Qwen2TokenizerFast::from_pretrained(tokenizer_dir);
 

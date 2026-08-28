@@ -17,17 +17,18 @@ class TestQwen3CLI : public TestCLI {
 public:
     TestQwen3CLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Runtime& runtime) {
+    virtual std::vector<Tensor> compute(Runtime& runtime, Allocator* allocator) {
         if (args_.get(0) == "Qwen3RMSNorm") {
             auto hidden_size = args_.get_one<int64_t>("--hidden_size");
             auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
 
             Qwen3RMSNorm model(hidden_size);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, hidden_states);
 
@@ -45,10 +46,11 @@ public:
 
             Qwen3MLP model(config);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, hidden_states);
 
@@ -90,38 +92,11 @@ public:
             Qwen3Attention<ScaledDotProductAttention<FlashAttentionOp>> model(config, layer_idx);
             Qwen3RotaryEmbedding rotary_emb(config);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
-
-            auto output = model.forward(runtime, rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
-
-            Graph graph(runtime, {output});
-            Computation computation(graph);
-            return computation().results();
-        }
-
-        if (args_.get(0) == "Qwen3Attention") {
-            Qwen3Config config;
-            config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
-            config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
-            config.num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.num_attention_heads);
-            config.num_key_value_heads = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.num_key_value_heads);
-
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {runtime});
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {runtime});
-            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {runtime});
-            auto layer_idx = args_.get_one<int>("--layer_idx");
-
-            Qwen3Attention<ScaledDotProductAttention<FlashAttentionOp>> model(config, layer_idx);
-            Qwen3RotaryEmbedding rotary_emb(config);
-
-            CreateParametersVisitor create_parameters(runtime, args_);
-            RethrowVisitor visitor(create_parameters);
-            model.accept(visitor);
-            visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
 
@@ -145,10 +120,11 @@ public:
             Qwen3DecoderLayer model(config, layer_idx);
             Qwen3RotaryEmbedding rotary_emb(config);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(runtime, rotary_emb, hidden_states, position_ids);
 
@@ -181,10 +157,11 @@ public:
 
             Qwen3Model model(config);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             std::vector<Tensor> hidden_states;
 
@@ -230,10 +207,11 @@ public:
             
             Qwen3ForCausalLM model(config);
 
-            CreateParametersVisitor create_parameters(runtime, args_);
+            CreateParametersVisitor create_parameters(runtime, args_, allocator);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
+            create_parameters.allocate();
 
             auto output = model.forward(
                 runtime,

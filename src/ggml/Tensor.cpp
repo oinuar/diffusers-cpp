@@ -1,4 +1,5 @@
 #include "ggml/Tensor.hpp"
+#include "ggml/Allocator.hpp"
 #include <limits>
 #include <sstream>
 #include <algorithm>
@@ -51,6 +52,22 @@ Tensor::Shape Tensor::Shape::broadcast(const Tensor::Shape& lhs, const Tensor::S
     return result;
 }
 
+Tensor Tensor::empty(ggml_context* ctx, const Tensor::Shape& shape, ggml_type type, Allocator* allocator) {
+    // GGML does not support scalar tensors, let's fake it with 1D tensor
+    auto tensor = shape.rank() == 0
+        ? Tensor(ctx, ggml_new_tensor_1d(ctx, type, 1), shape)
+        : Tensor(ctx, ggml_new_tensor(ctx, type, shape.rank(), shape.data()), shape);
+
+    // Set tensor as input (scheduler allocated) if there is no allocator
+    if (allocator == nullptr)
+        ggml_set_input(*tensor);
+
+    // Otherwise, allocate tensor using an allocator
+    else
+        allocator->reserve(tensor);
+
+    return tensor;
+}
 
 Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
     if (tensors.empty())

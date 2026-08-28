@@ -53,7 +53,7 @@ public:
         if (!computed_)
             throw std::runtime_error("Access of undefined results: computation was not run");
 
-        return graph_.tensors();
+        return graph_.outputs();
     }
 
     Computation(Computation&) = delete;

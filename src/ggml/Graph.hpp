@@ -10,12 +10,12 @@
 
 class Graph {
 public:
-    Graph(Runtime& runtime, std::vector<Tensor>&& tensors)
+    Graph(Runtime& runtime, std::vector<Tensor>&& outputs)
         : runtime_(runtime),
           gf_(ggml_new_graph_custom(*runtime.context(), runtime.scheduler().capacity(), false)),
-          tensors_(std::move(tensors))
+          outputs_(std::move(outputs))
     {
-        for (auto& tensor : tensors_) {
+        for (auto& tensor : outputs_) {
             // Materialize tensor if needed
             if (!tensor.is_contiguous())
                 tensor = tensor.contiguous();
@@ -25,7 +25,7 @@ public:
         }
     }
 
-    Graph(Graph&& other) : runtime_(other.runtime_), gf_(other.gf_), tensors_(std::move(other.tensors_)) {
+    Graph(Graph&& other) : runtime_(other.runtime_), gf_(other.gf_), outputs_(std::move(other.outputs_)) {
         other.gf_ = nullptr;
     }
 
@@ -37,8 +37,8 @@ public:
         return runtime_;
     }
 
-    std::vector<Tensor>& tensors() {
-        return tensors_;
+    std::vector<Tensor>& outputs() {
+        return outputs_;
     }
 
     Graph(Graph&) = delete;
@@ -48,5 +48,5 @@ public:
 private:
     Runtime& runtime_;
     ggml_cgraph* gf_;
-    std::vector<Tensor> tensors_;
+    std::vector<Tensor> outputs_;
 };

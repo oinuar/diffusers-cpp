@@ -27,7 +27,7 @@ public:
         }
     };
 
-    typedef std::unordered_map<Tensor, Provider<std::byte>, TensorInputHash, TensorInputEqual> Bindings;
+    typedef std::unordered_map<Tensor, std::pair<Provider<std::byte>, bool>, TensorInputHash, TensorInputEqual> Bindings;
 
     explicit Runtime(Scheduler& scheduler, Context& context, uint64_t seed = std::random_device{}())
         : scheduler_(scheduler), context_(context), rng_(seed) {}
@@ -38,8 +38,8 @@ public:
     }
 
     template <typename T>
-    void bind(Tensor tensor, const Provider<T>& provider) {
-        bindings_[tensor] = [tensor, provider](std::mt19937& rng) {
+    void bind(Tensor tensor, const Provider<T>& provider, bool once = false) {
+        bindings_[tensor] = std::make_pair([tensor, provider](std::mt19937& rng) {
             auto values = provider(rng);
 
             if constexpr (std::is_same_v<T, std::byte>)
@@ -49,11 +49,18 @@ public:
             std::vector<std::byte> bytes(values.size() * sizeof(T));
             std::memcpy(bytes.data(), values.data(), bytes.size());
             return bytes;
-        };
+        }, once);
     }
 
     void unbind(Tensor tensor) {
         bindings_.erase(tensor);
+    }
+
+    template <typename T>
+    Tensor create(const Tensor::Shape& shape, const Provider<T>& provider, Allocator* allocator = nullptr) {
+        auto tensor = Tensor::empty<T>(*context(), shape, allocator);
+        bind(tensor, provider, true);
+        return tensor;
     }
 
     template <typename T>
@@ -127,15 +134,21 @@ public:
         return rng_;
     }
 
-    Bindings bindings() const {
+    Bindings bindings() {
         auto bindings = bindings_;
 
-        // Remove tensors that have no bound buffer
         for (auto it = std::begin(bindings); it != std::end(bindings); ) {
-            if ((*it->first)->buffer == nullptr)
+            // Remove tensors that have no bound buffer
+            if ((*it->first)->buffer == nullptr) {
                 it = bindings.erase(it);
-            else
-                ++it;
+                continue;
+            }
+
+            // Remove tensors that are bound only once
+            if (it->second.second)
+                bindings_.erase(it->first);
+
+            ++it;
         }
 
         return std::move(bindings);

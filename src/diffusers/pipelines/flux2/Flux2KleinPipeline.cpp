@@ -109,14 +109,14 @@ std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Runtime& runtime, A
 
     auto tokens = tokenizer_.encode(text, max_sequence_length, &mask, &num_real_tokens);
 
-    auto input_ids = runtime.value<int32_t>({batch, (int64_t)tokens.size()},
+    auto input_ids = runtime.create<int32_t>({batch, (int64_t)tokens.size()},
         [=](std::mt19937&) {
             std::vector<int32_t> ids(size_t(batch) * tokens.size());
             for (auto b=0; b<batch; ++b) std::copy(tokens.begin(), tokens.end(), ids.begin() + b * tokens.size());
             return std::move(ids);
         }, allocator);
 
-    auto attention_mask = runtime.value<float>({batch, (int64_t)mask.size()},
+    auto attention_mask = runtime.create<float>({batch, (int64_t)mask.size()},
         [=](std::mt19937&) {
             std::vector<float> m(size_t(batch) * mask.size());
             for (auto b=0; b<batch; ++b) std::copy(mask.begin(), mask.end(), m.begin() + b * mask.size());
@@ -163,7 +163,7 @@ std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Runtime& runtime, A
     //  w = torch.arange(1)
     //  l = torch.arange(L)
     //  coords = torch.cartesian_prod(t, h, w, l)
-    auto txt_ids = runtime.value<float>({batch, seq_len, 4},
+    auto txt_ids = runtime.create<float>({batch, seq_len, 4},
         [=](std::mt19937&) {
             std::vector<float> ids(size_t(batch) * seq_len * 4, 0.0f);
             for (int b = 0; b < batch; ++b) {
@@ -184,7 +184,7 @@ std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Runtime& runtime, A
 // 4D img_ids: (B, N, 4) -> [0, y, x, 0]
 static Tensor prepare_img_ids(Runtime& runtime, Allocator* allocator, int batch, int packed_h, int packed_w) {
     int64_t N = int64_t(packed_h) * packed_w;
-    return runtime.value<float>({batch, N, 4},
+    return runtime.create<float>({batch, N, 4},
         [=](std::mt19937&) {
             std::vector<float> ids(size_t(batch) * N * 4, 0.0f);
             for (int b = 0; b < batch; ++b) {
@@ -214,7 +214,7 @@ static Tensor prepare_image_ids(Runtime& runtime, Allocator* allocator, int batc
             int64_t(packed_h) * packed_w;
     }
 
-    return runtime.value<float>(
+    return runtime.create<float>(
         {batch, total_tokens, 4},
         [=, &images](std::mt19937&) {
             std::vector<float> ids(
@@ -275,7 +275,7 @@ static Tensor make_packed_latents(Runtime& runtime, Allocator& allocator, int ba
     const int64_t token_dim = int64_t(num_latent_channels) * 4; // C * 4
     const size_t count = size_t(batch) * packed_h * packed_w * token_dim;
 
-    return runtime.value<float>({batch, int64_t(packed_h) * packed_w, token_dim},
+    return runtime.create<float>({batch, int64_t(packed_h) * packed_w, token_dim},
         [=](std::mt19937& rng) {
             std::vector<float> noise(count);
             std::normal_distribution<float> normal(0.0f, 1.0f);
@@ -330,7 +330,7 @@ static Tensor image_to_tensor(Runtime& runtime, Allocator* allocator, const Imag
             "image_to_tensor(): pixel buffer size does not match image dimensions");
     }
 
-    return runtime.value<float>(
+    return runtime.create<float>(
         {1, 3, static_cast<int64_t>(height), static_cast<int64_t>(width)},
         [pixels, width, height](std::mt19937&) {
             const size_t plane = width * height;
@@ -675,7 +675,7 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& runtime, Allocator& 
     const int64_t token_dim = int64_t(vae_.latent_channels()) * 4; // C * 4
 
     auto latents = options.init_latents
-        ? runtime.value<float>({batch, int64_t(packed_h) * packed_w, token_dim}, [init_latents = std::move(*options.init_latents)](std::mt19937&) { return init_latents; }, &allocator)
+        ? runtime.create<float>({batch, int64_t(packed_h) * packed_w, token_dim}, [init_latents = std::move(*options.init_latents)](std::mt19937&) { return init_latents; }, &allocator)
         : make_packed_latents(runtime, allocator, batch, packed_h, packed_w, vae_.latent_channels());
 
     auto denoise_graph = std::move(make_denoise_graph(

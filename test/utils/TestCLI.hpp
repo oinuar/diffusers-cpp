@@ -23,18 +23,18 @@ public:
         ggml_backend_load_all();
 
         //auto gpus = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
-        Device gpu(GGML_BACKEND_DEVICE_TYPE_GPU);
+        //Device gpu(GGML_BACKEND_DEVICE_TYPE_GPU);
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
         //Backend gpus_backend(gpus);
-        Backend gpu_backend(gpu);
+        //Backend gpu_backend(gpu);
         Backend cpu_backend(cpu);
-        Scheduler scheduler({&gpu_backend, &cpu_backend}, get_graph_size());
+        Scheduler scheduler({&cpu_backend}, get_graph_size());
         Context context(scheduler.capacity());
         Runtime runtime(scheduler, context);
 
-        Allocator allocator(gpu.buffer_type()); // use weight buffer for params()
+        //Allocator allocator(gpu.buffer_type()); // use weight buffer for params()
 
-        auto results = compute(runtime, &allocator);
+        auto results = compute(runtime);//, &allocator);
 
         for (auto& tensor : results) {
             switch (tensor.dtype()) {

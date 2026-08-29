@@ -26,8 +26,8 @@ public:
         if (progress_ != nullptr)
             progress_->push("Initializing", bindings.size() + 1);
 
-        for (auto& [tensor, provider] : bindings) {
-            graph_.runtime().write(tensor, provider(graph_.runtime().rng()));
+        for (auto& [tensor, value] : bindings) {
+            graph_.runtime().write(tensor, value.first(graph_.runtime().rng()));
 
             if (progress_ != nullptr)
                 progress_->next();

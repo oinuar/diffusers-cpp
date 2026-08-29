@@ -139,7 +139,6 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
 
     auto n_bytes = ggml_nbytes(*tensor);
 
-    // Here we supply data to tensor. This is where buffer allocation should happen
     runtime_.bind<std::byte>(tensor,
         [n_bytes, expected_shape, offs, file = file_, model_path = std::move(model_path)/*, tensor_name = std::move(tensor_name)*/](std::mt19937&) {
             std::vector<std::byte> buf(n_bytes);
@@ -158,7 +157,7 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
                 throw std::runtime_error("Error while loading Tensor '" + model_path + "': read failed");
 
             return buf;
-        });
+        }, /*once=*/true);
 
     parameter.set(tensor);
 

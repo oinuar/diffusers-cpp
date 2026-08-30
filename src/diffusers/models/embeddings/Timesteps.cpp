@@ -17,7 +17,7 @@ Timesteps::Timesteps(
 Tensor Timesteps::forward(Runtime& runtime, Tensor timesteps) {
     const int64_t half_dim = num_channels / 2;
 
-    auto exponent = Tensor::arange(*runtime.context(), 0, half_dim);
+    auto exponent = runtime.arange(0.0f, static_cast<float>(half_dim));
 
     exponent = exponent * (-std::log(10000.0f) / (half_dim - downscale_freq_shift));
 

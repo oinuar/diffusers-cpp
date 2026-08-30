@@ -264,16 +264,6 @@ public:
         return full(ctx, shape, 1.0f);
     }
 
-    static Tensor arange(
-        ggml_context* ctx,
-        float start,
-        float stop,
-        float step = 1.0f)
-    {
-        const int64_t size = static_cast<int64_t>(std::ceil((stop - start) / step));
-
-        return Tensor(ctx, ggml_arange(ctx, start, stop, step), {size});
-    }
 
     /** @brief Concatenates a list of tensors along the given dimension `dim`. */
     static Tensor cat(const std::vector<Tensor>& tensors, int dim);

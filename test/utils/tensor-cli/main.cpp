@@ -53,7 +53,7 @@ public:
             auto stop = args_.get_one<float>("--stop");
             auto step = args_.get_one<float>("--step");
 
-            auto output = Tensor::arange(*runtime.context(), start, stop, step);
+            auto output = runtime.arange(start, stop, step);
 
             Graph graph(runtime, {output});
             Computation computation(graph);

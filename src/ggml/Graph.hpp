@@ -2,6 +2,7 @@
 
 #include "ggml/Tensor.hpp"
 #include "ggml/Runtime.hpp"
+#include "ggml/Allocator.hpp"
 #include <ggml.h>
 #include <ggml-backend.h>
 #include <vector>
@@ -10,17 +11,31 @@
 
 class Graph {
 public:
-    Graph(Runtime& runtime, std::vector<Tensor>&& outputs)
+    Graph(Runtime& runtime, std::vector<Tensor>&& outputs, Allocator* allocator = nullptr)
         : runtime_(runtime),
           gf_(ggml_new_graph_custom(*runtime.context(), runtime.scheduler().capacity(), false)),
           outputs_(std::move(outputs))
     {
         for (auto& tensor : outputs_) {
+            // Relocate tensors to given allocator if required
+            if (allocator != nullptr && !allocator->contains(tensor)) {
+                auto leaf = Tensor::empty(*runtime.context(), tensor.shape(), tensor.dtype(), allocator);
+
+                ggml_build_forward_expand(gf_, *tensor.copy_to(leaf));
+
+                tensor = leaf;
+                continue;
+            }
+
             // Materialize tensor if needed
             if (!tensor.is_contiguous())
                 tensor = tensor.contiguous();
 
-            ggml_set_output(*tensor);
+            // Set output flag if allocator is not given to
+            // keep tensor allocated by the scheduler
+            if (allocator == nullptr)
+                ggml_set_output(*tensor);
+
             ggml_build_forward_expand(gf_, *tensor);
         }
     }
@@ -49,4 +64,5 @@ private:
     Runtime& runtime_;
     ggml_cgraph* gf_;
     std::vector<Tensor> outputs_;
+    std::vector<std::pair<Tensor, Tensor>> copies_;
 };

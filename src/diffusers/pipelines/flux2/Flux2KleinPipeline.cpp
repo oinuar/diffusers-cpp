@@ -527,20 +527,28 @@ Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
         img_ids
     };
 
-    if (image_latents_concat) 
+    if (image_latents_concat)
         outputs.push_back(*image_latents_concat);
-    
+
     if (image_latent_ids_concat)
         outputs.push_back(*image_latent_ids_concat);
 
-    return {
-        std::move(Graph(runtime, std::move(outputs))),
-        prompt_embeds,
-        txt_ids,
-        img_ids,
-        image_latents_concat,
-        image_latent_ids_concat
-    };
+    Embeddings embeddings = { Graph(runtime, std::move(outputs), allocator) };
+
+    // This is not very nice, but Graph might relocate tensors so we cannot reference
+    // tensors that may become stale.
+
+    embeddings.prompt_embeds = embeddings.graph.outputs().at(0);
+    embeddings.txt_ids = embeddings.graph.outputs().at(1);
+    embeddings.img_ids = embeddings.graph.outputs().at(2);
+
+    if (image_latents_concat)
+        embeddings.image_latents_concat = embeddings.graph.outputs().at(3);
+
+    if (image_latent_ids_concat)
+        embeddings.image_latent_ids_concat = embeddings.graph.outputs().at(4);
+
+    return std::move(embeddings);
 }
 
 Graph Flux2KleinPipeline::make_denoise_graph(
@@ -712,6 +720,11 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& runtime, Allocator& 
 
         computation();
 
+        // Copy the computed embeddings into the stable state tensors
+        // referenced by the denoise graph (see make_embeddings_graph).
+        //for (const auto& [source, destination] : embeddings_copies)
+            //runtime.copy(source, destination);
+
         progress.next();
         progress.pop();
     }
@@ -740,7 +753,7 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& runtime, Allocator& 
 
             // Assign latents <- latents+1
             runtime.copy(computation().results().at(0), latents);
-            
+
             progress.next();
         }
 

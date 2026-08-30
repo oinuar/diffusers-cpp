@@ -74,18 +74,6 @@ public:
         ggml_backend_tensor_copy(*src, *dst);
     }
 
-    // TODO: refactor this
-    void split(const Tensor& tensor, int64_t dim) {
-        for (auto& backend : scheduler_.backends())
-            backend->device().split(tensor, dim);
-    }
-
-    // TODO: refactor this
-    void mirror(const Tensor& tensor) {
-        for (auto& backend : scheduler_.backends())
-            backend->device().mirror(tensor);
-    }
-
     template<class T>
     std::vector<T> read(const Tensor& tensor) {
         constexpr auto expected = Tensor::DType<T>::value;

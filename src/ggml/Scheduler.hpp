@@ -15,7 +15,7 @@ public:
         for (auto backend : backends_)
             ggml_backends.push_back(**backend);
 
-        sched_ = ggml_backend_sched_new(ggml_backends.data(), nullptr, ggml_backends.size(), graph_size, false, false);
+        sched_ = ggml_backend_sched_new(ggml_backends.data(), nullptr, ggml_backends.size(), graph_size, false, true);
     }
 
     Scheduler(Scheduler&& other)

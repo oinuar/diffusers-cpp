@@ -41,7 +41,9 @@ public:
         return MetaDevice(devices);
     }
     
-    virtual void visit(Parameter& parameter, std::vector<std::string>) {
+    /* Drafing on how to split tensor using meta device
+
+    void visit(Parameter& parameter, std::vector<std::string>) {
         if (!parameter.split_dim())
             return;
 
@@ -71,7 +73,7 @@ public:
         specs_[**parameter] = state;
     }
 
-    virtual void split(const Tensor& tensor, int64_t dim) {
+    void split(const Tensor& tensor, int64_t dim) {
         if (n_devices_ < 1) {
             std::cerr << "Cannot split tensor: n_devices must be >= 1" << std::endl;
             return;
@@ -97,7 +99,7 @@ public:
         specs_[*tensor] = state;
     }
 
-    virtual void mirror(const Tensor& tensor) {
+    void mirror(const Tensor& tensor) {
         ggml_backend_meta_split_state state;
 
         state.axis = GGML_BACKEND_SPLIT_AXIS_MIRRORED;
@@ -106,7 +108,7 @@ public:
         state.n_segments = 1;
 
         specs_[*tensor] = state;
-    }
+    }*/
 
     MetaDevice(const MetaDevice&) = delete;
     MetaDevice& operator=(const MetaDevice&) = delete;

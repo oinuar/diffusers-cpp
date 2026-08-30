@@ -7,8 +7,8 @@
 
 class Parameter : public Module {
 public:
-    Parameter(const Tensor::Shape& shape, std::optional<int64_t> split_dim = std::nullopt)
-        : shape_(shape), tensor_(), split_dim_(split_dim)
+    Parameter(const Tensor::Shape& shape)
+        : shape_(shape), tensor_()
     {
     }
 
@@ -39,10 +39,6 @@ public:
 
     const Tensor::Shape& shape() const {
         return shape_;
-    }
-
-    std::optional<int64_t> split_dim() const {
-        return split_dim_;
     }
 
     virtual void accept(Visitor& visitor, std::vector<std::string> path) {

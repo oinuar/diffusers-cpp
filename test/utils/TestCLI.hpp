@@ -21,10 +21,12 @@ public:
         ggml_log_set([](ggml_log_level, const char* text, void*) { std::cerr << text; }, nullptr);
 
         ggml_backend_load_all();
-
+        
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+        MetaDevice meta({*cpu, *cpu});
+        Backend meta_backend(meta);
         Backend cpu_backend(cpu);
-        Scheduler scheduler({&cpu_backend}, get_graph_size());
+        Scheduler scheduler({&meta_backend, &cpu_backend}, get_graph_size());
         Context context(scheduler.capacity());
         Runtime runtime(scheduler, context);
 

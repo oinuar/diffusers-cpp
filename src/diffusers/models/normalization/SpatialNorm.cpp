@@ -1,5 +1,5 @@
 #include "diffusers/models/normalization/SpatialNorm.hpp"
-#include "ggml/Runtime.hpp"
+#include "ggml/Context.hpp"
 #include "nn/modules/normalization/GroupNorm.hpp"
 #include "nn/modules/conv/Conv2d.hpp"
 
@@ -53,7 +53,7 @@ SpatialNorm::SpatialNorm(
 }
 
 Tensor SpatialNorm::forward(
-    Runtime& runtime,
+    Context& context,
     Tensor f,
     Tensor zq
 ) {
@@ -70,7 +70,7 @@ Tensor SpatialNorm::forward(
         zq.shape()[3] != f.shape()[3]) {
 
         auto resized = ggml_interpolate(
-            *runtime.context(),
+            *context,
             *zq,
             f.shape()[3], // W
             f.shape()[2], // H
@@ -80,7 +80,7 @@ Tensor SpatialNorm::forward(
         );
 
         zq = Tensor(
-            *runtime.context(),
+            *context,
             resized,
             Tensor::Shape({
                 zq.shape()[0],
@@ -98,7 +98,7 @@ Tensor SpatialNorm::forward(
     auto norm_f =
         std::static_pointer_cast<GroupNorm>(
             modules["norm_layer"])
-        ->forward(runtime, f);
+        ->forward(context, f);
 
 
     /*
@@ -107,12 +107,12 @@ Tensor SpatialNorm::forward(
     auto y =
         std::static_pointer_cast<Conv2d>(
             modules["conv_y"])
-        ->forward(runtime, zq);
+        ->forward(context, zq);
 
     auto b =
         std::static_pointer_cast<Conv2d>(
             modules["conv_b"])
-        ->forward(runtime, zq);
+        ->forward(context, zq);
 
 
     return norm_f * y + b;

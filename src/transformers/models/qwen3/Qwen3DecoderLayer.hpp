@@ -9,7 +9,7 @@ class Qwen3DecoderLayer : public Module {
 public:
     Qwen3DecoderLayer(const Qwen3Config& config, int layer_idx);
 
-    Tensor forward(Runtime& runtime, Qwen3RotaryEmbedding& rotary_emb,
+    Tensor forward(Context& context, Qwen3RotaryEmbedding& rotary_emb,
                    Tensor hidden_states, Tensor position_ids, 
                    std::optional<Tensor> attention_mask = std::nullopt,
                    std::optional<Tensor> past_key_values = std::nullopt,

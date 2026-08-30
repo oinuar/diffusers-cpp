@@ -6,8 +6,7 @@
 #include "ggml/Tensor.hpp"
 
 class Visitor;
-class Runtime;
-class Allocator;
+class Context;
 
 class Module {
 public:

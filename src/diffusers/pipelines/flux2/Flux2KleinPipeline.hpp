@@ -16,9 +16,8 @@
 #include <filesystem>
 
 class Backend;
-class Runtime;
+class Context;
 class Scheduler;
-class Allocator;
 
 // 
 //                     ┌────────────────────┐
@@ -71,13 +70,7 @@ public:
         size_t max_sequence_length = 512;
     };
 
-    static Flux2KleinPipeline from_pretrained(
-        Runtime& runtime,
-        const std::filesystem::path& path,
-        Allocator* vae_allocator = nullptr,
-        Allocator* text_encoder_allocator = nullptr,
-        Allocator* transformer_allocator = nullptr
-    );
+    static Flux2KleinPipeline from_pretrained(Context& context, const std::filesystem::path& path);
 
     // Latent shape conversions mirroring the static methods of the Python
     // Flux2KleinPipeline. Pure tensor ops with no model state.
@@ -96,7 +89,7 @@ public:
                        Qwen3ForCausalLM&& text_encoder,
                        Qwen2TokenizerFast&& tokenizer);
 
-    std::vector<Image> operator ()(Runtime& runtime, Allocator& allocator, GenerationOptions&& options);
+    std::vector<Image> operator ()(Scheduler& scheduler, Context& context, GenerationOptions&& options);
 
     struct Embeddings {
         Graph graph;
@@ -111,18 +104,19 @@ public:
     };
 
     Embeddings make_embeddings_graph(
-        Runtime& runtime,
+        Scheduler& scheduler,
+        Context& context,
         const std::string& prompt,
         size_t max_sequence_length,
         int batch,
         int packed_h,
         int packed_w,
-        std::vector<Image>& images,
-        Allocator* allocator = nullptr
+        std::vector<Image>& images
     );
 
     Graph make_denoise_graph(
-        Runtime& runtime,
+        Scheduler& scheduler,
+        Context& context,
         int batch,
         int packed_h,
         int packed_w,
@@ -138,7 +132,8 @@ public:
     );
 
     Graph make_decode_graph(
-        Runtime& runtime,
+        Scheduler& scheduler,
+        Context& context,
         int packed_h,
         int packed_w,
         Tensor latents
@@ -149,7 +144,7 @@ public:
     }
 
 private:
-    std::tuple<Tensor, Tensor> encode_prompt(Runtime& runtime, Allocator* allocator, int batch, const std::string& prompt, size_t max_sequence_length);
+    std::tuple<Tensor, Tensor> encode_prompt(Context& context, int batch, const std::string& prompt, size_t max_sequence_length);
 
     Flux2Transformer2DModel transformer_;
     AutoencoderKLFlux2 vae_;

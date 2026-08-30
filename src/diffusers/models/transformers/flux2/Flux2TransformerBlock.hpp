@@ -43,7 +43,7 @@ public:
     }
 
     std::tuple<Tensor, Tensor> forward(
-        Runtime& runtime,
+        Context& context,
         Tensor hidden_states,
         Tensor encoder_hidden_states,
         Tensor temb_mod_img,
@@ -62,20 +62,20 @@ public:
         // Img stream
         auto norm1 = std::static_pointer_cast<LayerNorm>(modules["norm1"]);
 
-        auto norm_hidden_states = norm1->forward(runtime, hidden_states);
+        auto norm_hidden_states = norm1->forward(context, hidden_states);
         norm_hidden_states = (1.0f + scale_msa) * norm_hidden_states + shift_msa;
 
         // Conditioning txt stream
         auto norm1_context = std::static_pointer_cast<LayerNorm>(modules["norm1_context"]);
 
-        auto norm_encoder_hidden_states = norm1_context->forward(runtime, encoder_hidden_states);
+        auto norm_encoder_hidden_states = norm1_context->forward(context, encoder_hidden_states);
         norm_encoder_hidden_states = (1.0f + c_scale_msa) * norm_encoder_hidden_states + c_shift_msa;
       
         // Attention on concatenated img + txt stream
         auto attn = std::static_pointer_cast<Flux2Attention<AttnOp>>(modules["attn"]);
 
         auto [attn_output, context_attn_output] = attn->forward(
-            runtime,
+            context,
             norm_hidden_states,
             norm_encoder_hidden_states,
             std::nullopt,
@@ -88,12 +88,12 @@ public:
 
         auto norm2 = std::static_pointer_cast<LayerNorm>(modules["norm2"]);
 
-        norm_hidden_states = norm2->forward(runtime, hidden_states);
+        norm_hidden_states = norm2->forward(context, hidden_states);
         norm_hidden_states = norm_hidden_states * (1.0f + scale_mlp) + shift_mlp;
 
         auto ff = std::static_pointer_cast<Flux2FeedForward>(modules["ff"]);
 
-        auto ff_output = ff->forward(runtime, norm_hidden_states);
+        auto ff_output = ff->forward(context, norm_hidden_states);
         hidden_states = hidden_states + gate_mlp * ff_output;
 
         // Process attention outputs for the text stream (`encoder_hidden_states`).
@@ -102,12 +102,12 @@ public:
 
         auto norm2_context = std::static_pointer_cast<LayerNorm>(modules["norm2_context"]);
 
-        norm_encoder_hidden_states = norm2_context->forward(runtime, encoder_hidden_states);
+        norm_encoder_hidden_states = norm2_context->forward(context, encoder_hidden_states);
         norm_encoder_hidden_states = norm_encoder_hidden_states * (1.0f + c_scale_mlp) + c_shift_mlp;
         
         auto ff_context = std::static_pointer_cast<Flux2FeedForward>(modules["ff_context"]);
 
-        auto context_ff_output = ff_context->forward(runtime, norm_encoder_hidden_states);
+        auto context_ff_output = ff_context->forward(context, norm_encoder_hidden_states);
         encoder_hidden_states = encoder_hidden_states + c_gate_mlp * context_ff_output;
 
         if (encoder_hidden_states.dtype() == GGML_TYPE_F16)

@@ -8,11 +8,11 @@
 #include <cctype>
 #include "./ArgumentParser.hpp"
 #include "ggml/Tensor.hpp"
-#include "ggml/Runtime.hpp"
+#include "ggml/Context.hpp"
 
 template <>
 struct ArgumentParser::parser<Tensor> {
-    parser(Runtime& runtime, Allocator* allocator = nullptr) : runtime_(runtime), allocator_(allocator) {
+    parser(Context& context, Allocator* allocator = nullptr) : context_(context) {
 
     }
 
@@ -24,9 +24,9 @@ struct ArgumentParser::parser<Tensor> {
 
             // std::cerr << "inferred shape for " << option << ": " << shape.to_string() << " (data size = " << data.size() << ')' << std::endl;
 
-            auto tensor = runtime_.create<float>(shape, [data = std::move(data)](std::mt19937&) {
+            auto tensor = context_.create<float>(shape, [data = std::move(data)](std::mt19937&) {
                 return data;
-            }, allocator_);
+            });
 
             ggml_set_name(*tensor, option.c_str());
 
@@ -37,8 +37,7 @@ struct ArgumentParser::parser<Tensor> {
     }
 
 private:
-    Runtime& runtime_;
-    Allocator* allocator_;
+    Context& context_;
 
 public:
     class TensorParser {

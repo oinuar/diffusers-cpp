@@ -1,13 +1,13 @@
 #pragma once
 
 #include "ggml/Tensor.hpp"
-#include "ggml/Runtime.hpp"
+#include "ggml/Context.hpp"
 
 template <class AttnBackend>
 class ScaledDotProductAttention {
 public:
     Tensor operator()(
-        Runtime& runtime,
+        Context& context,
         Tensor query,
         Tensor key,
         Tensor value,
@@ -24,7 +24,7 @@ public:
         AttnBackend backend;
 
         auto hidden_states = backend(
-            runtime,
+            context,
             query,
             key,
             value,

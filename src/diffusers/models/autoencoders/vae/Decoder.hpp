@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "nn/Module.hpp"
-#include "ggml/Runtime.hpp"
+#include "ggml/Context.hpp"
 #include "nn/ModuleList.hpp"
 #include "nn/SiLU.hpp"
 #include "nn/modules/conv/Conv2d.hpp"
@@ -112,20 +112,20 @@ public:
     }
 
     Tensor forward(
-        Runtime& runtime,
+        Context& context,
         Tensor sample,
         std::optional<Tensor> latent_embeds = std::nullopt
     ) {
         sample =
             std::static_pointer_cast<Conv2d>(
                 modules["conv_in"])
-            ->forward(runtime, sample);
+            ->forward(context, sample);
 
         sample =
             std::static_pointer_cast<UNetMidBlock2D>(
                 modules["mid_block"])
             ->forward(
-                runtime,
+                context,
                 sample,
                 latent_embeds
             );
@@ -135,7 +135,7 @@ public:
         for (auto i = 0; i < up_blocks->size(); ++i) {
             auto up_block = std::static_pointer_cast<UpDecoderBlock2D>((*up_blocks)[i]);
 
-            sample = up_block->forward(runtime, sample, latent_embeds);
+            sample = up_block->forward(context, sample, latent_embeds);
         }
 
         if (latent_embeds) {
@@ -143,7 +143,7 @@ public:
                 std::static_pointer_cast<SpatialNorm>(
                     modules["conv_norm_out"])
                 ->forward(
-                    runtime,
+                    context,
                     sample,
                     latent_embeds.value()
                 );
@@ -153,7 +153,7 @@ public:
                 std::static_pointer_cast<GroupNorm>(
                     modules["conv_norm_out"])
                 ->forward(
-                    runtime,
+                    context,
                     sample
                 );
         }
@@ -161,13 +161,13 @@ public:
         sample =
             std::static_pointer_cast<SiLU>(
                 modules["conv_act"])
-            ->forward(runtime, sample);
+            ->forward(context, sample);
 
 
         sample =
             std::static_pointer_cast<Conv2d>(
                 modules["conv_out"])
-            ->forward(runtime, sample);
+            ->forward(context, sample);
 
         return sample;
     }

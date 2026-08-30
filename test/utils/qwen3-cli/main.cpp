@@ -17,22 +17,22 @@ class TestQwen3CLI : public TestCLI {
 public:
     TestQwen3CLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Runtime& runtime, Allocator* allocator) {
+    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator* allocator) {
         if (args_.get(0) == "Qwen3RMSNorm") {
             auto hidden_size = args_.get_one<int64_t>("--hidden_size");
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {context});
 
             Qwen3RMSNorm model(hidden_size);
 
-            CreateParametersVisitor create_parameters(runtime, args_, allocator);
+            CreateParametersVisitor create_parameters(context, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
-            create_parameters.allocate();
 
-            auto output = model.forward(runtime, hidden_states);
 
-            Graph graph(runtime, {output});
+            auto output = model.forward(context, hidden_states);
+
+            Graph graph(scheduler, context, {output});
             Computation computation(graph);
             return computation().results();
         }
@@ -42,19 +42,19 @@ public:
             config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
             config.intermediate_size = args_.get_optional<int64_t>("--intermediate_size").value_or(config.intermediate_size);
 
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {context});
 
             Qwen3MLP model(config);
 
-            CreateParametersVisitor create_parameters(runtime, args_, allocator);
+            CreateParametersVisitor create_parameters(context, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
-            create_parameters.allocate();
 
-            auto output = model.forward(runtime, hidden_states);
 
-            Graph graph(runtime, {output});
+            auto output = model.forward(context, hidden_states);
+
+            Graph graph(scheduler, context, {output});
             Computation computation(graph);
             return computation().results();
         }
@@ -64,14 +64,14 @@ public:
             config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
             config.rope_theta = args_.get_optional<int64_t>("--rope_theta").value_or(config.rope_theta);
 
-            auto x = args_.get_one<Tensor>("--x", {runtime});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {runtime});
+            auto x = args_.get_one<Tensor>("--x", {context});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {context});
 
             Qwen3RotaryEmbedding model(config);
 
-            auto output = model.forward(runtime, x, position_ids);
+            auto output = model.forward(context, x, position_ids);
 
-            Graph graph(runtime, {output});
+            Graph graph(scheduler, context, {output});
             Computation computation(graph);
             return computation().results();
         }
@@ -83,24 +83,24 @@ public:
             config.num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.num_attention_heads);
             config.num_key_value_heads = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.num_key_value_heads);
 
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {runtime});
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {runtime});
-            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {runtime});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {context});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {context});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {context});
+            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {context});
             auto layer_idx = args_.get_one<int>("--layer_idx");
 
             Qwen3Attention<ScaledDotProductAttention<FlashAttentionOp>> model(config, layer_idx);
             Qwen3RotaryEmbedding rotary_emb(config);
 
-            CreateParametersVisitor create_parameters(runtime, args_, allocator);
+            CreateParametersVisitor create_parameters(context, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
-            create_parameters.allocate();
 
-            auto output = model.forward(runtime, rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
 
-            Graph graph(runtime, {output});
+            auto output = model.forward(context, rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
+
+            Graph graph(scheduler, context, {output});
             Computation computation(graph);
             return computation().results();
         }
@@ -114,21 +114,21 @@ public:
             config.max_position_embeddings = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.max_position_embeddings);
 
             auto layer_idx = args_.get_one<int>("--layer_idx");
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {runtime});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {runtime});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {context});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {context});
 
             Qwen3DecoderLayer model(config, layer_idx);
             Qwen3RotaryEmbedding rotary_emb(config);
 
-            CreateParametersVisitor create_parameters(runtime, args_, allocator);
+            CreateParametersVisitor create_parameters(context, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
-            create_parameters.allocate();
 
-            auto output = model.forward(runtime, rotary_emb, hidden_states, position_ids);
 
-            Graph graph(runtime, {output});
+            auto output = model.forward(context, rotary_emb, hidden_states, position_ids);
+
+            Graph graph(scheduler, context, {output});
             Computation computation(graph);
             return computation().results();
         }
@@ -147,26 +147,26 @@ public:
             config.pad_token_id = args_.get_optional<int64_t>("--pad_token_id");
             config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
 
-            auto input_ids = args_.get_optional<Tensor>("--input_ids", {runtime});
-            auto input_embeds = args_.get_optional<Tensor>("--input_embeds", {runtime});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {runtime});
-            auto position_ids = args_.get_optional<Tensor>("--position_ids", {runtime});
-            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {runtime});
+            auto input_ids = args_.get_optional<Tensor>("--input_ids", {context});
+            auto input_embeds = args_.get_optional<Tensor>("--input_embeds", {context});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {context});
+            auto position_ids = args_.get_optional<Tensor>("--position_ids", {context});
+            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {context});
             auto use_cache = args_.get_optional<bool>("--past_key_values");
             auto output_hidden_states = args_.get_optional<bool>("--output_hidden_states").value_or(false);
 
             Qwen3Model model(config);
 
-            CreateParametersVisitor create_parameters(runtime, args_, allocator);
+            CreateParametersVisitor create_parameters(context, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
-            create_parameters.allocate();
+
 
             std::vector<Tensor> hidden_states;
 
             auto output = model.forward(
-                runtime,
+                context,
                 input_ids,
                 input_embeds,
                 attention_mask,
@@ -176,12 +176,12 @@ public:
                 output_hidden_states ? &hidden_states : nullptr);
 
             if (output_hidden_states) {
-                Graph graph(runtime, std::move(hidden_states));
+                Graph graph(scheduler, context, std::move(hidden_states));
                 Computation computation(graph);
                 return computation().results();
             }
             
-            Graph graph(runtime, {output});
+            Graph graph(scheduler, context, {output});
             Computation computation(graph);
             return computation().results();
         }
@@ -196,25 +196,25 @@ public:
             config.num_key_value_heads = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.num_key_value_heads);
             config.max_position_embeddings = args_.get_optional<int64_t>("--max_position_embeddings").value_or(config.max_position_embeddings);
 
-            auto input_ids = args_.get_optional<Tensor>("--input_ids", {runtime});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {runtime});
-            auto position_ids = args_.get_optional<Tensor>("--position_ids", {runtime});
-            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {runtime});
-            auto inputs_embeds = args_.get_optional<Tensor>("--inputs_embeds", {runtime});
-            auto labels = args_.get_optional<Tensor>("--labels", {runtime});
+            auto input_ids = args_.get_optional<Tensor>("--input_ids", {context});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {context});
+            auto position_ids = args_.get_optional<Tensor>("--position_ids", {context});
+            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {context});
+            auto inputs_embeds = args_.get_optional<Tensor>("--inputs_embeds", {context});
+            auto labels = args_.get_optional<Tensor>("--labels", {context});
             auto use_cache = args_.get_optional<bool>("--use_cache");
             auto logits_to_keep = args_.get_optional<int>("--logits_to_keep").value_or(0);
             
             Qwen3ForCausalLM model(config);
 
-            CreateParametersVisitor create_parameters(runtime, args_, allocator);
+            CreateParametersVisitor create_parameters(context, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
-            create_parameters.allocate();
+
 
             auto output = model.forward(
-                runtime,
+                context,
                 input_ids,
                 attention_mask,
                 position_ids,
@@ -225,7 +225,7 @@ public:
                 logits_to_keep
             );
 
-            Graph graph(runtime, {output});
+            Graph graph(scheduler, context, {output});
             Computation computation(graph);
             return computation().results();
         }

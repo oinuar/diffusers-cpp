@@ -1,5 +1,5 @@
 #include "diffusers/models/resnet/Upsample2D.hpp"
-#include "ggml/Runtime.hpp"
+#include "ggml/Context.hpp"
 #include "nn/modules/conv/Conv2d.hpp"
 
 Upsample2D::Upsample2D(
@@ -31,7 +31,7 @@ Upsample2D::Upsample2D(
 }
 
 Tensor Upsample2D::forward(
-    Runtime& runtime,
+    Context& context,
     Tensor hidden_states
 )
 {
@@ -48,9 +48,9 @@ Tensor Upsample2D::forward(
     // ne3 = batch
     // Result: [B,C,H,W] -> [B,C,2H,2W]
     hidden_states = Tensor(
-        *runtime.context(),
+        *context,
         ggml_upscale(
-            *runtime.context(),
+            *context,
             *hidden_states,
             2,
             GGML_SCALE_MODE_NEAREST
@@ -68,7 +68,7 @@ Tensor Upsample2D::forward(
             std::static_pointer_cast<Conv2d>(
                 modules["conv"])
             ->forward(
-                runtime,
+                context,
                 hidden_states
             );
     }

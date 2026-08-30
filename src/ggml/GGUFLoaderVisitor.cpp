@@ -1,5 +1,5 @@
 #include "ggml/GGUFLoaderVisitor.hpp"
-#include "ggml/Runtime.hpp"
+#include "ggml/Context.hpp"
 #include "ggml/Allocator.hpp"
 #include "nn/Parameter.hpp"
 #include <string>
@@ -32,8 +32,8 @@ static std::optional<std::filesystem::path> find_first_gguf(const std::filesyste
     return std::nullopt;
 }
 
-GGUFLoaderVisitor::GGUFLoaderVisitor(Runtime& runtime, const std::filesystem::path& path, Allocator* allocator)
-    : runtime_(runtime), gguf_ctx_(nullptr), file_(std::make_shared<std::ifstream>()), lookup_(), allocator_(allocator)
+GGUFLoaderVisitor::GGUFLoaderVisitor(Context& context, const std::filesystem::path& path)
+    : context_(context), gguf_ctx_(nullptr), file_(std::make_shared<std::ifstream>()), lookup_()
 {
     auto gguf_path = find_first_gguf(path);
 
@@ -133,13 +133,13 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
     if (parameter.shape() != expected_shape)
         throw std::runtime_error("Error while loading Tensor '" + model_path + "': Parameter shape mismatch: expected " + parameter.shape().to_string() + ", got " + expected_shape.to_string());
 
-    auto tensor = Tensor::empty(*runtime_.context(), expected_shape, type, allocator_);
+    auto tensor = Tensor::empty(*context_, expected_shape, type);
 
     ggml_set_name(*tensor, name);
 
     auto n_bytes = ggml_nbytes(*tensor);
 
-    runtime_.bind<std::byte>(tensor,
+    context_.bind<std::byte>(tensor,
         [n_bytes, expected_shape, offs, file = file_, model_path = std::move(model_path)/*, tensor_name = std::move(tensor_name)*/](std::mt19937&) {
             std::vector<std::byte> buf(n_bytes);
 

@@ -90,31 +90,31 @@ public:
             );
     }
 
-    Tensor forward(Runtime& runtime, Tensor sample) {
+    Tensor forward(Context& context, Tensor sample) {
         auto conv_in = std::static_pointer_cast<Conv2d>(modules["conv_in"]);
-        sample = conv_in->forward(runtime, sample);
+        sample = conv_in->forward(context, sample);
         
         auto down_blocks = std::static_pointer_cast<ModuleList>(modules["down_blocks"]);
 
         // down
         for (auto i = 0; i < down_blocks->size(); ++i) {
             auto block = std::static_pointer_cast<DownEncoderBlock2D>((*down_blocks)[i]);
-            sample = block->forward(runtime, sample);
+            sample = block->forward(context, sample);
         }
 
         // middle
         auto mid_block = std::static_pointer_cast<UNetMidBlock2D>(modules["mid_block"]);
-        sample = mid_block->forward(runtime, sample);
+        sample = mid_block->forward(context, sample);
 
         // post-process
         auto conv_norm_out = std::static_pointer_cast<GroupNorm>(modules["conv_norm_out"]);
-        sample = conv_norm_out->forward(runtime, sample);
+        sample = conv_norm_out->forward(context, sample);
 
         auto conv_act = std::static_pointer_cast<SiLU>(modules["conv_act"]);
-        sample = conv_act->forward(runtime, sample);
+        sample = conv_act->forward(context, sample);
 
         auto conv_out = std::static_pointer_cast<Conv2d>(modules["conv_out"]);
-        sample = conv_out->forward(runtime, sample);
+        sample = conv_out->forward(context, sample);
 
         return sample;
     }

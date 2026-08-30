@@ -34,11 +34,11 @@ public:
 
     explicit AutoencoderKLFlux2(const Config& config);
 
-    DiagonalGaussianDistribution encode(Runtime& runtime, Tensor x);
+    DiagonalGaussianDistribution encode(Context& context, Tensor x);
 
-    Tensor decode(Runtime& runtime, Tensor z);
+    Tensor decode(Context& context, Tensor z);
 
-    Tensor forward(Runtime& runtime, Tensor sample, bool sample_posterior = false);
+    Tensor forward(Context& context, Tensor sample, bool sample_posterior = false);
     
     const BatchNorm2d& bn() const;
 

@@ -12,7 +12,7 @@ public:
     );
 
     Tensor forward(
-        Runtime& runtime,
+        Context& context,
         Tensor hidden_states
     );
 

@@ -14,7 +14,7 @@ public:
         bool bias = true
     );
 
-    Tensor forward(Runtime& runtime, Tensor hidden_states, Tensor conditioning_embedding);
+    Tensor forward(Context& context, Tensor hidden_states, Tensor conditioning_embedding);
 };
 
 #include "diffusers/models/normalization/AdaLayerNormContinuous.inl"

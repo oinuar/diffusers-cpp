@@ -1,7 +1,7 @@
 #include "ggml/Device.hpp"
 #include "ggml/MetaDevice.hpp"
 #include "ggml/Backend.hpp"
-#include "ggml/Runtime.hpp"
+#include "ggml/Context.hpp"
 #include "ggml/Allocator.hpp"
 #include "ggml/Scheduler.hpp"
 #include "diffusers/pipelines/flux2/Flux2KleinPipeline.hpp"
@@ -19,21 +19,16 @@ int main() {
     Backend gpus_backend(gpus);
     Backend cpu_backend(cpu);
     Scheduler scheduler({&gpus_backend, &cpu_backend}, 65536);
-    Context context(65536);
-    Runtime runtime(scheduler, context);
-    Allocator weights_allocator(gpus.buffer_type());
-    Allocator state_allocator(gpus.buffer_type());
+    Context weights_context(65536);
 
-    auto pipeline = std::move(Flux2KleinPipeline::from_pretrained(runtime, "../utils/convert-model", &weights_allocator, &weights_allocator, &weights_allocator));
-
-    weights_allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+    auto pipeline = std::move(Flux2KleinPipeline::from_pretrained(weights_context, "../utils/convert-model"));
 
     Flux2KleinPipeline::GenerationOptions options;
     options.prompt = "a lovely cat";
     options.width = 256;
     options.height = 256;
 
-    auto images = pipeline(runtime, state_allocator, std::move(options));
+    auto images = pipeline(scheduler, weights_context, std::move(options));
 
     images[0].save("test2.png");
 }
@@ -55,7 +50,7 @@ int main() {
     Runtime runtime(scheduler, context);
 
     // initial value
-    auto counter = runtime.create<float>({1}, [](std::mt19937&) {
+    auto counter = context.create<float>({1}, [](std::mt19937&) {
         return std::vector<float>({42});
     });
 
@@ -74,7 +69,7 @@ int main() {
 
         // read results on the last step
         if (i == 10 - 1)
-            result = runtime.value<float>(counter);
+            result = context.value<float>(counter);
     }
 
     // print results

@@ -12,7 +12,7 @@ public:
         float momentum = 0.1f
     );
 
-    Tensor forward(Runtime& runtime, Tensor x);
+    Tensor forward(Context& context, Tensor x);
 
     const Parameter& running_mean() const;
 

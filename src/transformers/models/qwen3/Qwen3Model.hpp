@@ -9,7 +9,7 @@ class Qwen3Model : public Module {
 public:
     Qwen3Model(const Qwen3Config& config);
 
-    Tensor forward(Runtime& runtime, std::optional<Tensor> input_ids = std::nullopt, 
+    Tensor forward(Context& context, std::optional<Tensor> input_ids = std::nullopt, 
                    std::optional<Tensor> inputs_embeds = std::nullopt, 
                    std::optional<Tensor> attention_mask = std::nullopt,
                    std::optional<Tensor> position_ids = std::nullopt,

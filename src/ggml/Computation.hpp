@@ -9,11 +9,9 @@
 
 class Computation {
 public:
-    explicit Computation(Graph& graph, ProgressBar* progress = nullptr) : graph_(graph), progress_(progress), computed_(false) {
-        ggml_backend_sched_reset(*graph_.runtime().scheduler());
-        
-        if (!ggml_backend_sched_alloc_graph(*graph_.runtime().scheduler(), *graph_))
-            throw std::runtime_error("Graph allocation failed");
+    explicit Computation(Graph& graph, ProgressBar* progress = nullptr)
+        : graph_(graph), progress_(progress), computed_(false), bindings_(std::move(graph.allocate()))
+    {
     }
     
     ~Computation() {
@@ -21,12 +19,10 @@ public:
     }
 
     Computation& operator ()() {
-        auto bindings = graph_.runtime().bindings();
-
         if (progress_ != nullptr)
-            progress_->push("Initializing", bindings.size() + 1);
+            progress_->push("Initializing", bindings_.size() + 1);
 
-        for (auto& [tensor, value] : bindings) {
+        for (auto& [tensor, value] : bindings_) {
             graph_.runtime().write(tensor, value.first(graph_.runtime().rng()));
 
             if (progress_ != nullptr)
@@ -64,5 +60,6 @@ public:
 private:
     Graph& graph_;
     ProgressBar* progress_;
+    Runtime::Bindings bindings_;
     bool computed_;
 };

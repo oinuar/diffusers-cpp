@@ -70,6 +70,21 @@ public:
         return tensor;
     }
 
+    /** @brief Creates a tensor of the sequence start, start+step, ..., < stop.
+     */
+    Tensor arange(float start, float stop, float step = 1.0f) {
+        const int64_t size = static_cast<int64_t>(std::ceil((stop - start) / step));
+
+        return create<float>({size}, [start, step, size](std::mt19937&) {
+            std::vector<float> values(static_cast<size_t>(size));
+
+            for (size_t i = 0; i < values.size(); ++i)
+                values[i] = start + static_cast<float>(i) * step;
+
+            return values;
+        });
+    }
+
     void copy(const Tensor& src, const Tensor& dst) {
         ggml_backend_tensor_copy(*src, *dst);
     }
@@ -122,24 +137,8 @@ public:
         return rng_;
     }
 
-    Bindings bindings() {
-        auto bindings = bindings_;
-
-        for (auto it = std::begin(bindings); it != std::end(bindings); ) {
-            // Remove tensors that have no bound buffer
-            if ((*it->first)->buffer == nullptr) {
-                it = bindings.erase(it);
-                continue;
-            }
-
-            // Remove tensors that are bound only once
-            if (it->second.second)
-                bindings_.erase(it->first);
-
-            ++it;
-        }
-
-        return std::move(bindings);
+    const Bindings& bindings() const {
+        return bindings_;
     }
 
     Runtime(const Runtime&) = delete;

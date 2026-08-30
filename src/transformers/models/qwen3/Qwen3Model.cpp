@@ -123,8 +123,7 @@ Tensor Qwen3Model::forward(
     auto past_seen_tokens = 0;
 
     if (!position_ids) {
-
-        position_ids = Tensor::arange(*runtime.context(), 0, seq_len);
+        position_ids = runtime.arange(0.0f, static_cast<float>(seq_len));
         position_ids = *position_ids + (float)past_seen_tokens;
         position_ids = position_ids.value().unsqueeze(0);
     }

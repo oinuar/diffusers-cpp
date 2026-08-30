@@ -8,12 +8,11 @@
 #include <ggml.h>
 #include <gguf.h>
 
-class Runtime;
-class Allocator;
+class Context;
 
 class GGUFLoaderVisitor : public Visitor {
 public:
-    GGUFLoaderVisitor(Runtime& runtime, const std::filesystem::path& path, Allocator* allocator = nullptr);
+    GGUFLoaderVisitor(Context& context, const std::filesystem::path& path);
     ~GGUFLoaderVisitor();
 
     virtual void visit(Parameter& parameter, std::vector<std::string> path);
@@ -25,9 +24,8 @@ public:
     }
 
 private:
-    Runtime& runtime_;
+    Context& context_;
     gguf_context* gguf_ctx_;
     std::shared_ptr<std::ifstream> file_;
     std::unordered_map<std::string, size_t> lookup_;
-    Allocator* allocator_;
 };

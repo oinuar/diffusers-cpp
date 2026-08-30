@@ -1,6 +1,6 @@
 #include "transformers/models/qwen3/Qwen3RotaryEmbedding.hpp"
 #include "transformers/models/qwen3/Qwen3Config.hpp"
-#include "ggml/Runtime.hpp"
+#include "ggml/Context.hpp"
 
 Qwen3RotaryEmbedding::Qwen3RotaryEmbedding(const Qwen3Config& config)
     : head_dim(config.head_dim), rope_theta(config.rope_theta)
@@ -8,7 +8,7 @@ Qwen3RotaryEmbedding::Qwen3RotaryEmbedding(const Qwen3Config& config)
 }
 
 Tensor Qwen3RotaryEmbedding::forward(
-    Runtime& runtime,
+    Context& context,
     Tensor x,
     Tensor position_ids
 ) {
@@ -21,7 +21,7 @@ Tensor Qwen3RotaryEmbedding::forward(
         position_ids = position_ids.flatten();
 
     auto rope = ggml_rope_ext(
-        *runtime.context(),
+        *context,
         *x,
         *position_ids,
         nullptr,             // freq_factors
@@ -33,5 +33,5 @@ Tensor Qwen3RotaryEmbedding::forward(
         0.0f, 1.0f, 0.0f, 0.0f // ext_factor, attn_factor=1.0, beta_fast, beta_slow
     );
 
-    return Tensor(*runtime.context(), rope, x.shape());
+    return Tensor(*context, rope, x.shape());
 }

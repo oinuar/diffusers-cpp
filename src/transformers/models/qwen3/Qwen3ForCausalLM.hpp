@@ -11,9 +11,9 @@ class Qwen3ForCausalLM : public Module {
 public:
     Qwen3ForCausalLM(const Qwen3Config& config);
 
-    static Qwen3ForCausalLM from_pretrained(Runtime& runtime, Qwen3Config&& config, const std::filesystem::path& path);
+    static Qwen3ForCausalLM from_pretrained(Context& context, Qwen3Config&& config, const std::filesystem::path& path);
 
-    Tensor forward(Runtime& runtime, 
+    Tensor forward(Context& context, 
                    std::optional<Tensor> input_ids = std::nullopt, 
                    std::optional<Tensor> attention_mask = std::nullopt,
                    std::optional<Tensor> position_ids = std::nullopt,

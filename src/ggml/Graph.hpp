@@ -1,8 +1,8 @@
 #pragma once
 
 #include "ggml/Tensor.hpp"
-#include "ggml/Runtime.hpp"
-#include "ggml/Allocator.hpp"
+#include "ggml/Context.hpp"
+#include "ggml/Scheduler.hpp"
 #include <ggml.h>
 #include <ggml-backend.h>
 #include <vector>
@@ -11,23 +11,10 @@
 
 class Graph {
 public:
-    Graph(Runtime& runtime, std::vector<Tensor>&& outputs, Allocator* allocator = nullptr)
-        : runtime_(runtime),
-          gf_(ggml_new_graph_custom(*runtime.context(), runtime.scheduler().capacity(), false)),
-          outputs_(std::move(outputs)),
-          views_()
+    Graph(Scheduler& scheduler, Context& context, std::vector<Tensor>&& outputs, size_t capacity = GGML_DEFAULT_GRAPH_SIZE)
+        : scheduler_(scheduler), context_(context), gf_(ggml_new_graph_custom(*context_, context_.capacity(), false)), outputs_(std::move(outputs)), views_()
     {
         for (auto& tensor : outputs_) {
-            // Relocate tensors to given allocator if required
-            if (allocator != nullptr && !allocator->contains(tensor)) {
-                auto leaf = Tensor::empty(*runtime.context(), tensor.shape(), tensor.dtype(), allocator);
-
-                ggml_build_forward_expand(gf_, *tensor.copy_to(leaf));
-
-                tensor = leaf;
-                continue;
-            }
-
             // Materialize tensor if needed
             if (!tensor.is_contiguous())
                 tensor = tensor.contiguous();
@@ -58,31 +45,26 @@ public:
             // Pure view of a leaf: nothing to compute. Keep the leaf only so
             // the scheduler allocates it; the view nodes share its data.
             if (is_noop_view(pure_view_root->op)) {
-                if (allocator == nullptr)
-                    ggml_set_output(pure_view_root);
-
+                ggml_set_output(pure_view_root);
                 ggml_build_forward_expand(gf_, pure_view_root);
                 continue;
             }
 
-            // Contains a compute op: keep the full graph so the compute nodes run.
-            // Set output flag if allocator is not given to
-            // keep tensor allocated by the scheduler
-            if (allocator == nullptr)
-                ggml_set_output(*tensor);
-
+            ggml_set_output(*tensor);
             ggml_build_forward_expand(gf_, *tensor);
         }
     }
 
-    Graph(Graph&& other) : runtime_(other.runtime_), gf_(other.gf_), outputs_(std::move(other.outputs_)) {
+    Graph(Graph&& other)
+        : scheduler_(other.scheduler_), context_(other.context_), gf_(other.gf_), outputs_(std::move(other.outputs_))
+    {
         other.gf_ = nullptr;
     }
 
-    Runtime::Bindings allocate() {
-        ggml_backend_sched_reset(*runtime_.scheduler());
+    void allocate() {
+        ggml_backend_sched_reset(*scheduler_);
         
-        if (!ggml_backend_sched_alloc_graph(*runtime_.scheduler(), gf_))
+        if (!ggml_backend_sched_alloc_graph(*scheduler_, gf_))
             throw std::runtime_error("Graph allocation failed");
 
         // The allocator only initializes the buffer/data pointers of views it
@@ -92,32 +74,18 @@ public:
             if ((*it)->buffer == nullptr && (*it)->view_src->buffer != nullptr)
                 ggml_backend_view_init(*it);
         }
-
-        auto bindings = runtime_.bindings();
-
-        for (auto it = std::begin(bindings); it != std::end(bindings); ) {
-            // Remove tensors that have no bound buffer in this graph
-            if ((*it->first)->buffer == nullptr) {
-                it = bindings.erase(it);
-                continue;
-            }
-
-            // Unbind tensors that are bound only once
-            if (it->second.second)
-                runtime_.unbind(it->first);
-
-            ++it;
-        }
-
-        return std::move(bindings);
     }
 
     ggml_cgraph* operator *() {
         return gf_;
     }
 
-    Runtime& runtime() {
-        return runtime_;
+    Context& context() {
+        return context_;
+    }
+
+    Scheduler& scheduler() {
+        return scheduler_;
     }
 
     std::vector<Tensor>& outputs() {
@@ -129,7 +97,8 @@ public:
     Graph& operator =(Graph&&) = delete;
 
 private:
-    Runtime& runtime_;
+    Scheduler& scheduler_;
+    Context& context_;
     ggml_cgraph* gf_;
     std::vector<Tensor> outputs_;
     std::vector<ggml_tensor*> views_;

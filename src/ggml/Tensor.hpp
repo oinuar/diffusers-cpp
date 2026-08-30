@@ -9,8 +9,6 @@
 #include <optional>
 #include <ggml.h>
 
-class Allocator;
-
 class Tensor {
 public:
     template<typename T>
@@ -217,12 +215,8 @@ public:
     }
 
     /** @brief Creates an uninitialized tensor with the given shape and type. */
-    template <typename T> static Tensor empty(
-        ggml_context* ctx,
-        const Shape& shape,
-        Allocator* allocator = nullptr)
-    {
-        return empty(ctx, shape, DType<T>::value, allocator);
+    template <typename T> static Tensor empty(ggml_context* ctx, const Shape& shape) {
+        return empty(ctx, shape, DType<T>::value);
     }
 
     /** @brief Creates a scalar tensor filled with the given value. */
@@ -233,7 +227,7 @@ public:
     }
 
     /** @brief Creates an uninitialized tensor with the given shape and type. */
-    static Tensor empty(ggml_context* ctx, const Shape& shape, ggml_type type, Allocator* allocator = nullptr);
+    static Tensor empty(ggml_context* ctx, const Shape& shape, ggml_type type);
 
     /** @brief Creates a filled tensor with the given value, shape and type. */
     static Tensor full(

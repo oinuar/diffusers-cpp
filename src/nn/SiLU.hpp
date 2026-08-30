@@ -1,11 +1,11 @@
 #pragma once
 
 #include "nn/Module.hpp"
-#include "ggml/Runtime.hpp"
+#include "ggml/Context.hpp"
 
 class SiLU : public Module {
 public:
-    Tensor forward(Runtime& runtime, Tensor x) {
-        return Tensor(*runtime.context(), ggml_silu(*runtime.context(), *x), x.shape());
+    Tensor forward(Context& context, Tensor x) {
+        return Tensor(*context, ggml_silu(*context, *x), x.shape());
     }
 };

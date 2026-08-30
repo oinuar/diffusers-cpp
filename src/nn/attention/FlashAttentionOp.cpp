@@ -1,8 +1,8 @@
 #include "nn/attention/FlashAttentionOp.hpp"
-#include "ggml/Runtime.hpp"
+#include "ggml/Context.hpp"
 
 Tensor FlashAttentionOp::operator ()(
-    Runtime& runtime,
+    Context& context,
     Tensor q,
     Tensor k,
     Tensor v,
@@ -78,9 +78,9 @@ Tensor FlashAttentionOp::operator ()(
      * the output of ggml_flash_attn_ext().
      */
     auto attn = Tensor(
-        *runtime.context(),
+        *context,
         ggml_flash_attn_ext(
-            *runtime.context(),
+            *context,
             *q,
             *k,
             *v,

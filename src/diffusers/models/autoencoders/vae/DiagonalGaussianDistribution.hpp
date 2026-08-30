@@ -2,13 +2,13 @@
 
 #include "ggml/Tensor.hpp"
 
-class Runtime;
+class Context;
 
 class DiagonalGaussianDistribution {
 public:
-    DiagonalGaussianDistribution(Runtime& runtime, Tensor parameters, bool deterministic = false);
+    DiagonalGaussianDistribution(Context& context, Tensor parameters, bool deterministic = false);
 
-    Tensor sample(Runtime& runtime);
+    Tensor sample(Context& context);
 
     Tensor mode() const {
         return mean_;

@@ -9,7 +9,7 @@ public:
     Qwen3RotaryEmbedding(const Qwen3Config& config);
 
     Tensor forward(
-        Runtime& runtime,
+        Context& context,
         Tensor x,
         Tensor position_ids
     );

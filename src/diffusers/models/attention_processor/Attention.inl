@@ -65,7 +65,7 @@ Attention<AttnOp>::Attention(
 
 template <class AttnOp>
 Tensor Attention<AttnOp>::forward(
-    Runtime& runtime,
+    Context& context,
     Tensor hidden_states
 )
 {
@@ -87,7 +87,7 @@ Tensor Attention<AttnOp>::forward(
             std::static_pointer_cast<GroupNorm>(
                 modules["group_norm"])
             ->forward(
-                runtime,
+                context,
                 hidden_states
             );
     }
@@ -132,7 +132,7 @@ Tensor Attention<AttnOp>::forward(
         std::static_pointer_cast<Linear>(
             modules["to_q"])
         ->forward(
-            runtime,
+            context,
             hidden_states
         );
 
@@ -141,7 +141,7 @@ Tensor Attention<AttnOp>::forward(
         std::static_pointer_cast<Linear>(
             modules["to_k"])
         ->forward(
-            runtime,
+            context,
             hidden_states
         );
 
@@ -150,7 +150,7 @@ Tensor Attention<AttnOp>::forward(
         std::static_pointer_cast<Linear>(
             modules["to_v"])
         ->forward(
-            runtime,
+            context,
             hidden_states
         );
 
@@ -184,7 +184,7 @@ Tensor Attention<AttnOp>::forward(
 
     auto out =
         attention_backend(
-            runtime,
+            context,
             q,
             k,
             v
@@ -201,7 +201,7 @@ Tensor Attention<AttnOp>::forward(
 
     auto to_out = std::static_pointer_cast<ModuleList>(modules["to_out"]);
 
-    out = std::static_pointer_cast<Linear>((*to_out)[0])->forward(runtime, out);
+    out = std::static_pointer_cast<Linear>((*to_out)[0])->forward(context, out);
 
     if (is_4d) {
 

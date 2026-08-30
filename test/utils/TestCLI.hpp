@@ -21,43 +21,52 @@ public:
         ggml_log_set([](ggml_log_level, const char* text, void*) { std::cerr << text; }, nullptr);
 
         ggml_backend_load_all();
-        
+
+// On Meta device + weight buffer, failing
+#if 0
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
         MetaDevice meta({*cpu, *cpu});
         Backend meta_backend(meta);
         Backend cpu_backend(cpu);
         Scheduler scheduler({&meta_backend, &cpu_backend}, get_graph_size());
-        Context context(scheduler.capacity());
-        Runtime runtime(scheduler, context);
+        Context context(get_graph_size());
 
-        auto results = compute(runtime);
+        Allocator allocator(context, meta);
+#else
+        Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+        Backend cpu_backend(cpu);
+        Scheduler scheduler({&cpu_backend}, get_graph_size());
+        Context context(get_graph_size());
+#endif
+
+        auto results = compute(scheduler, context);
 
         for (auto& tensor : results) {
             switch (tensor.dtype()) {
             case Tensor::DType<float>::value:
             {
-                auto data = runtime.read<float>(tensor);
+                auto data = context.read<float>(tensor);
                 print_tensor_like(data, tensor.shape());
                 break;
             }
 
             case Tensor::DType<int8_t>::value:
             {
-                auto data = runtime.read<int8_t>(tensor);
+                auto data = context.read<int8_t>(tensor);
                 print_tensor_like(data, tensor.shape());
                 break;
             }
 
             case Tensor::DType<int16_t>::value:
             {
-                auto data = runtime.read<int16_t>(tensor);
+                auto data = context.read<int16_t>(tensor);
                 print_tensor_like(data, tensor.shape());
                 break;
             }
 
             case Tensor::DType<int32_t>::value:
             {
-                auto data = runtime.read<int32_t>(tensor);
+                auto data = context.read<int32_t>(tensor);
                 print_tensor_like(data, tensor.shape());
                 break;
             }
@@ -70,7 +79,7 @@ public:
         return EXIT_SUCCESS;
     }
 
-    virtual std::vector<Tensor> compute(Runtime& runtime, Allocator* allocator = nullptr) = 0;
+    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator* allocator = nullptr) = 0;
 
     virtual size_t get_graph_size() const {
         return GGML_DEFAULT_GRAPH_SIZE;
@@ -104,15 +113,15 @@ protected:
 public:
     class CreateParametersVisitor : public Visitor {
     public:
-        CreateParametersVisitor(Runtime& runtime, const ArgumentParser& args, Allocator* allocator = nullptr, const std::string& prefix = "")
-            : runtime_(runtime), args_(args), prefix_(prefix), allocator_(allocator)
+        CreateParametersVisitor(Context& context, const ArgumentParser& args, const std::string& prefix = "")
+            : context_(context), args_(args), prefix_(prefix)
         {}
 
         virtual void visit(Parameter& parameter, std::vector<std::string> path) {
             auto joined_path = join_path(path, prefix_);
 
             auto tensor_value = args_.get_one<std::string>(joined_path);
-            ArgumentParser::parser<Tensor> parser(runtime_, allocator_);
+            ArgumentParser::parser<Tensor> parser(context_);
             Tensor tensor;
 
             // Read tensor value from file
@@ -136,16 +145,10 @@ public:
             parameter.set(tensor);
         }
 
-        void allocate() {
-            if (allocator_ != nullptr)
-                allocator_->allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-        }
-
     private:
-        Runtime& runtime_;
+        Context& context_;
         const ArgumentParser& args_;
         std::string prefix_;
-        Allocator* allocator_;
         
         static std::string join_path(const std::vector<std::string>& path, const std::string& prefix = "") {
             std::string seed("--param");

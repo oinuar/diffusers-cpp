@@ -3,11 +3,11 @@
 #include "ggml/Tensor.hpp"
 #include <optional>
 
-class Runtime;
+class Context;
 
 struct FlashAttentionOp {
     Tensor operator ()(
-        Runtime& runtime,
+        Context& context,
         Tensor query,
         Tensor key,
         Tensor value,

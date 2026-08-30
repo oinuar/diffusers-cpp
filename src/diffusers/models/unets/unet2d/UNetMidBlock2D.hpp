@@ -18,7 +18,7 @@ public:
         float output_scale_factor = 1.0f
     );
 
-    Tensor forward(Runtime& runtime, Tensor sample, std::optional<Tensor> temb = std::nullopt);
+    Tensor forward(Context& context, Tensor sample, std::optional<Tensor> temb = std::nullopt);
 
 private:
     bool add_attention_;

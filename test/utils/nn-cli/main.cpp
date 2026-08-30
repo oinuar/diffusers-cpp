@@ -17,37 +17,37 @@ class TestNnCLI : public TestCLI {
 public:
     TestNnCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Runtime& runtime, Allocator* allocator) {
+    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator* allocator) {
 
         if (args_.get(0) == "Linear") {
             auto in_features = args_.get_one<int64_t>("--in_features");
             auto out_features = args_.get_one<int64_t>("--out_features");
             auto bias = args_.get_optional<bool>("--bias").value_or(true);
-            auto x = args_.get_one<Tensor>("--x", {runtime});
+            auto x = args_.get_one<Tensor>("--x", {context});
 
             Linear model(in_features, out_features, bias);
 
-            CreateParametersVisitor create_parameters(runtime, args_, allocator);
+            CreateParametersVisitor create_parameters(context, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
-            create_parameters.allocate();
 
-            auto output = model.forward(runtime, x);
 
-            Graph graph(runtime, {output});
+            auto output = model.forward(context, x);
+
+            Graph graph(scheduler, context, {output});
             Computation computation(graph);
             return computation().results();
         }
         
         if (args_.get(0) == "SiLU") {
-            auto x = args_.get_one<Tensor>("--x", {runtime});
+            auto x = args_.get_one<Tensor>("--x", {context});
 
             SiLU model;
 
-            auto output = model.forward(runtime, x);
+            auto output = model.forward(context, x);
 
-            Graph graph(runtime, {output});
+            Graph graph(scheduler, context, {output});
             Computation computation(graph);
             return computation().results();
         }
@@ -56,19 +56,19 @@ public:
             auto dim = args_.get_one<int64_t>("--dim");
             auto eps = args_.get_optional<float>("--eps").value_or(1e-5f);
             auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
-            auto x = args_.get_one<Tensor>("--x", {runtime});
+            auto x = args_.get_one<Tensor>("--x", {context});
 
             RMSNorm model(dim, eps, elementwise_affine);
 
-            CreateParametersVisitor create_parameters(runtime, args_, allocator);
+            CreateParametersVisitor create_parameters(context, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
-            create_parameters.allocate();
 
-            auto output = model.forward(runtime, x);
 
-            Graph graph(runtime, {output});
+            auto output = model.forward(context, x);
+
+            Graph graph(scheduler, context, {output});
             Computation computation(graph);
             return computation().results();
         }
@@ -78,19 +78,19 @@ public:
             auto eps = args_.get_optional<float>("--eps").value_or(1e-5f);
             auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
             auto bias = args_.get_optional<bool>("--bias").value_or(true);
-            auto x = args_.get_one<Tensor>("--x", {runtime});
+            auto x = args_.get_one<Tensor>("--x", {context});
 
             LayerNorm model(dim, eps, elementwise_affine, bias);
 
-            CreateParametersVisitor create_parameters(runtime, args_, allocator);
+            CreateParametersVisitor create_parameters(context, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
-            create_parameters.allocate();
 
-            auto output = model.forward(runtime, x);
 
-            Graph graph(runtime, {output});
+            auto output = model.forward(context, x);
+
+            Graph graph(scheduler, context, {output});
             Computation computation(graph);
             return computation().results();
         }
@@ -101,19 +101,19 @@ public:
             auto eps = args_.get_optional<float>("--eps").value_or(1e-5f);
             auto affine = args_.get_optional<bool>("--affine").value_or(true);
             auto bias = args_.get_optional<bool>("--bias").value_or(true);
-            auto input = args_.get_one<Tensor>("--input", {runtime});
+            auto input = args_.get_one<Tensor>("--input", {context});
 
             GroupNorm model(num_groups, num_channels, eps, affine, bias);
 
-            CreateParametersVisitor create_parameters(runtime, args_, allocator);
+            CreateParametersVisitor create_parameters(context, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
-            create_parameters.allocate();
 
-            auto output = model.forward(runtime, input);
 
-            Graph graph(runtime, {output});
+            auto output = model.forward(context, input);
+
+            Graph graph(scheduler, context, {output});
             Computation computation(graph);
             return computation().results();
         }
@@ -125,34 +125,34 @@ public:
             auto stride = args_.get_optional<int64_t>("--stride").value_or(1);
             auto padding = args_.get_optional<int64_t>("--padding").value_or(0);
             auto bias = args_.get_optional<bool>("--bias").value_or(true);
-            auto x = args_.get_one<Tensor>("--x", {runtime});
+            auto x = args_.get_one<Tensor>("--x", {context});
 
             Conv2d model(in_channels, out_channels, kernel_size, stride, padding, bias);
 
-            CreateParametersVisitor create_parameters(runtime, args_, allocator);
+            CreateParametersVisitor create_parameters(context, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
-            create_parameters.allocate();
 
-            auto output = model.forward(runtime, x);
 
-            Graph graph(runtime, {output});
+            auto output = model.forward(context, x);
+
+            Graph graph(scheduler, context, {output});
             Computation computation(graph);
             return computation().results();
         }
 
         if (args_.get(0) == "FlashAttention") {
-            auto q = args_.get_one<Tensor>("--q", {runtime});
-            auto k = args_.get_one<Tensor>("--k", {runtime});
-            auto v = args_.get_one<Tensor>("--v", {runtime});
-            auto mask = args_.get_optional<Tensor>("--mask", {runtime});
+            auto q = args_.get_one<Tensor>("--q", {context});
+            auto k = args_.get_one<Tensor>("--k", {context});
+            auto v = args_.get_one<Tensor>("--v", {context});
+            auto mask = args_.get_optional<Tensor>("--mask", {context});
 
             FlashAttentionOp attention;
 
-            auto output = attention(runtime, q, k, v, mask);
+            auto output = attention(context, q, k, v, mask);
 
-            Graph graph(runtime, {output});
+            Graph graph(scheduler, context, {output});
             Computation computation(graph);
             return computation().results();
         }
@@ -161,19 +161,19 @@ public:
             auto num_embeddings = args_.get_one<int64_t>("--num_embeddings");
             auto embedding_dim = args_.get_one<int64_t>("--embedding_dim");
             auto padding_idx = args_.get_optional<int64_t>("--padding_idx");
-            auto input = args_.get_one<Tensor>("--input", {runtime});
+            auto input = args_.get_one<Tensor>("--input", {context});
 
             Embedding model(num_embeddings, embedding_dim, padding_idx);
 
-            CreateParametersVisitor create_parameters(runtime, args_, allocator);
+            CreateParametersVisitor create_parameters(context, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
-            create_parameters.allocate();
 
-            auto output = model.forward(runtime, input);
 
-            Graph graph(runtime, {output});
+            auto output = model.forward(context, input);
+
+            Graph graph(scheduler, context, {output});
             Computation computation(graph);
             return computation().results();
         }

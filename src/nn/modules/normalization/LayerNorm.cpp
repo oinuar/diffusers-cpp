@@ -1,6 +1,6 @@
 #include "nn/modules/normalization/LayerNorm.hpp"
 #include "nn/Parameter.hpp"
-#include "ggml/Runtime.hpp"
+#include "ggml/Context.hpp"
 
 LayerNorm::LayerNorm(int64_t dim, float eps, bool elementwise_affine, bool bias)
     : eps_(eps), elementwise_affine_(elementwise_affine), bias_(bias)
@@ -13,8 +13,8 @@ LayerNorm::LayerNorm(int64_t dim, float eps, bool elementwise_affine, bool bias)
     }
 }
 
-Tensor LayerNorm::forward(Runtime& runtime, Tensor x) {
-    x = Tensor(*runtime.context(), ggml_norm(*runtime.context(), *x, eps_), x.shape());
+Tensor LayerNorm::forward(Context& context, Tensor x) {
+    x = Tensor(*context, ggml_norm(*context, *x, eps_), x.shape());
 
     if (elementwise_affine_) {
         auto weight = std::static_pointer_cast<Parameter>(modules["weight"]);

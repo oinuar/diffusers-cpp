@@ -12,7 +12,7 @@ public:
         bool bias = true
     );
 
-    Tensor forward(Runtime& runtime, Tensor input);
+    Tensor forward(Context& context, Tensor input);
 
 private:
     int64_t num_groups_;

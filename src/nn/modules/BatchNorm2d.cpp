@@ -16,7 +16,7 @@ BatchNorm2d::BatchNorm2d(int64_t num_features, float eps, float momentum)
     modules["num_batches_tracked"] = std::make_shared<Parameter>(Tensor::Shape({1}));
 }
 
-Tensor BatchNorm2d::forward(Runtime& runtime, Tensor x) {
+Tensor BatchNorm2d::forward(Context& context, Tensor x) {
     auto mean = std::static_pointer_cast<Parameter>(modules["running_mean"])->forward();
     auto var = std::static_pointer_cast<Parameter>(modules["running_var"])->forward();
 

@@ -109,7 +109,7 @@ Flux2Transformer2DModel::Flux2Transformer2DModel(
 }
 
 Tensor Flux2Transformer2DModel::forward(
-    Runtime& runtime,
+    Context& context,
     Tensor hidden_states,
     Tensor encoder_hidden_states,
     Tensor timestep,
@@ -136,15 +136,15 @@ Tensor Flux2Transformer2DModel::forward(
 
     auto time_guidance_embed = std::static_pointer_cast<Flux2TimestepGuidanceEmbeddings>(modules["time_guidance_embed"]);
 
-    auto temb = time_guidance_embed->forward(runtime, timestep, guidance);
+    auto temb = time_guidance_embed->forward(context, timestep, guidance);
 
     auto double_stream_modulation_img = std::static_pointer_cast<Flux2Modulation>(modules["double_stream_modulation_img"]);
     auto double_stream_modulation_txt = std::static_pointer_cast<Flux2Modulation>(modules["double_stream_modulation_txt"]);
     auto single_stream_modulation = std::static_pointer_cast<Flux2Modulation>(modules["single_stream_modulation"]);
 
-    auto double_stream_mod_img = double_stream_modulation_img->forward(runtime, temb);
-    auto double_stream_mod_txt = double_stream_modulation_txt->forward(runtime, temb);
-    auto single_stream_mod = single_stream_modulation->forward(runtime, temb);
+    auto double_stream_mod_img = double_stream_modulation_img->forward(context, temb);
+    auto double_stream_mod_txt = double_stream_modulation_txt->forward(context, temb);
+    auto single_stream_mod = single_stream_modulation->forward(context, temb);
 
     // TODO: KV extract mode: create cache and blend modulations for ref tokens
 
@@ -152,8 +152,8 @@ Tensor Flux2Transformer2DModel::forward(
     auto x_embedder = std::static_pointer_cast<Linear>(modules["x_embedder"]);
     auto context_embedder = std::static_pointer_cast<Linear>(modules["context_embedder"]);
 
-    hidden_states = x_embedder->forward(runtime, hidden_states);
-    encoder_hidden_states = context_embedder->forward(runtime, encoder_hidden_states);
+    hidden_states = x_embedder->forward(context, hidden_states);
+    encoder_hidden_states = context_embedder->forward(context, encoder_hidden_states);
 
     // 3. Calculate RoPE embeddings from image and text tokens
     if (img_ids.ndim() == 3)
@@ -181,7 +181,7 @@ Tensor Flux2Transformer2DModel::forward(
         );
 
         auto [fwd_encoder_hidden_states, fwd_hidden_states] = block->forward(
-            runtime,
+            context,
             hidden_states,
             encoder_hidden_states,
             double_stream_mod_img,
@@ -208,7 +208,7 @@ Tensor Flux2Transformer2DModel::forward(
         );
 
         auto [fwd_hidden_states, _] = block->forward(
-            runtime,
+            context,
             hidden_states,
             std::nullopt,
             single_stream_mod,
@@ -226,8 +226,8 @@ Tensor Flux2Transformer2DModel::forward(
     auto norm_out = std::static_pointer_cast<AdaLayerNormContinuous<>>(modules["norm_out"]);
     auto proj_out = std::static_pointer_cast<Linear>(modules["proj_out"]);
 
-    hidden_states = norm_out->forward(runtime, hidden_states, temb);
-    auto output = proj_out->forward(runtime, hidden_states);
+    hidden_states = norm_out->forward(context, hidden_states, temb);
+    auto output = proj_out->forward(context, hidden_states);
 
     return output;
 }

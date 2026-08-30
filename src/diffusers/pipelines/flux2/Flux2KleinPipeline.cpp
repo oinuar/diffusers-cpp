@@ -4,7 +4,7 @@
 #include "nn/modules/BatchNorm2d.hpp"
 #include "ggml/GGUFLoaderVisitor.hpp"
 #include "ggml/Allocator.hpp"
-#include "ggml/Runtime.hpp"
+#include "ggml/Context.hpp"
 #include "ggml/Scheduler.hpp"
 #include "ggml/Computation.hpp"
 #include "transformers/models/qwen3/Qwen3Config.hpp"
@@ -18,13 +18,7 @@
 #include <chrono>
 #include <optional>
 
-Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(
-    Runtime& runtime,
-    const std::filesystem::path& path,
-    Allocator* vae_allocator,
-    Allocator* text_encoder_allocator,
-    Allocator* transformer_allocator
-) {
+Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(Context& context, const std::filesystem::path& path) {
     // 1. Initialize models from config
     Qwen3ForCausalLM text_encoder(Qwen3Config::from_file(path / "text_encoder" / "config.json"));
     Flux2Transformer2DModel transformer(Flux2Transformer2DModel::Config::from_file(path / "transformer" / "config.json"));
@@ -32,7 +26,7 @@ Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(
 
     // 2. Load VAE
     {
-        GGUFLoaderVisitor vae_loader(runtime, path / "vae", vae_allocator);
+        GGUFLoaderVisitor vae_loader(context, path / "vae");
         RethrowVisitor vae_visitor(vae_loader);
         vae.accept(vae_visitor);
         vae_visitor.rethrow();
@@ -41,7 +35,7 @@ Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(
 
     // 3. Load text encoder
     {
-        GGUFLoaderVisitor text_encoder_loader(runtime, path / "text_encoder", text_encoder_allocator);
+        GGUFLoaderVisitor text_encoder_loader(context, path / "text_encoder");
         RethrowVisitor text_encoder_visitor(text_encoder_loader);
         text_encoder.accept(text_encoder_visitor);
         text_encoder_visitor.rethrow();
@@ -50,22 +44,17 @@ Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(
 
     // 4. Load transformer
     {
-        GGUFLoaderVisitor transformer_loader(runtime, path / "transformer", transformer_allocator);
+        GGUFLoaderVisitor transformer_loader(context, path / "transformer");
         RethrowVisitor transformer_visitor(transformer_loader);
         transformer.accept(transformer_visitor);
         transformer_visitor.rethrow();
         transformer_loader.validate();
-    }
+    };
 
-    // 5. Allocate buffers
-    vae_allocator->allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-    text_encoder_allocator->allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-    transformer_allocator->allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-
-    // 6. Load tokenizer
+    // 5. Load tokenizer
     auto tokenizer = Qwen2TokenizerFast::from_pretrained(path / "tokenizer");
 
-    // 7. Construct the pipeline
+    // 6. Construct the pipeline
     Flux2KleinPipeline pipeline(
         std::move(transformer),
         std::move(vae),
@@ -96,7 +85,7 @@ Flux2KleinPipeline::Flux2KleinPipeline(
 {
 }
 
-std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Runtime& runtime, Allocator* allocator, int batch, const std::string& prompt, size_t max_sequence_length) {
+std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Context& context, int batch, const std::string& prompt, size_t max_sequence_length) {
     std::vector<int> mask;
     size_t num_real_tokens;
 
@@ -109,24 +98,24 @@ std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Runtime& runtime, A
 
     auto tokens = tokenizer_.encode(text, max_sequence_length, &mask, &num_real_tokens);
 
-    auto input_ids = runtime.create<int32_t>({batch, (int64_t)tokens.size()},
+    auto input_ids = context.create<int32_t>({batch, (int64_t)tokens.size()},
         [=](std::mt19937&) {
             std::vector<int32_t> ids(size_t(batch) * tokens.size());
             for (auto b=0; b<batch; ++b) std::copy(tokens.begin(), tokens.end(), ids.begin() + b * tokens.size());
             return std::move(ids);
-        }, allocator);
+        });
 
-    auto attention_mask = runtime.create<float>({batch, (int64_t)mask.size()},
+    auto attention_mask = context.create<float>({batch, (int64_t)mask.size()},
         [=](std::mt19937&) {
             std::vector<float> m(size_t(batch) * mask.size());
             for (auto b=0; b<batch; ++b) std::copy(mask.begin(), mask.end(), m.begin() + b * mask.size());
             return std::move(m);
-        }, allocator);
+        });
 
     std::vector<Tensor> hidden_states;
 
     text_encoder_.forward(
-        runtime,
+        context,
         input_ids,
         attention_mask,
         std::nullopt, // position_ids
@@ -163,7 +152,7 @@ std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Runtime& runtime, A
     //  w = torch.arange(1)
     //  l = torch.arange(L)
     //  coords = torch.cartesian_prod(t, h, w, l)
-    auto txt_ids = runtime.create<float>({batch, seq_len, 4},
+    auto txt_ids = context.create<float>({batch, seq_len, 4},
         [=](std::mt19937&) {
             std::vector<float> ids(size_t(batch) * seq_len * 4, 0.0f);
             for (int b = 0; b < batch; ++b) {
@@ -176,15 +165,15 @@ std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Runtime& runtime, A
                 }
             }
             return std::move(ids);
-        }, allocator);
+        });
 
     return {prompt_embeds, txt_ids};
 }
 
 // 4D img_ids: (B, N, 4) -> [0, y, x, 0]
-static Tensor prepare_img_ids(Runtime& runtime, Allocator* allocator, int batch, int packed_h, int packed_w) {
+static Tensor prepare_img_ids(Context& context, int batch, int packed_h, int packed_w) {
     int64_t N = int64_t(packed_h) * packed_w;
-    return runtime.create<float>({batch, N, 4},
+    return context.create<float>({batch, N, 4},
         [=](std::mt19937&) {
             std::vector<float> ids(size_t(batch) * N * 4, 0.0f);
             for (int b = 0; b < batch; ++b) {
@@ -199,11 +188,11 @@ static Tensor prepare_img_ids(Runtime& runtime, Allocator* allocator, int batch,
                 }
             }
             return std::move(ids);
-        }, allocator);
+        });
 }
 
 // 4D image_latent_ids for img2img: (B, N_ref, 4) -> [scale + i*scale, y, x, 0]
-static Tensor prepare_image_ids(Runtime& runtime, Allocator* allocator, int batch, const std::vector<Image>& images, int vae_multiple) {
+static Tensor prepare_image_ids(Context& context, int batch, const std::vector<Image>& images, int vae_multiple) {
     int64_t total_tokens = 0;
 
     for (const auto& image : images) {
@@ -214,7 +203,7 @@ static Tensor prepare_image_ids(Runtime& runtime, Allocator* allocator, int batc
             int64_t(packed_h) * packed_w;
     }
 
-    return runtime.create<float>(
+    return context.create<float>(
         {batch, total_tokens, 4},
         [=, &images](std::mt19937&) {
             std::vector<float> ids(
@@ -254,7 +243,7 @@ static Tensor prepare_image_ids(Runtime& runtime, Allocator* allocator, int batc
             }
 
             return ids;
-        }, allocator);
+        });
 }
 
 // Python compute_empirical_mu
@@ -271,17 +260,17 @@ static float compute_empirical_mu(int64_t image_seq_len, int num_steps) {
     return a * (float)num_steps + b;
 }
 
-static Tensor make_packed_latents(Runtime& runtime, Allocator& allocator, int batch, int packed_h, int packed_w, int num_latent_channels) {
+static Tensor make_packed_latents(Context& context, int batch, int packed_h, int packed_w, int num_latent_channels) {
     const int64_t token_dim = int64_t(num_latent_channels) * 4; // C * 4
     const size_t count = size_t(batch) * packed_h * packed_w * token_dim;
 
-    return runtime.create<float>({batch, int64_t(packed_h) * packed_w, token_dim},
+    return context.create<float>({batch, int64_t(packed_h) * packed_w, token_dim},
         [=](std::mt19937& rng) {
             std::vector<float> noise(count);
             std::normal_distribution<float> normal(0.0f, 1.0f);
             for (float& v : noise) v = normal(rng);
             return std::move(noise);
-        }, &allocator);
+        });
 }
 
 static std::vector<Image> latents_to_images(const std::vector<float>& data, int batch, int height, int width) {
@@ -311,7 +300,7 @@ static std::vector<Image> latents_to_images(const std::vector<float>& data, int 
     return std::move(images);
 }
 
-static Tensor image_to_tensor(Runtime& runtime, Allocator* allocator, const Image& img) {
+static Tensor image_to_tensor(Context& context, const Image& img) {
     const size_t width = img.width();
     const size_t height = img.height();
     const size_t channels = img.channels();
@@ -330,7 +319,7 @@ static Tensor image_to_tensor(Runtime& runtime, Allocator* allocator, const Imag
             "image_to_tensor(): pixel buffer size does not match image dimensions");
     }
 
-    return runtime.create<float>(
+    return context.create<float>(
         {1, 3, static_cast<int64_t>(height), static_cast<int64_t>(width)},
         [pixels, width, height](std::mt19937&) {
             const size_t plane = width * height;
@@ -361,7 +350,7 @@ static Tensor image_to_tensor(Runtime& runtime, Allocator* allocator, const Imag
             }
 
             return data;
-        }, allocator);
+        });
 }
 
 static Image preprocess_reference_image(const Image& image, int multiple, double target_area = 1024.0 * 1024.0) {
@@ -450,29 +439,27 @@ Tensor Flux2KleinPipeline::patchify_latents(Tensor latents, int channels, int pa
 }
 
 Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
-    Runtime& runtime,
+    Scheduler& scheduler,
+    Context& context,
     const std::string& prompt,
     size_t max_sequence_length,
     int batch,
     int packed_h,
     int packed_w,
-    std::vector<Image>& images,
-    Allocator* allocator
+    std::vector<Image>& images
 ) {
     auto vae_multiple = vae_.scale_factor() * 2;
 
     auto [prompt_embeds, txt_ids] =
         encode_prompt(
-            runtime,
-            allocator,
+            context,
             batch,
             prompt,
             max_sequence_length);
 
     auto img_ids =
         prepare_img_ids(
-            runtime,
-            allocator,
+            context,
             batch,
             packed_h,
             packed_w);
@@ -486,8 +473,8 @@ Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
 
         for (auto& img : images) {
             img = preprocess_reference_image(img, vae_multiple);
-            auto img_tensor = image_to_tensor(runtime, allocator, img);
-            auto dist = vae_.encode(runtime, img_tensor);
+            auto img_tensor = image_to_tensor(context, img);
+            auto dist = vae_.encode(context, img_tensor);
             auto mode = dist.mode(); // Shape: (B, C, H, W)
 
             auto packed_h = img.height() / vae_multiple;
@@ -518,7 +505,7 @@ Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
         // Repeat reference latents for num_images_per_prompt.
         image_latents_concat = repeat_batch(*image_latents_concat, batch);
 
-        image_latent_ids_concat = prepare_image_ids(runtime, allocator, batch, images, vae_multiple);
+        image_latent_ids_concat = prepare_image_ids(context, batch, images, vae_multiple);
     }
 
     std::vector<Tensor> outputs = {
@@ -533,7 +520,7 @@ Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
     if (image_latent_ids_concat)
         outputs.push_back(*image_latent_ids_concat);
 
-    Embeddings embeddings = { Graph(runtime, std::move(outputs), allocator) };
+    Embeddings embeddings = { Graph(scheduler, context, std::move(outputs)) };
 
     // This is not very nice, but Graph might relocate tensors so we cannot reference
     // tensors that may become stale.
@@ -552,7 +539,8 @@ Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
 }
 
 Graph Flux2KleinPipeline::make_denoise_graph(
-    Runtime& runtime,
+    Scheduler& scheduler,
+    Context& context,
     int batch,
     int packed_h,
     int packed_w,
@@ -574,11 +562,11 @@ Graph Flux2KleinPipeline::make_denoise_graph(
         latent_image_ids = Tensor::cat({img_ids, *image_latent_ids}, /*axis=*/1);
     }
 
-    auto timestep = runtime.value<float>({batch}, [batch, current_timestep](std::mt19937&) {
+    auto timestep = context.value<float>({batch}, [batch, current_timestep](std::mt19937&) {
         return std::vector<float>(batch, *current_timestep);
     });
 
-    auto noise_pred = transformer_.forward(runtime,
+    auto noise_pred = transformer_.forward(context,
         /*hidden_states=*/          latent_model_input,
         /*encoder_hidden_states=*/  prompt_embeds,
         /*timestep=*/               timestep / 1000.0f,
@@ -592,18 +580,19 @@ Graph Flux2KleinPipeline::make_denoise_graph(
     if (num_ref_tokens > 0)
         noise_pred = noise_pred[{Tensor::Slice::all(), Tensor::Slice::range(0, latents.shape()[1])}];
 
-    auto dt = runtime.value<float>({}, [current_dt](std::mt19937&) {
+    auto dt = context.value<float>({}, [current_dt](std::mt19937&) {
         return std::vector<float>{*current_dt};
     });
 
     // Integrate latents over dt
     auto next_latents = scheduler_.integrate(noise_pred, latents, dt);
 
-    return std::move(Graph(runtime, {next_latents}));
+    return std::move(Graph(scheduler, context, {next_latents}));
 }
 
 Graph Flux2KleinPipeline::make_decode_graph(
-    Runtime& runtime,
+    Scheduler& scheduler,
+    Context& context,
     int packed_h,
     int packed_w,
     Tensor latents
@@ -620,12 +609,12 @@ Graph Flux2KleinPipeline::make_decode_graph(
     auto z = unpatchify_latents(z_packed, vae_.latent_channels(), packed_h, packed_w);
 
     // 4. VAE decode
-    auto decoded = vae_.decode(runtime, z);    // (B, 3, H, W)
+    auto decoded = vae_.decode(context, z);    // (B, 3, H, W)
 
-    return std::move(Graph(runtime, {decoded}));
+    return std::move(Graph(scheduler, context, {decoded}));
 }
 
-std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& runtime, Allocator& allocator, GenerationOptions&& options) {
+std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Context& context, GenerationOptions&& options) {
     if (options.height % vae_.scale_factor() != 0 ||
         options.width % vae_.scale_factor() != 0)
         throw std::runtime_error("height/width must be divisible by VAE's scale factor");
@@ -670,24 +659,25 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& runtime, Allocator& 
         image_latents_concat,
         image_latent_ids_concat
     ] = std::move(make_embeddings_graph(
-        runtime,
+        scheduler,
+        context,
         options.prompt,
         options.max_sequence_length,
         batch,
         packed_h,
         packed_w,
-        options.images,
-        &allocator
+        options.images
     ));
 
     const int64_t token_dim = int64_t(vae_.latent_channels()) * 4; // C * 4
 
     auto latents = options.init_latents
-        ? runtime.create<float>({batch, int64_t(packed_h) * packed_w, token_dim}, [init_latents = std::move(*options.init_latents)](std::mt19937&) { return init_latents; }, &allocator)
-        : make_packed_latents(runtime, allocator, batch, packed_h, packed_w, vae_.latent_channels());
+        ? context.create<float>({batch, int64_t(packed_h) * packed_w, token_dim}, [init_latents = std::move(*options.init_latents)](std::mt19937&) { return init_latents; })
+        : make_packed_latents(context, batch, packed_h, packed_w, vae_.latent_channels());
 
     auto denoise_graph = std::move(make_denoise_graph(
-        runtime,
+        scheduler,
+        context,
         batch,
         packed_h,
         packed_w,
@@ -703,20 +693,18 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& runtime, Allocator& 
     ));
 
     auto decode_graph = std::move(make_decode_graph(
-        runtime,
+        scheduler,
+        context,
         packed_h,
         packed_w,
         latents
     ));
 
-    // 2. Allocate state buffer
-    allocator.allocate();
-
     // 3. Generate text embeddings and reference-image embeddings
     {
         progress.push("Preparing", 1 + options.images.size());
 
-        Computation computation(embeddings_graph, &progress);
+        Computation computation(embeddings_graph, {&context}, &progress);
 
         computation();
 
@@ -745,14 +733,14 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& runtime, Allocator& 
 
         progress.push("Denoising", schedule.size());
 
-        Computation computation(denoise_graph, &progress);
+        Computation computation(denoise_graph, {&context}, &progress);
 
         for (const auto& step : schedule) {
             timestep = step.timestep;
             dt = step.dt;
 
             // Assign latents <- latents+1
-            runtime.copy(computation().results().at(0), latents);
+            context.copy(computation().results().at(0), latents);
 
             progress.next();
         }
@@ -765,10 +753,10 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Runtime& runtime, Allocator& 
     {
         progress.push("Decoding", 1);
 
-        Computation computation(decode_graph, &progress);
+        Computation computation(decode_graph, {&context}, &progress);
 
         auto decoded = computation().results().at(0);
-        auto data = runtime.read<float>(decoded);
+        auto data = context.read<float>(decoded);
 
         images = std::move(latents_to_images(data, batch, target_height, target_width));
 

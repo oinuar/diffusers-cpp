@@ -1,6 +1,6 @@
 #include "nn/modules/conv/Conv2d.hpp"
 #include "nn/Parameter.hpp"
-#include "ggml/Runtime.hpp"
+#include "ggml/Context.hpp"
 
 Conv2d::Conv2d(
     int64_t in_channels,
@@ -33,7 +33,7 @@ Conv2d::Conv2d(
 }
 
 Tensor Conv2d::forward(
-    Runtime& runtime,
+    Context& context,
     Tensor x
 ) {
     auto weight =
@@ -43,7 +43,7 @@ Tensor Conv2d::forward(
 
 
     auto conv = ggml_conv_2d_direct(
-        *runtime.context(),
+        *context,
         *weight,
         *x,
         stride_,
@@ -69,7 +69,7 @@ Tensor Conv2d::forward(
 
 
     Tensor y(
-        *runtime.context(),
+        *context,
         conv,
         shape
     );

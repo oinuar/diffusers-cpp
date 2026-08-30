@@ -5,7 +5,7 @@ Qwen3RMSNorm::Qwen3RMSNorm(int64_t hidden_size, float eps) : eps(eps) {
     modules["weight"] = std::make_shared<Parameter>(Tensor::Shape({hidden_size}));
 }
 
-Tensor Qwen3RMSNorm::forward(Runtime& runtime, Tensor hidden_states) {
+Tensor Qwen3RMSNorm::forward(Context& context, Tensor hidden_states) {
     auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward();
     auto input_dtype = hidden_states.dtype();
     

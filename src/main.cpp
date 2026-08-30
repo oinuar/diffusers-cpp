@@ -16,9 +16,9 @@ int main() {
 
     auto gpus = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
     Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-    Backend meta_backend(gpus);
+    Backend gpus_backend(gpus);
     Backend cpu_backend(cpu);
-    Scheduler scheduler({&meta_backend, &cpu_backend}, 65536);
+    Scheduler scheduler({&gpus_backend, &cpu_backend}, 65536);
     Context context(65536);
     Runtime runtime(scheduler, context);
     Allocator weights_allocator(gpus.buffer_type());
@@ -26,7 +26,7 @@ int main() {
 
     auto pipeline = std::move(Flux2KleinPipeline::from_pretrained(runtime, "../utils/convert-model", &weights_allocator, &weights_allocator, &weights_allocator));
 
-    weights_allocator.allocate();
+    weights_allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
     Flux2KleinPipeline::GenerationOptions options;
     options.prompt = "a lovely cat";
@@ -35,7 +35,7 @@ int main() {
 
     auto images = pipeline(runtime, state_allocator, std::move(options));
 
-    images[0].save("test.png");
+    images[0].save("test2.png");
 }
 
 /*

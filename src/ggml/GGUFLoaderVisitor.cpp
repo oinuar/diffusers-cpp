@@ -160,8 +160,4 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
         }, /*once=*/true);
 
     parameter.set(tensor);
-
-    // TODO: This is separate responsibility because should work for all tensors, not just parameters
-    for (auto& backend : runtime_.scheduler().backends())
-        backend->device().visit(parameter, path);
 }

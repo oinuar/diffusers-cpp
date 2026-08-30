@@ -1,12 +1,11 @@
 #pragma once
 
-#include "nn/Visitor.hpp"
 #include <ggml-backend.h>
 #include <stdexcept>
 
 class Tensor;
 
-class Device : public Visitor {
+class Device {
 public:
     explicit Device(ggml_backend_dev_t device) : device_(device) {
         if (device_ == nullptr)
@@ -21,14 +20,6 @@ public:
 
     ggml_backend_buffer_type_t buffer_type() const {
         return ggml_backend_dev_buffer_type(device_);
-    }
-
-    virtual void split(const Tensor& tensor, int64_t dim) {
-        // Omit for singular device
-    }
-
-    virtual void mirror(const Tensor& tensor) {
-        // Omit for singular device
     }
 
 private:

@@ -9,6 +9,7 @@
 #include "diffusers/models/transformers/flux2/Flux2Transformer2DModel.hpp"
 #include "diffusers/schedulers/FlowMatchEulerDiscreteScheduler.hpp"
 #include <cstdint>
+#include <utility>
 #include <optional>
 #include <string>
 #include <vector>
@@ -104,6 +105,9 @@ public:
         Tensor img_ids;
         std::optional<Tensor> image_latents_concat;
         std::optional<Tensor> image_latent_ids_concat;
+        // (computed graph output, stable state-allocator destination) pairs
+        // to copy after `graph` runs. Empty when no state allocator was given.
+        //std::vector<std::pair<Tensor, Tensor>> copies;
     };
 
     Embeddings make_embeddings_graph(

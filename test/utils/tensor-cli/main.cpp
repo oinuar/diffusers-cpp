@@ -5,7 +5,7 @@ class TestTensorCLI : public TestCLI {
 public:
     TestTensorCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator* allocator) {
+    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator) {
 
         if (args_.get(0) == "contiguous") {
             auto self = args_.get_one<Tensor>("--this", {context});
@@ -14,8 +14,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -28,8 +27,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -42,8 +40,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -56,8 +53,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -72,8 +68,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -88,8 +83,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -103,8 +97,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -119,8 +112,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -134,8 +126,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -149,8 +140,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -164,8 +154,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -180,8 +169,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -196,8 +184,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -213,8 +200,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -228,8 +214,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -243,8 +228,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -259,8 +243,7 @@ public:
 
             Graph graph(scheduler, context, std::move(output));
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -275,8 +258,7 @@ public:
 
             Graph graph(scheduler, context, std::move(output));
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -291,8 +273,7 @@ public:
 
             Graph graph(scheduler, context, std::move(output));
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -306,8 +287,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -321,8 +301,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -336,8 +315,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -351,8 +329,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -366,8 +343,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -381,8 +357,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -396,8 +371,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -411,8 +385,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -426,8 +399,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -441,8 +413,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -457,8 +428,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -472,8 +442,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -487,8 +456,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -502,8 +470,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -517,8 +484,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -532,8 +498,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -549,8 +514,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -565,8 +529,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -581,8 +544,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -597,8 +559,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -612,8 +573,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -627,8 +587,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -641,8 +600,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -655,8 +613,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -669,8 +626,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -683,8 +639,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -697,8 +652,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();
@@ -711,8 +665,7 @@ public:
 
             Graph graph(scheduler, context, {output});
 
-            if (allocator != nullptr)
-                allocator->allocate();
+            allocator.allocate();
 
             Computation computation(graph);
             return computation().results();

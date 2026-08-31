@@ -23,7 +23,7 @@ class TestFlux2CLI : public TestCLI {
 public:
     TestFlux2CLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator* allocator) {
+    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator) {
 
         if (args_.get(0) == "Flux2SwiGLU") {
             auto x = args_.get_one<Tensor>("--x", {context});
@@ -33,6 +33,9 @@ public:
             auto output = model.forward(context, x);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -52,10 +55,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, x);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -73,10 +78,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, temb);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -96,10 +103,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, timestep, guidance);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -117,10 +126,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, x, position_ids);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -168,7 +179,6 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto [y1, y2] = model.forward(context, hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb);
             std::vector<Tensor> results;
 
@@ -178,6 +188,9 @@ public:
                 results.push_back(*y2);
 
             Graph graph(scheduler, context, std::move(results));
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -224,10 +237,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, hidden_states, attention_mask, image_rotary_emb);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -267,7 +282,6 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto [y1, y2] = model.forward(
                 context,
                 hidden_states,
@@ -286,6 +300,9 @@ public:
                 results.push_back(*y2);
 
             Graph graph(scheduler, context, std::move(results));
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -324,7 +341,6 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto [y1, y2] = model.forward(
                 context,
                 hidden_states,
@@ -335,6 +351,9 @@ public:
             );
 
             Graph graph(scheduler, context, {y1, y2});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -376,7 +395,6 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(
                 context,
                 hidden_states,
@@ -392,6 +410,9 @@ public:
             );
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -429,8 +450,10 @@ public:
             }
 
             Graph graph(scheduler, context, {result});
-            Computation computation(graph);
 
+            allocator.allocate();
+
+            Computation computation(graph);
             return computation().results();
         }
 
@@ -552,6 +575,8 @@ public:
                     images
                 ));
 
+                allocator.allocate();
+
                 Computation computation(graph);
                 
                 std::vector<Tensor> results = {
@@ -603,6 +628,8 @@ public:
                     &dt
                 ));
 
+                allocator.allocate();
+
                 Computation computation(graph);
 
                 return computation().results();
@@ -620,6 +647,8 @@ public:
                     packed_w,
                     latents
                 ));
+
+                allocator.allocate();
 
                 Computation computation(graph);
                 
@@ -684,6 +713,8 @@ int main(int argc, char** argv) {
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
         Backend cpu_backend(cpu);
         Scheduler scheduler({&cpu_backend}, cli.get_graph_size());
+        Context context(cli.get_graph_size());
+        DeviceAllocator allocator(context, cpu);
 
         Flux2Transformer2DModel::Config transformer_config;
         {
@@ -743,8 +774,6 @@ int main(int argc, char** argv) {
 
         auto tokenizer_dir = args_.get_one<std::string>("--tokenizer_dir");
 
-        Context context(cli.get_graph_size());
-        Allocator allocator(context, cpu);
 
         Flux2Transformer2DModel transformer(transformer_config);
         {

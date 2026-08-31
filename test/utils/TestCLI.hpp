@@ -6,7 +6,7 @@
 #include "ggml/Backend.hpp"
 #include "ggml/MetaDevice.hpp"
 #include "ggml/Scheduler.hpp"
-#include "ggml/Allocator.hpp"
+#include "ggml/DeviceAllocator.hpp"
 #include "nn/Visitor.hpp"
 #include "nn/Parameter.hpp"
 #include "./ArgumentParser.hpp"
@@ -31,7 +31,7 @@ public:
         Scheduler scheduler({&meta_backend, &cpu_backend}, get_graph_size());
         Context context(get_graph_size());
 
-        Allocator allocator(context, meta);
+        DeviceAllocator allocator(context, meta);
 #else
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
         Backend cpu_backend(cpu);
@@ -39,7 +39,7 @@ public:
         Context context(get_graph_size());
 #endif
 
-        auto results = compute(scheduler, context, &allocator);
+        auto results = compute(scheduler, context, allocator);
 
         for (auto& tensor : results) {
             switch (tensor.dtype()) {
@@ -79,7 +79,7 @@ public:
         return EXIT_SUCCESS;
     }
 
-    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator* allocator = nullptr) = 0;
+    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator) = 0;
 
     virtual size_t get_graph_size() const {
         return GGML_DEFAULT_GRAPH_SIZE;

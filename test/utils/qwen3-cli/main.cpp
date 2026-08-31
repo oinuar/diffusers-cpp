@@ -17,7 +17,7 @@ class TestQwen3CLI : public TestCLI {
 public:
     TestQwen3CLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator* allocator) {
+    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator) {
         if (args_.get(0) == "Qwen3RMSNorm") {
             auto hidden_size = args_.get_one<int64_t>("--hidden_size");
             auto hidden_states = args_.get_one<Tensor>("--hidden_states", {context});
@@ -29,10 +29,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, hidden_states);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -51,10 +53,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, hidden_states);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -72,6 +76,9 @@ public:
             auto output = model.forward(context, x, position_ids);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -97,10 +104,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -125,10 +134,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, rotary_emb, hidden_states, position_ids);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -162,7 +173,6 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             std::vector<Tensor> hidden_states;
 
             auto output = model.forward(
@@ -177,11 +187,17 @@ public:
 
             if (output_hidden_states) {
                 Graph graph(scheduler, context, std::move(hidden_states));
+
+                allocator.allocate();
+
                 Computation computation(graph);
                 return computation().results();
             }
             
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -226,6 +242,9 @@ public:
             );
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }

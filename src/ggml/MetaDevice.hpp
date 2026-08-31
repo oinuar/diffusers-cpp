@@ -53,28 +53,32 @@ private:
     typedef std::unordered_map<const ggml_tensor*, ggml_backend_meta_split_state> SplitSpecs;
     size_t n_devices_;
 
-    // -----------------------------------------------------------------------------
-    // 50/50 tensor split
-    //
-    // For a tensor split along axis 0:
-    //
-    //   GPU 0 gets first half
-    //   GPU 1 gets second half
-    //
-    // ggml_backend_meta_split_state::ne is laid out as:
-    //   [segment0_dev0, segment0_dev1, ...]
-    // -----------------------------------------------------------------------------
     static ggml_backend_meta_split_state get_split_state(const ggml_tensor* tensor, void*) {
+        // TODO: make a real split configuration for tensors here
+
         ggml_backend_meta_split_state state = {};
 
-        state.axis = GGML_BACKEND_SPLIT_AXIS_0;
+        state.axis = GGML_BACKEND_SPLIT_AXIS_MIRRORED;
         state.n_segments = 1;
         state.nr[0] = 1;
 
+        // Naive 50/50 tensor split
+        //
+        // For a tensor split along axis 0:
+        //
+        //   GPU 0 gets first half
+        //   GPU 1 gets second half
+        //
+        // ggml_backend_meta_split_state::ne is laid out as:
+        //   [segment0_dev0, segment0_dev1, ...]
+        /*
+        state.axis = GGML_BACKEND_SPLIT_AXIS_0;
+        
         const int64_t n = tensor->ne[0];
 
         state.ne[0] = n / 2;
-        state.ne[1] = n - state.ne[0];
+        state.ne[1] = n - state.ne[0];*/
+
 
         return state;
     }

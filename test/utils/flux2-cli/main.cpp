@@ -682,10 +682,8 @@ int main(int argc, char** argv) {
         ggml_backend_load_all();
 
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-        MetaDevice meta({*cpu, *cpu});
-        Backend meta_backend(meta);
         Backend cpu_backend(cpu);
-        Scheduler scheduler({&meta_backend, &cpu_backend}, cli.get_graph_size());
+        Scheduler scheduler({&cpu_backend}, cli.get_graph_size());
 
         Flux2Transformer2DModel::Config transformer_config;
         {
@@ -746,6 +744,7 @@ int main(int argc, char** argv) {
         auto tokenizer_dir = args_.get_one<std::string>("--tokenizer_dir");
 
         Context context(cli.get_graph_size());
+        Allocator allocator(context, cpu);
 
         Flux2Transformer2DModel transformer(transformer_config);
         {
@@ -780,6 +779,8 @@ int main(int argc, char** argv) {
             std::move(tokenizer)
         );
 
+        allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+
         Flux2KleinPipeline::GenerationOptions options;
 
         options.prompt = args_.get_one<std::string>("--prompt");
@@ -792,7 +793,7 @@ int main(int argc, char** argv) {
             options.init_latents = std::move(
                 ArgumentParser::parser<Tensor>::TensorParser(*init_latents).parse().second);
 
-        auto images = pipeline(scheduler, context, std::move(options));
+        auto images = pipeline(scheduler, context, context, context, cpu, std::move(options));
         std::vector<Tensor> results;
 
         for (const auto& image : images) {

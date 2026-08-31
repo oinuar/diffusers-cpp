@@ -18,6 +18,7 @@
 class Backend;
 class Context;
 class Scheduler;
+class Allocator;
 
 // 
 //                     ┌────────────────────┐
@@ -70,7 +71,7 @@ public:
         size_t max_sequence_length = 512;
     };
 
-    static Flux2KleinPipeline from_pretrained(Context& context, const std::filesystem::path& path);
+    static Flux2KleinPipeline from_pretrained(Context& vae_context, Context& text_encoder_context, Context& transformer_context, const std::filesystem::path& path);
 
     // Latent shape conversions mirroring the static methods of the Python
     // Flux2KleinPipeline. Pure tensor ops with no model state.
@@ -89,7 +90,13 @@ public:
                        Qwen3ForCausalLM&& text_encoder,
                        Qwen2TokenizerFast&& tokenizer);
 
-    std::vector<Image> operator ()(Scheduler& scheduler, Context& context, GenerationOptions&& options);
+    std::vector<Image> operator ()(
+        Scheduler& scheduler,
+        Context& vae_context,
+        Context& text_encoder_context,
+        Context& transformer_context,
+        const Device& device,
+        GenerationOptions&& options);
 
     struct Embeddings {
         Graph graph;

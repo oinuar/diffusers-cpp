@@ -23,7 +23,7 @@ public:
         ggml_backend_load_all();
 
 // On Meta device + weight buffer, failing
-#if 0
+#if 1
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
         MetaDevice meta({*cpu, *cpu});
         Backend meta_backend(meta);
@@ -39,7 +39,7 @@ public:
         Context context(get_graph_size());
 #endif
 
-        auto results = compute(scheduler, context);
+        auto results = compute(scheduler, context, &allocator);
 
         for (auto& tensor : results) {
             switch (tensor.dtype()) {

@@ -9,7 +9,7 @@
 #include <iostream>
 
 /** @brief A virtual device that shards tensors across N underlying devices
- *  (e.g. multiple GPUs, or two CPUs in a test).
+ *  (e.g. multiple GPUs).
  *
  * Wraps ggml's meta backend. Statically-allocated tensors (weights) are given an
  * explicit SplitState via split() before they are allocated into a meta buffer;
@@ -22,8 +22,7 @@
 class MetaDevice : public Device {
 public:
     explicit MetaDevice(std::vector<ggml_backend_dev_t> devices)
-        : Device(ggml_backend_meta_device(devices.data(), devices.size(), get_split_state, &specs_)),
-          specs_(),
+        : Device(ggml_backend_meta_device(devices.data(), devices.size(), get_split_state, nullptr)),
           n_devices_(devices.size())
     {
     }
@@ -40,75 +39,10 @@ public:
 
         return MetaDevice(devices);
     }
-    
-    /* Drafing on how to split tensor using meta device
 
-    void visit(Parameter& parameter, std::vector<std::string>) {
-        if (!parameter.split_dim())
-            return;
-
-        if (n_devices_ < 1) {
-            std::cerr << "Cannot split tensor: n_devices must be >= 1" << std::endl;
-            return;
-        }
-
-        auto dim = *parameter.split_dim();
-        auto extent = parameter.shape()[dim];
-
-        if (extent % n_devices_ != 0) {
-            std::cerr << "Cannot split tensor: extent must be divisible by n_devices" << std::endl;
-            return;
-        }
-
-        ggml_backend_meta_split_state state;
-        state.axis = static_cast<ggml_backend_meta_split_axis>(parameter.shape().rank() - 1 - dim);
-        state.n_segments = 1;
-        state.nr[0] = 1;
-
-        auto per_device = extent / n_devices_;
-
-        for (auto i = 0; i < n_devices_; ++i)
-            state.ne[i] = per_device;
-
-        specs_[**parameter] = state;
+    size_t count() const {
+        return n_devices_;
     }
-
-    void split(const Tensor& tensor, int64_t dim) {
-        if (n_devices_ < 1) {
-            std::cerr << "Cannot split tensor: n_devices must be >= 1" << std::endl;
-            return;
-        }
-
-        auto extent = tensor.shape()[dim];
-
-        if (extent % n_devices_ != 0) {
-            std::cerr << "Cannot split tensor: extent must be divisible by n_devices" << std::endl;
-            return;
-        }
-
-        ggml_backend_meta_split_state state;
-        state.axis = static_cast<ggml_backend_meta_split_axis>(tensor.shape().rank() - 1 - dim);
-        state.n_segments = 1;
-        state.nr[0] = 1;
-
-        auto per_device = extent / n_devices_;
-
-        for (auto i = 0; i < n_devices_; ++i)
-            state.ne[i] = per_device;
-
-        specs_[*tensor] = state;
-    }
-
-    void mirror(const Tensor& tensor) {
-        ggml_backend_meta_split_state state;
-
-        state.axis = GGML_BACKEND_SPLIT_AXIS_MIRRORED;
-        state.ne[0] = 0;
-        state.nr[0] = 1;
-        state.n_segments = 1;
-
-        specs_[*tensor] = state;
-    }*/
 
     MetaDevice(const MetaDevice&) = delete;
     MetaDevice& operator=(const MetaDevice&) = delete;
@@ -117,24 +51,31 @@ public:
 
 private:
     typedef std::unordered_map<const ggml_tensor*, ggml_backend_meta_split_state> SplitSpecs;
-    SplitSpecs specs_;
     size_t n_devices_;
 
-    static ggml_backend_meta_split_state get_split_state(const ggml_tensor* tensor, void* ud) {
-        auto specs = reinterpret_cast<SplitSpecs*>(ud);
-        auto it = specs->find(tensor);
+    // -----------------------------------------------------------------------------
+    // 50/50 tensor split
+    //
+    // For a tensor split along axis 0:
+    //
+    //   GPU 0 gets first half
+    //   GPU 1 gets second half
+    //
+    // ggml_backend_meta_split_state::ne is laid out as:
+    //   [segment0_dev0, segment0_dev1, ...]
+    // -----------------------------------------------------------------------------
+    static ggml_backend_meta_split_state get_split_state(const ggml_tensor* tensor, void*) {
+        ggml_backend_meta_split_state state = {};
 
-        if (it == specs->end()) {
-            ggml_backend_meta_split_state state;
+        state.axis = GGML_BACKEND_SPLIT_AXIS_0;
+        state.n_segments = 1;
+        state.nr[0] = 1;
 
-            state.axis = GGML_BACKEND_SPLIT_AXIS_MIRRORED;
-            state.ne[0] = 0;
-            state.nr[0] = 1;
-            state.n_segments = 1;
+        const int64_t n = tensor->ne[0];
 
-            return state;
-        }
+        state.ne[0] = n / 2;
+        state.ne[1] = n - state.ne[0];
 
-        return it->second;
+        return state;
     }
 };

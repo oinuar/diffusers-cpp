@@ -27,6 +27,10 @@ public:
             auto output = Tensor::scalar(*context, value);
 
             Graph graph(scheduler, context, {output});
+
+            if (allocator != nullptr)
+                allocator->allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -67,6 +71,10 @@ public:
             auto output = context.arange(start, stop, step);
 
             Graph graph(scheduler, context, {output});
+
+            if (allocator != nullptr)
+                allocator->allocate();
+
             Computation computation(graph);
             return computation().results();
         }

@@ -11,32 +11,8 @@
 class Computation {
 public:
     explicit Computation(Graph& graph, std::initializer_list<Context*>&& contexts = {}, ProgressBar* progress = nullptr, uint64_t seed = std::random_device{}())
-        : graph_(graph), progress_(progress), bindings_(graph.context().bindings()), rng_(seed), computed_(false)
+        : graph_(graph), progress_(progress), bindings_(std::move(graph_.allocate(std::move(contexts)))), rng_(seed), computed_(false)
     {
-        graph_.allocate();
-
-        // Unbind one-time bound tensors from graph's context
-        for (auto& [tensor, binding] : bindings_) {
-            if (binding.second)
-                graph.context().unbind(tensor);
-        }
-
-        for (auto& context : contexts) {
-            // Skip graph's context
-            if (context == &graph.context())
-                continue;
-
-            auto bindings = context->bindings();
-
-            // Unbind tensors that are bound only once
-            for (auto& [tensor, binding] : bindings) {
-                if (binding.second)
-                    context->unbind(tensor);
-            }
-
-            // Add additional context bindings
-            bindings_.insert(std::begin(bindings), std::end(bindings));
-        }
     }
     
     ~Computation() {

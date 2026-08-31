@@ -15,6 +15,14 @@ public:
 
     void allocate(const std::optional<ggml_backend_buffer_usage>& usage = std::nullopt);
 
+    Context& context() {
+        return context_;
+    }
+
+    const Buffer& buffer() const {
+        return *buffer_;
+    }
+
 private:
     Context& context_;
     ggml_backend_buffer_type_t buft_;

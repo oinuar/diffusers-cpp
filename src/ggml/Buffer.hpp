@@ -30,6 +30,10 @@ public:
         return buffer_;
     }
 
+    size_t size() const {
+        return ggml_backend_buffer_get_size(buffer_);
+    }
+
     Buffer(Buffer&) = delete;
     Buffer& operator =(const Buffer&) = delete;
 

@@ -18,7 +18,7 @@
 #include <chrono>
 #include <optional>
 
-Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(Context& context, const std::filesystem::path& path) {
+Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(Context& vae_context, Context& text_encoder_context, Context& transformer_context, const std::filesystem::path& path) {
     // 1. Initialize models from config
     Qwen3ForCausalLM text_encoder(Qwen3Config::from_file(path / "text_encoder" / "config.json"));
     Flux2Transformer2DModel transformer(Flux2Transformer2DModel::Config::from_file(path / "transformer" / "config.json"));
@@ -26,7 +26,7 @@ Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(Context& context, const s
 
     // 2. Load VAE
     {
-        GGUFLoaderVisitor vae_loader(context, path / "vae");
+        GGUFLoaderVisitor vae_loader(vae_context, path / "vae");
         RethrowVisitor vae_visitor(vae_loader);
         vae.accept(vae_visitor);
         vae_visitor.rethrow();
@@ -35,7 +35,7 @@ Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(Context& context, const s
 
     // 3. Load text encoder
     {
-        GGUFLoaderVisitor text_encoder_loader(context, path / "text_encoder");
+        GGUFLoaderVisitor text_encoder_loader(text_encoder_context, path / "text_encoder");
         RethrowVisitor text_encoder_visitor(text_encoder_loader);
         text_encoder.accept(text_encoder_visitor);
         text_encoder_visitor.rethrow();
@@ -44,7 +44,7 @@ Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(Context& context, const s
 
     // 4. Load transformer
     {
-        GGUFLoaderVisitor transformer_loader(context, path / "transformer");
+        GGUFLoaderVisitor transformer_loader(transformer_context, path / "transformer");
         RethrowVisitor transformer_visitor(transformer_loader);
         transformer.accept(transformer_visitor);
         transformer_visitor.rethrow();
@@ -614,7 +614,7 @@ Graph Flux2KleinPipeline::make_decode_graph(
     return std::move(Graph(scheduler, context, {decoded}));
 }
 
-std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Context& context, GenerationOptions&& options) {
+std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Context& vae_context, Context& text_encoder_context, Context& transformer_context, const Device& device, GenerationOptions&& options) {
     if (options.height % vae_.scale_factor() != 0 ||
         options.width % vae_.scale_factor() != 0)
         throw std::runtime_error("height/width must be divisible by VAE's scale factor");
@@ -637,6 +637,9 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Context
     auto image_seq_len = static_cast<int64_t>(packed_h) * packed_w;
 
     ProgressBar progress("Generating", 1);
+
+    Context context(836464);
+    Allocator allocator(context, device);
 
     float timestep, dt;
     size_t num_ref_tokens = 0;
@@ -700,11 +703,13 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Context
         latents
     ));
 
+    allocator.allocate();
+
     // 3. Generate text embeddings and reference-image embeddings
     {
         progress.push("Preparing", 1 + options.images.size());
 
-        Computation computation(embeddings_graph, {&context}, &progress);
+        Computation computation(embeddings_graph, {&vae_context, &text_encoder_context}, &progress);
 
         computation();
 
@@ -733,7 +738,7 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Context
 
         progress.push("Denoising", schedule.size());
 
-        Computation computation(denoise_graph, {&context}, &progress);
+        Computation computation(denoise_graph, {&transformer_context}, &progress);
 
         for (const auto& step : schedule) {
             timestep = step.timestep;
@@ -753,7 +758,7 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Context
     {
         progress.push("Decoding", 1);
 
-        Computation computation(decode_graph, {&context}, &progress);
+        Computation computation(decode_graph, {&vae_context}, &progress);
 
         auto decoded = computation().results().at(0);
         auto data = context.read<float>(decoded);

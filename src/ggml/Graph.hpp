@@ -61,7 +61,7 @@ public:
         other.gf_ = nullptr;
     }
 
-    void allocate() {
+    Context::Bindings allocate(std::initializer_list<Context*>&& contexts = {}) {
         ggml_backend_sched_reset(*scheduler_);
         
         if (!ggml_backend_sched_alloc_graph(*scheduler_, gf_))
@@ -74,6 +74,43 @@ public:
             if ((*it)->buffer == nullptr && (*it)->view_src->buffer != nullptr)
                 ggml_backend_view_init(*it);
         }
+
+        Context::Bindings result;
+
+        for (auto& [tensor, binding] : context_.bindings()) {
+            if ((*tensor)->buffer != nullptr)
+                result.insert(std::make_pair(tensor, binding));
+        }
+
+        // Unbind one-time bound tensors from graph's context
+        for (auto& [tensor, binding] : result) {
+            if (binding.second)
+                context_.unbind(tensor);
+        }
+
+        for (auto& context : contexts) {
+            // Skip graph's context
+            if (context == &context_)
+                continue;
+
+            Context::Bindings bindings;
+
+            for (auto& [tensor, binding] : context->bindings()) {
+                if ((*tensor)->buffer != nullptr)
+                    bindings.insert(std::make_pair(tensor, binding));
+            }
+
+            // Unbind tensors that are bound only once
+            for (auto& [tensor, binding] : bindings) {
+                if (binding.second)
+                    context->unbind(tensor);
+            }
+
+            // Add additional context bindings
+            result.insert(std::begin(bindings), std::end(bindings));
+        }
+
+        return std::move(result);
     }
 
     ggml_cgraph* operator *() {

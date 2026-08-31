@@ -28,7 +28,7 @@ class TestDiffusersCLI : public TestCLI {
 public:
     TestDiffusersCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator* allocator) {
+    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator) {
 
         if (args_.get(0) == "AdaLayerNormContinuous") {
             auto embedding_dim = args_.get_one<int64_t>("--embedding_dim");
@@ -46,10 +46,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, hidden_states, conditioning_embedding);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -67,10 +69,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, f, zq);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -89,10 +93,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, hidden_states);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -111,10 +117,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, hidden_states);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -160,10 +168,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, hidden_states, temb);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -193,10 +203,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, sample, latent_embeds);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -226,10 +238,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, sample);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -267,10 +281,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, sample, sample_posterior);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -291,10 +307,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, sample, condition);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -313,10 +331,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, timesteps);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -352,10 +372,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, hidden_states);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -392,10 +414,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, sample, temb);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -428,10 +452,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, hidden_states);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -466,10 +492,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, hidden_states, temb);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -508,6 +536,9 @@ public:
                 );
 
                 Graph graph(scheduler, context, {timesteps, sigmas});
+
+                allocator.allocate();
+
                 Computation computation(graph);
                 return computation().results();
             }
@@ -525,6 +556,9 @@ public:
                 auto next_sample = flow_match_scheduler.integrate(model_output, sample, dt);
 
                 Graph graph(scheduler, context, {next_sample});
+
+                allocator.allocate();
+
                 Computation computation(graph);
                 return computation().results();
             }

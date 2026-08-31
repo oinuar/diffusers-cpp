@@ -243,7 +243,7 @@ int main() {
 #include "ggml/MetaDevice.hpp"
 #include "ggml/Backend.hpp"
 #include "ggml/Context.hpp"
-#include "ggml/Allocator.hpp"
+#include "ggml/DeviceAllocator.hpp"
 #include "ggml/Scheduler.hpp"
 #include "diffusers/pipelines/flux2/Flux2KleinPipeline.hpp"
 #include <iostream>
@@ -264,7 +264,7 @@ int main() {
     Backend cpu_backend(cpu);
     Scheduler scheduler({&gpus_backend, &cpu_backend}, 836464);
     Context weights_context(836464);
-    Allocator allocator(weights_context, gpus);
+    DeviceAllocator allocator(weights_context, gpus);
 
     auto pipeline = std::move(Flux2KleinPipeline::from_pretrained(weights_context, weights_context, weights_context, "../utils/convert-model"));
 

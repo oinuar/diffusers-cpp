@@ -17,7 +17,7 @@ class TestNnCLI : public TestCLI {
 public:
     TestNnCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator* allocator) {
+    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator) {
 
         if (args_.get(0) == "Linear") {
             auto in_features = args_.get_one<int64_t>("--in_features");
@@ -32,10 +32,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, x);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -48,6 +50,9 @@ public:
             auto output = model.forward(context, x);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -65,10 +70,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, x);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -87,10 +94,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, x);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -110,10 +119,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, input);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -134,10 +145,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, x);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -153,6 +166,9 @@ public:
             auto output = attention(context, q, k, v, mask);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }
@@ -170,10 +186,12 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-
             auto output = model.forward(context, input);
 
             Graph graph(scheduler, context, {output});
+
+            allocator.allocate();
+
             Computation computation(graph);
             return computation().results();
         }

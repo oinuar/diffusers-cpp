@@ -35,12 +35,8 @@ public:
             // nodes and must stay in the graph.
             auto pure_view_root = *tensor;
 
-            for (auto t = pure_view_root; t->view_src != nullptr; t = t->view_src) {
-                views_.push_back(t);
-
-                if (is_noop_view(t->op))
-                    pure_view_root = t->view_src;
-            }
+            while (pure_view_root->view_src != nullptr && is_noop_view(pure_view_root->op))
+                pure_view_root = pure_view_root->view_src;
 
             // Pure view of a leaf: nothing to compute. Keep the leaf only so
             // the scheduler allocates it; the view nodes share its data.
@@ -66,14 +62,6 @@ public:
         
         if (!ggml_backend_sched_alloc_graph(*scheduler_, gf_))
             throw std::runtime_error("Graph allocation failed");
-
-        // The allocator only initializes the buffer/data pointers of views it
-        // can see in the graph. Views kept out of the graph (pure views of
-        // leaves) need to be initialized here, from the leaf outwards.
-        for (auto it = views_.rbegin(); it != views_.rend(); ++it) {
-            if ((*it)->buffer == nullptr && (*it)->view_src->buffer != nullptr)
-                ggml_backend_view_init(*it);
-        }
 
         Context::Bindings result;
 

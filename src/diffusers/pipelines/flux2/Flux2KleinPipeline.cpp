@@ -3,7 +3,7 @@
 #include "nn/Parameter.hpp"
 #include "nn/modules/BatchNorm2d.hpp"
 #include "ggml/GGUFLoaderVisitor.hpp"
-#include "ggml/Allocator.hpp"
+#include "ggml/DeviceAllocator.hpp"
 #include "ggml/Context.hpp"
 #include "ggml/Scheduler.hpp"
 #include "ggml/Computation.hpp"
@@ -639,7 +639,7 @@ std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Context
     ProgressBar progress("Generating", 1);
 
     Context context(836464);
-    Allocator allocator(context, device);
+    DeviceAllocator allocator(context, device);
 
     float timestep, dt;
     size_t num_ref_tokens = 0;

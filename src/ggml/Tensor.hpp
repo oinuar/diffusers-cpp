@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ggml/Distribution.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -125,7 +126,7 @@ public:
     };
 
     /** @brief Default-constructs an invalid Tensor. */
-    Tensor() : t_(nullptr) {}
+    Tensor() : t_(nullptr), distribution_(Distribution::replicated()) {}
 
     /** @brief Constructs a Tensor wrapping the given ggml pointers, inferring shape.
      *
@@ -135,8 +136,8 @@ public:
      * @remarks When Tensor shape is inferred, GGML collapses single dimensions so result can be not
      * what is expected. It is highly recommended to always pass the logical shape when constructing a Tensor.
      */
-    explicit Tensor(ggml_tensor* t)
-        : t_(t), shape_()
+    explicit Tensor(ggml_tensor* t, const Distribution& distribution = Distribution::replicated())
+        : t_(t), shape_(), distribution_(distribution)
     {
         if (!!t_)
             return;
@@ -151,8 +152,8 @@ public:
      * This is the only way to create a valid Tensor from raw ggml objects. The Tensor does not assume ownership
      * of either pointer — it is valid only while both ctx and t remain alive.
      */
-    explicit Tensor(ggml_tensor* t, const Shape& shape)
-        : t_(t), shape_(shape) {}
+    explicit Tensor(ggml_tensor* t, const Shape& shape, const Distribution& distribution = Distribution::replicated())
+        : t_(t), shape_(shape), distribution_(distribution) {}
 
     /** @brief Returns the number of logical dimensions. */
     int ndim() const {
@@ -349,6 +350,7 @@ public:
 private:
     ggml_tensor* t_;
     Shape shape_;
+    Distribution distribution_;
 
     template <typename T> friend Tensor operator-(const T& value, const Tensor& tensor);
     template <typename T> friend Tensor operator/(const T& value, const Tensor& tensor);

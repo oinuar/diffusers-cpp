@@ -57,6 +57,7 @@ Tensor Tensor::operator+(Tensor rhs) const {
     auto lhs = *this;
     auto target = Shape::broadcast(lhs.shape_, rhs.shape_);
     auto dtype = common_dtype(lhs.dtype(), rhs.dtype());
+    auto distribution = distribution_.unify_elementwise(rhs.distribution_);
 
     lhs = lhs.to(dtype);
     rhs = rhs.to(dtype);
@@ -64,7 +65,7 @@ Tensor Tensor::operator+(Tensor rhs) const {
     lhs = lhs.expand(target);
     rhs = rhs.expand(target);
 
-    return Tensor(ggml_add(*Scope::context(), lhs.t_, rhs.t_), lhs.shape_);
+    return Tensor(ggml_add(*Scope::context(), lhs.t_, rhs.t_), lhs.shape_, distribution);
 }
 
 Tensor Tensor::operator-(Tensor rhs) const {

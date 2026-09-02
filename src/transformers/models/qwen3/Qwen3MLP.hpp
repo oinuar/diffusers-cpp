@@ -8,5 +8,5 @@ class Qwen3MLP : public Module {
 public:
     Qwen3MLP(const Qwen3Config& config);
 
-    Tensor forward(Context& context, Tensor x);
+    Tensor forward(Scope scope, Tensor x);
 };

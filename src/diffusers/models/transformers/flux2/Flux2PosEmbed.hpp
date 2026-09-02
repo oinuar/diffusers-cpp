@@ -15,11 +15,7 @@ public:
     {
     }
 
-    Tensor forward(
-        Context& context,
-        Tensor x,
-        Tensor position_ids)
-    {
+    Tensor forward(Scope scope, Tensor x, Tensor position_ids) {
         // GGML RoPE expects positions IDs to be 32b integers.
         if (position_ids.dtype() != GGML_TYPE_I32)
             position_ids = position_ids.to(GGML_TYPE_I32);
@@ -79,7 +75,7 @@ public:
             //   (x0,x1), (x2,x3), ...
             //
             auto rope = ggml_rope_ext(
-                *context,
+                *scope.context(),
                 *x_axis,
                 *pos_axis,
                 nullptr,                // no YaRN frequency tensor
@@ -97,7 +93,7 @@ public:
                 0.0f
             );
 
-            rotated_sections.emplace_back(Tensor(*context, rope, x_axis.shape()));
+            rotated_sections.emplace_back(Tensor(rope, x_axis.shape()));
             offset += axis_dim;
         }
 

@@ -133,7 +133,9 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
     if (parameter.shape() != expected_shape)
         throw std::runtime_error("Error while loading Tensor '" + model_path + "': Parameter shape mismatch: expected " + parameter.shape().to_string() + ", got " + expected_shape.to_string());
 
-    auto tensor = Tensor::empty(*context_, expected_shape, type);
+    Scope scope(context_);
+
+    auto tensor = Tensor::empty(expected_shape, type);
 
     ggml_set_name(*tensor, name);
 

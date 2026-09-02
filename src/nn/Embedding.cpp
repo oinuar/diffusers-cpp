@@ -24,7 +24,7 @@ Embedding::Embedding(int64_t num_embeddings, int64_t embedding_dim, std::optiona
     modules["weight"] = std::make_shared<Parameter>(Tensor::Shape({num_embeddings_, embedding_dim_}));
 }
 
-Tensor Embedding::forward(Context& context, Tensor input) {
+Tensor Embedding::forward(Scope scope, Tensor input) {
     auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward();
 
     if (padding_idx_) {
@@ -35,7 +35,7 @@ Tensor Embedding::forward(Context& context, Tensor input) {
             slices.push_back(weight[{Tensor::Slice::range(0, *padding_idx_)}]);
 
         // Zeroed middle row
-        slices.push_back(Tensor::zeros(*context, {1, embedding_dim_}));
+        slices.push_back(Tensor::zeros({1, embedding_dim_}));
 
         // Rows on the right
         if (*padding_idx_ + 1 < num_embeddings_)
@@ -55,7 +55,7 @@ Tensor Embedding::forward(Context& context, Tensor input) {
         input = input.flatten();
 
     auto lookup_result = ggml_get_rows(
-        *context,
+        *scope.context(),
         *weight,
         *input
     );
@@ -68,5 +68,5 @@ Tensor Embedding::forward(Context& context, Tensor input) {
 
     output_shape[input_shape.rank()] = embedding_dim_;
 
-    return Tensor(*context, lookup_result).reshape(output_shape);
+    return Tensor(lookup_result).reshape(output_shape);
 }

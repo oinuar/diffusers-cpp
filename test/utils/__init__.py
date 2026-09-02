@@ -7,8 +7,20 @@ import torch
 class TestCase(unittest.TestCase):
     def cli(self, *args: str) -> list:
         cli_bin = os.environ['CLI']
-        #print(" ".join([cli_bin] + list(map(lambda x: x if x.startswith("--") else f'"{x}"', [*args]))))
-        result = subprocess.run([cli_bin, *args], capture_output=True, text=True, timeout=30)
+        n_devices = os.environ.get('N_DEVICES', 2)
+        use_gpu = os.environ.get('USE_GPU', 'false')
+
+        command = [
+            *args,
+            '--runner-n_devices', str(n_devices),
+            '--runner-use_gpu', str(use_gpu),
+            '--runner-use_local_context', "true",
+        ]
+
+        #print(" ".join([cli_bin] + list(map(lambda x: x if x.startswith("--") else f'"{x}"', command))))
+
+        result = subprocess.run([cli_bin] + command, capture_output=True, text=True, timeout=30)
+
         if result.returncode != 0:
             raise RuntimeError(f'{cli_bin} failed (rc={result.returncode}):\n{result.stderr}')
 

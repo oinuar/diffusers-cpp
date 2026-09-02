@@ -9,13 +9,13 @@ public:
         modules["gate_fn"] = std::make_shared<SiLU>();
     }
 
-    Tensor forward(Context& context, Tensor x) {
+    Tensor forward(Scope scope, Tensor x) {
         auto gate_fn = std::static_pointer_cast<SiLU>(modules["gate_fn"]);
         auto chunks = x.chunk(2, -1);
         auto x1 = chunks.at(0);
         auto x2 = chunks.at(1);
 
-        x = gate_fn->forward(context, x1) * x2;
+        x = gate_fn->forward(scope, x1) * x2;
 
         return x;
     }

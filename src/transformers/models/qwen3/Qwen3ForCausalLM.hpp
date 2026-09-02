@@ -5,6 +5,7 @@
 #include <unordered_map>
 
 class Backend;
+class Context;
 struct Qwen3Config;
 
 class Qwen3ForCausalLM : public Module {
@@ -13,7 +14,7 @@ public:
 
     static Qwen3ForCausalLM from_pretrained(Context& context, Qwen3Config&& config, const std::filesystem::path& path);
 
-    Tensor forward(Context& context, 
+    Tensor forward(Scope scope, 
                    std::optional<Tensor> input_ids = std::nullopt, 
                    std::optional<Tensor> attention_mask = std::nullopt,
                    std::optional<Tensor> position_ids = std::nullopt,

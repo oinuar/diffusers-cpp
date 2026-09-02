@@ -17,8 +17,7 @@ class TestNnCLI : public TestCLI {
 public:
     TestNnCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator) {
-
+    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator, std::optional<Context>& local_context, std::optional<DeviceAllocator>& local_allocator) {
         if (args_.get(0) == "Linear") {
             auto in_features = args_.get_one<int64_t>("--in_features");
             auto out_features = args_.get_one<int64_t>("--out_features");
@@ -32,13 +31,17 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(context, x);
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
-            Graph graph(scheduler, context, {output});
+            auto output = model.forward(local_context ? *local_context : context, x);
 
-            allocator.allocate();
+            Graph graph(scheduler, local_context ? *local_context : context, {output});
 
-            Computation computation(graph);
+            if (local_allocator)
+                 local_allocator->allocate();
+
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
         
@@ -47,13 +50,14 @@ public:
 
             SiLU model;
 
-            auto output = model.forward(context, x);
+            auto output = model.forward(local_context ? *local_context : context, x);
 
-            Graph graph(scheduler, context, {output});
+            Graph graph(scheduler, local_context ? *local_context : context, {output});
 
-            allocator.allocate();
+            if (local_allocator)
+                local_allocator->allocate();
 
-            Computation computation(graph);
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -70,13 +74,17 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(context, x);
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
-            Graph graph(scheduler, context, {output});
+            auto output = model.forward(local_context ? *local_context : context, x);
 
-            allocator.allocate();
+            Graph graph(scheduler, local_context ? *local_context : context, {output});
 
-            Computation computation(graph);
+            if (local_allocator)
+                local_allocator->allocate();
+
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -94,13 +102,17 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(context, x);
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
-            Graph graph(scheduler, context, {output});
+            auto output = model.forward(local_context ? *local_context : context, x);
 
-            allocator.allocate();
+            Graph graph(scheduler, local_context ? *local_context : context, {output});
 
-            Computation computation(graph);
+            if (local_allocator)
+                local_allocator->allocate();
+
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -119,13 +131,17 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(context, input);
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
-            Graph graph(scheduler, context, {output});
+            auto output = model.forward(local_context ? *local_context : context, input);
 
-            allocator.allocate();
+            Graph graph(scheduler, local_context ? *local_context : context, {output});
 
-            Computation computation(graph);
+            if (local_allocator)
+                local_allocator->allocate();
+
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -145,13 +161,17 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(context, x);
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
-            Graph graph(scheduler, context, {output});
+            auto output = model.forward(local_context ? *local_context : context, x);
 
-            allocator.allocate();
+            Graph graph(scheduler, local_context ? *local_context : context, {output});
 
-            Computation computation(graph);
+            if (local_allocator)
+                local_allocator->allocate();
+
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -165,11 +185,12 @@ public:
 
             auto output = attention(context, q, k, v, mask);
 
-            Graph graph(scheduler, context, {output});
+            Graph graph(scheduler, local_context ? *local_context : context, {output});
 
-            allocator.allocate();
+            if (local_allocator)
+                local_allocator->allocate();
 
-            Computation computation(graph);
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -186,13 +207,17 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(context, input);
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
-            Graph graph(scheduler, context, {output});
+            auto output = model.forward(local_context ? *local_context : context, input);
 
-            allocator.allocate();
+            Graph graph(scheduler, local_context ? *local_context : context, {output});
 
-            Computation computation(graph);
+            if (local_allocator)
+                local_allocator->allocate();
+
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 

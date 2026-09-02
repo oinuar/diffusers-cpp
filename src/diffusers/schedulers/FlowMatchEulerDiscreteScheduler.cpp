@@ -208,9 +208,10 @@ Schedule FlowMatchEulerDiscreteScheduler::schedule(
 }
 
 Tensor FlowMatchEulerDiscreteScheduler::integrate(
-    const Tensor& model_output,
-    const Tensor& sample,
-    const Tensor& dt
+    Scope scope,
+    Tensor model_output,
+    Tensor sample,
+    Tensor dt
 ) const {
     //
     // Euler:

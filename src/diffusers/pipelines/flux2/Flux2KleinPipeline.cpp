@@ -114,8 +114,10 @@ std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Context& context, i
 
     std::vector<Tensor> hidden_states;
 
+    Scope scope(context);
+
     text_encoder_.forward(
-        context,
+        scope,
         input_ids,
         attention_mask,
         std::nullopt, // position_ids
@@ -472,9 +474,10 @@ Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
         packed_imgs.reserve(images.size());
 
         for (auto& img : images) {
+            Scope scope(context);
             img = preprocess_reference_image(img, vae_multiple);
             auto img_tensor = image_to_tensor(context, img);
-            auto dist = vae_.encode(context, img_tensor);
+            auto dist = vae_.encode(scope, img_tensor);
             auto mode = dist.mode(); // Shape: (B, C, H, W)
 
             auto packed_h = img.height() / vae_multiple;
@@ -566,7 +569,9 @@ Graph Flux2KleinPipeline::make_denoise_graph(
         return std::vector<float>(batch, *current_timestep);
     });
 
-    auto noise_pred = transformer_.forward(context,
+    Scope scope(context);
+
+    auto noise_pred = transformer_.forward(scope,
         /*hidden_states=*/          latent_model_input,
         /*encoder_hidden_states=*/  prompt_embeds,
         /*timestep=*/               timestep / 1000.0f,
@@ -585,7 +590,7 @@ Graph Flux2KleinPipeline::make_denoise_graph(
     });
 
     // Integrate latents over dt
-    auto next_latents = scheduler_.integrate(noise_pred, latents, dt);
+    auto next_latents = scheduler_.integrate(context, noise_pred, latents, dt);
 
     return std::move(Graph(scheduler, context, {next_latents}));
 }
@@ -609,7 +614,8 @@ Graph Flux2KleinPipeline::make_decode_graph(
     auto z = unpatchify_latents(z_packed, vae_.latent_channels(), packed_h, packed_w);
 
     // 4. VAE decode
-    auto decoded = vae_.decode(context, z);    // (B, 3, H, W)
+    Scope scope(context);
+    auto decoded = vae_.decode(scope, z);    // (B, 3, H, W)
 
     return std::move(Graph(scheduler, context, {decoded}));
 }

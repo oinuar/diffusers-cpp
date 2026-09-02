@@ -6,7 +6,7 @@ class Linear : public Module {
 public:
     Linear(int64_t in_features, int64_t out_features, bool bias = true);
     
-    Tensor forward(Context& context, Tensor x);
+    Tensor forward(Scope scope, Tensor x);
 
 private:
     bool bias_;

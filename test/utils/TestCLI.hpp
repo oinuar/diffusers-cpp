@@ -7,6 +7,7 @@
 #include "ggml/MetaDevice.hpp"
 #include "ggml/Scheduler.hpp"
 #include "ggml/DeviceAllocator.hpp"
+#include "ggml/SchedulerAllocator.hpp"
 #include "nn/Visitor.hpp"
 #include "nn/Parameter.hpp"
 #include "./ArgumentParser.hpp"
@@ -22,64 +23,55 @@ public:
 
         ggml_backend_load_all();
 
-// On Meta device + weight buffer, failing
-#if 1
-        Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-        MetaDevice meta({*cpu, *cpu});
-        Backend meta_backend(meta);
-        Backend cpu_backend(cpu);
-        Scheduler scheduler({&meta_backend, &cpu_backend}, get_graph_size());
+        // This controls how many fake devices are used to run the tests.
+        auto n_devices = args_.get_optional<size_t>("--runner-n_devices").value_or(1);
+        auto use_gpu = args_.get_optional<bool>("--runner-use_gpu").value_or(false);
+
         Context context(get_graph_size());
 
-        DeviceAllocator allocator(context, meta);
-#else
+        // If more than one device, use Meta device.
+        if (n_devices > 1) {
+            if (use_gpu)
+                throw std::runtime_error("Multi-GPU tests are not supported");
+
+            Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+            std::vector<ggml_backend_dev_t> devices;
+
+            for (auto i = 0; i < n_devices; ++i)
+                devices.push_back(*cpu);
+
+            MetaDevice meta(std::move(devices));
+            Backend meta_backend(meta);
+            Backend cpu_backend(cpu);
+            Scheduler scheduler({&meta_backend, &cpu_backend}, get_graph_size());
+
+            DeviceAllocator allocator(context, meta);
+
+            return main(scheduler, context, allocator, meta);
+        }
+
+        if (use_gpu) {
+            Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+            Device gpu(GGML_BACKEND_DEVICE_TYPE_GPU);
+            Backend cpu_backend(cpu);
+            Backend gpu_backend(gpu);
+            Scheduler scheduler({&gpu_backend, &cpu_backend}, get_graph_size());
+
+            DeviceAllocator allocator(context, gpu);
+
+            return main(scheduler, context, allocator, gpu);
+        }
+
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
         Backend cpu_backend(cpu);
         Scheduler scheduler({&cpu_backend}, get_graph_size());
-        Context context(get_graph_size());
-#endif
 
-        auto results = compute(scheduler, context, allocator);
+        SchedulerAllocator allocator;
 
-        for (auto& tensor : results) {
-            switch (tensor.dtype()) {
-            case Tensor::DType<float>::value:
-            {
-                auto data = context.read<float>(tensor);
-                print_tensor_like(data, tensor.shape());
-                break;
-            }
-
-            case Tensor::DType<int8_t>::value:
-            {
-                auto data = context.read<int8_t>(tensor);
-                print_tensor_like(data, tensor.shape());
-                break;
-            }
-
-            case Tensor::DType<int16_t>::value:
-            {
-                auto data = context.read<int16_t>(tensor);
-                print_tensor_like(data, tensor.shape());
-                break;
-            }
-
-            case Tensor::DType<int32_t>::value:
-            {
-                auto data = context.read<int32_t>(tensor);
-                print_tensor_like(data, tensor.shape());
-                break;
-            }
-
-            default:
-                throw std::runtime_error("Unsupported tensor type: " + std::string(ggml_type_name(tensor.dtype())));
-            }
-        }
-
-        return EXIT_SUCCESS;
+        return main(scheduler, context, allocator, cpu);
     }
 
-    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator) = 0;
+    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator, std::optional<Context>& local_context, std::optional<DeviceAllocator>& local_allocator) = 0;
 
     virtual size_t get_graph_size() const {
         return GGML_DEFAULT_GRAPH_SIZE;
@@ -96,7 +88,7 @@ public:
             expected *= shape[i];
 
         if (expected != data.size())
-            throw std::runtime_error("tensor data size does not match shape");
+            throw std::runtime_error("tensor data size does not match shape, expected " + std::to_string(expected) + ", but got " + std::to_string(data.size()));
 
         std::cerr << "output shape: " << shape.to_string() << std::endl;
 
@@ -164,6 +156,57 @@ public:
         }
     };
 private:
+    int main(Scheduler& scheduler, Context& context, Allocator& allocator, const Device& device) {
+        auto use_local_context = args_.get_optional<bool>("--runner-use_local_context").value_or(false);
+
+        std::optional<Context> local_context;
+        std::optional<DeviceAllocator> local_allocator;
+
+        if (use_local_context) {
+            local_context.emplace(get_graph_size());
+            local_allocator.emplace(*local_context, device);
+        }
+
+        auto results = compute(scheduler, context, allocator, local_context, local_allocator);
+
+        for (auto& tensor : results) {
+            switch (tensor.dtype()) {
+            case Tensor::DType<float>::value:
+            {
+                auto data = context.read<float>(tensor);
+                print_tensor_like(data, tensor.shape());
+                break;
+            }
+
+            case Tensor::DType<int8_t>::value:
+            {
+                auto data = context.read<int8_t>(tensor);
+                print_tensor_like(data, tensor.shape());
+                break;
+            }
+
+            case Tensor::DType<int16_t>::value:
+            {
+                auto data = context.read<int16_t>(tensor);
+                print_tensor_like(data, tensor.shape());
+                break;
+            }
+
+            case Tensor::DType<int32_t>::value:
+            {
+                auto data = context.read<int32_t>(tensor);
+                print_tensor_like(data, tensor.shape());
+                break;
+            }
+
+            default:
+                throw std::runtime_error("Unsupported tensor type: " + std::string(ggml_type_name(tensor.dtype())));
+            }
+        }
+
+        return EXIT_SUCCESS;
+    }
+
     void print_escaped_string(const std::string& value, std::ostream& stream) const {
         stream << '"';
 

@@ -33,7 +33,7 @@ Qwen3Model::Qwen3Model(const Qwen3Config& config) {
 }
 
 static Tensor create_causal_mask(
-    Context& context,
+    Scope& scope,
     int seq_len,
     int target_len,
     int past_seen_tokens,
@@ -42,7 +42,7 @@ static Tensor create_causal_mask(
 ) {
     const float neg_inf = -std::numeric_limits<float>::infinity();
 
-    auto mask = context.value<float>({1, 1, seq_len, target_len},
+    auto mask = scope.context().value<float>({1, 1, seq_len, target_len},
         [=](std::mt19937&) {
             std::vector<float> mask;
             mask.reserve(seq_len * target_len);
@@ -94,7 +94,7 @@ static Tensor create_causal_mask(
 }
 
 Tensor Qwen3Model::forward(
-    Context& context,
+    Scope scope,
     std::optional<Tensor> input_ids,
     std::optional<Tensor> inputs_embeds,
     std::optional<Tensor> attention_mask,
@@ -112,7 +112,7 @@ Tensor Qwen3Model::forward(
         auto embed_tokens =
             std::static_pointer_cast<Embedding>(modules["embed_tokens"]);
 
-        inputs_embeds = embed_tokens->forward(context, input_ids.value());
+        inputs_embeds = embed_tokens->forward(scope, input_ids.value());
     }
 
     auto hidden_states = *inputs_embeds;
@@ -123,7 +123,7 @@ Tensor Qwen3Model::forward(
     auto past_seen_tokens = 0;
 
     if (!position_ids) {
-        position_ids = context.arange(0.0f, static_cast<float>(seq_len));
+        position_ids = scope.context().arange(0.0f, static_cast<float>(seq_len));
         position_ids = *position_ids + (float)past_seen_tokens;
         position_ids = position_ids.value().unsqueeze(0);
     }
@@ -136,7 +136,7 @@ Tensor Qwen3Model::forward(
     std::unordered_map<std::string, Tensor> causal_mask_mapping;
 
     causal_mask_mapping["full_attention"] = create_causal_mask(
-        context,
+        scope,
         seq_len,
         target_len,
         past_seen_tokens,
@@ -145,7 +145,7 @@ Tensor Qwen3Model::forward(
 
     if (has_sliding_layers) {
         causal_mask_mapping["sliding_attention"] = create_causal_mask(
-            context,
+            scope,
             seq_len,
             target_len,
             past_seen_tokens,
@@ -166,7 +166,7 @@ Tensor Qwen3Model::forward(
             extract_hidden_states->push_back(hidden_states.clone());
 
         hidden_states = layer->forward(
-            context,
+            scope,
             *rotary_emb,
             hidden_states,
             *position_ids,
@@ -179,7 +179,7 @@ Tensor Qwen3Model::forward(
     auto norm =
         std::static_pointer_cast<Qwen3RMSNorm>(modules["norm"]);
 
-    hidden_states = norm->forward(context, hidden_states);
+    hidden_states = norm->forward(scope, hidden_states);
 
     if (extract_hidden_states)
         extract_hidden_states->push_back(hidden_states);

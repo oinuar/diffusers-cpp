@@ -28,7 +28,7 @@ public:
         std::optional<int64_t> conv_2d_out_channels = std::nullopt
     );
 
-    Tensor forward(Context& context, Tensor hidden_states, std::optional<Tensor> temb = std::nullopt);
+    Tensor forward(Scope scope, Tensor hidden_states, std::optional<Tensor> temb = std::nullopt);
 
 private:
     float output_scale_factor_;

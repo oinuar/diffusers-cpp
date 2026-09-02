@@ -108,50 +108,35 @@ ResnetBlock2D<NonLinearity>::ResnetBlock2D(
 
 
 template <class NonLinearity>
-Tensor ResnetBlock2D<NonLinearity>::forward(Context& context, Tensor input_tensor, std::optional<Tensor> temb) {
+Tensor ResnetBlock2D<NonLinearity>::forward(Scope scope, Tensor input_tensor, std::optional<Tensor> temb) {
     Tensor hidden_states = input_tensor;
 
     hidden_states =
         std::static_pointer_cast<GroupNorm>(
             modules["norm1"])
-        ->forward(
-            context,
-            hidden_states
-        );
+        ->forward(scope, hidden_states);
 
     hidden_states =
         std::static_pointer_cast<SiLU>(
             modules["nonlinearity"])
-        ->forward(
-            context,
-            hidden_states
-        );
+        ->forward(scope, hidden_states);
 
     hidden_states =
         std::static_pointer_cast<Conv2d>(
             modules["conv1"])
-        ->forward(
-            context,
-            hidden_states
-        );
+        ->forward(scope, hidden_states);
 
     if (use_temb_ && temb) {
         auto t =
             std::static_pointer_cast<SiLU>(
                 modules["nonlinearity"])
-            ->forward(
-                context,
-                *temb
-            );
+            ->forward(scope, *temb);
 
 
         t =
             std::static_pointer_cast<Linear>(
                 modules["time_emb_proj"])
-            ->forward(
-                context,
-                t
-            );
+            ->forward(scope, t);
 
 
         /*
@@ -178,26 +163,17 @@ Tensor ResnetBlock2D<NonLinearity>::forward(Context& context, Tensor input_tenso
     hidden_states =
         std::static_pointer_cast<GroupNorm>(
             modules["norm2"])
-        ->forward(
-            context,
-            hidden_states
-        );
+        ->forward(scope, hidden_states);
 
     hidden_states =
         std::static_pointer_cast<SiLU>(
             modules["nonlinearity"])
-        ->forward(
-            context,
-            hidden_states
-        );
+        ->forward(scope, hidden_states);
 
     hidden_states =
         std::static_pointer_cast<Conv2d>(
             modules["conv2"])
-        ->forward(
-            context,
-            hidden_states
-        );
+        ->forward(scope, hidden_states);
 
     /*
         Residual projection.
@@ -213,10 +189,7 @@ Tensor ResnetBlock2D<NonLinearity>::forward(Context& context, Tensor input_tenso
         input_tensor =
             std::static_pointer_cast<Conv2d>(
                 modules["conv_shortcut"])
-            ->forward(
-                context,
-                input_tensor
-            );
+            ->forward(scope, input_tensor);
 
     return (input_tensor + hidden_states) / output_scale_factor_;
 }

@@ -8,7 +8,7 @@ public:
     // GGML supports only last dimension reduction norm
     RMSNorm(int64_t dim, float eps = 1e-5f, bool elementwise_affine = true);
 
-    Tensor forward(Context& context, Tensor x);
+    Tensor forward(Scope scope, Tensor x);
 
 private:
     float eps_;

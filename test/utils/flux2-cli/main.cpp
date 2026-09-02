@@ -23,20 +23,21 @@ class TestFlux2CLI : public TestCLI {
 public:
     TestFlux2CLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator) {
+    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator, std::optional<Context>& local_context, std::optional<DeviceAllocator>& local_allocator) {
 
         if (args_.get(0) == "Flux2SwiGLU") {
             auto x = args_.get_one<Tensor>("--x", {context});
 
             Flux2SwiGLU model;
 
-            auto output = model.forward(context, x);
+            auto output = model.forward(local_context ? *local_context : context, x);
 
-            Graph graph(scheduler, context, {output});
+            Graph graph(scheduler, local_context ? *local_context : context, {output});
 
-            allocator.allocate();
+            if (local_allocator)
+                local_allocator->allocate();
 
-            Computation computation(graph);
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -55,13 +56,17 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(context, x);
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
-            Graph graph(scheduler, context, {output});
+            auto output = model.forward(local_context ? *local_context : context, x);
 
-            allocator.allocate();
+            Graph graph(scheduler, local_context ? *local_context : context, {output});
 
-            Computation computation(graph);
+            if (local_allocator)
+                local_allocator->allocate();
+
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -78,13 +83,17 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(context, temb);
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
-            Graph graph(scheduler, context, {output});
+            auto output = model.forward(local_context ? *local_context : context, temb);
 
-            allocator.allocate();
+            Graph graph(scheduler, local_context ? *local_context : context, {output});
 
-            Computation computation(graph);
+            if (local_allocator)
+                local_allocator->allocate();
+
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -103,13 +112,17 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(context, timestep, guidance);
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
-            Graph graph(scheduler, context, {output});
+            auto output = model.forward(local_context ? *local_context : context, timestep, guidance);
 
-            allocator.allocate();
+            Graph graph(scheduler, local_context ? *local_context : context, {output});
 
-            Computation computation(graph);
+            if (local_allocator)
+                local_allocator->allocate();
+
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -126,13 +139,17 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(context, x, position_ids);
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
-            Graph graph(scheduler, context, {output});
+            auto output = model.forward(local_context ? *local_context : context, x, position_ids);
 
-            allocator.allocate();
+            Graph graph(scheduler, local_context ? *local_context : context, {output});
 
-            Computation computation(graph);
+            if (local_allocator)
+                local_allocator->allocate();
+
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -179,7 +196,10 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto [y1, y2] = model.forward(context, hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb);
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+
+            auto [y1, y2] = model.forward(local_context ? *local_context : context, hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb);
             std::vector<Tensor> results;
 
             results.push_back(y1);
@@ -189,9 +209,10 @@ public:
 
             Graph graph(scheduler, context, std::move(results));
 
-            allocator.allocate();
+            if (local_allocator)
+                local_allocator->allocate();
 
-            Computation computation(graph);
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -237,13 +258,17 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(context, hidden_states, attention_mask, image_rotary_emb);
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
-            Graph graph(scheduler, context, {output});
+            auto output = model.forward(local_context ? *local_context : context, hidden_states, attention_mask, image_rotary_emb);
 
-            allocator.allocate();
+            Graph graph(scheduler, local_context ? *local_context : context, {output});
 
-            Computation computation(graph);
+            if (local_allocator)
+                local_allocator->allocate();
+
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -282,8 +307,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+
             auto [y1, y2] = model.forward(
-                context,
+                local_context ? *local_context : context,
                 hidden_states,
                 encoder_hidden_states,
                 temb_mod,
@@ -301,9 +329,10 @@ public:
 
             Graph graph(scheduler, context, std::move(results));
 
-            allocator.allocate();
+            if (local_allocator)
+                local_allocator->allocate();
 
-            Computation computation(graph);
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -341,8 +370,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+
             auto [y1, y2] = model.forward(
-                context,
+                local_context ? *local_context : context,
                 hidden_states,
                 encoder_hidden_states,
                 temb_mod_img,
@@ -352,9 +384,10 @@ public:
 
             Graph graph(scheduler, context, {y1, y2});
 
-            allocator.allocate();
+            if (local_allocator)
+                local_allocator->allocate();
 
-            Computation computation(graph);
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -395,8 +428,11 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+
             auto output = model.forward(
-                context,
+                local_context ? *local_context : context,
                 hidden_states,
                 encoder_hidden_states,
                 timestep,
@@ -409,11 +445,12 @@ public:
                 ref_fixed_timestep
             );
 
-            Graph graph(scheduler, context, {output});
+            Graph graph(scheduler, local_context ? *local_context : context, {output});
 
-            allocator.allocate();
+            if (local_allocator)
+                local_allocator->allocate();
 
-            Computation computation(graph);
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -451,9 +488,10 @@ public:
 
             Graph graph(scheduler, context, {result});
 
-            allocator.allocate();
+            if (local_allocator)
+                local_allocator->allocate();
 
-            Computation computation(graph);
+            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
 
@@ -522,6 +560,9 @@ public:
                 RethrowVisitor visitor(create_parameters);
                 transformer.accept(visitor);
                 visitor.rethrow();
+
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
             }
             
             AutoencoderKLFlux2 vae(vae_config);
@@ -530,6 +571,9 @@ public:
                 RethrowVisitor visitor(create_parameters);
                 vae.accept(visitor);
                 visitor.rethrow();
+
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
             }
 
             Qwen3ForCausalLM text_encoder(qwen_config);
@@ -538,6 +582,9 @@ public:
                 RethrowVisitor visitor(create_parameters);
                 text_encoder.accept(visitor);
                 visitor.rethrow();
+
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
             }
 
             auto tokenizer = Qwen2TokenizerFast::from_pretrained(tokenizer_dir);
@@ -575,9 +622,10 @@ public:
                     images
                 ));
 
-                allocator.allocate();
+                if (local_allocator)
+                local_allocator->allocate();
 
-                Computation computation(graph);
+                Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
                 
                 std::vector<Tensor> results = {
                     prompt_embeds,
@@ -628,9 +676,10 @@ public:
                     &dt
                 ));
 
-                allocator.allocate();
+                if (local_allocator)
+                local_allocator->allocate();
 
-                Computation computation(graph);
+                Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
 
                 return computation().results();
             }
@@ -648,9 +697,10 @@ public:
                     latents
                 ));
 
-                allocator.allocate();
+                if (local_allocator)
+                local_allocator->allocate();
 
-                Computation computation(graph);
+                Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
                 
                 return computation().results();
             }
@@ -682,7 +732,7 @@ public:
                 }
 
                 Graph graph(scheduler, context, std::move(results));
-                Computation computation(graph);
+                Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
 
                 return computation().results();
             }*/
@@ -698,24 +748,8 @@ public:
         
         return TestCLI::get_graph_size();
     }
-};
 
-int main(int argc, char** argv) {
-    TestFlux2CLI cli(argc, argv);
-    auto& args_ = cli.args();
-
-    if (args_.get(0) == "Flux2KleinPipeline_call") {
-        ggml_time_init();
-        ggml_log_set([](ggml_log_level, const char* text, void*) { std::cerr << text; }, nullptr);
-
-        ggml_backend_load_all();
-
-        Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-        Backend cpu_backend(cpu);
-        Scheduler scheduler({&cpu_backend}, cli.get_graph_size());
-        Context context(cli.get_graph_size());
-        DeviceAllocator allocator(context, cpu);
-
+    int run_pipeline(Scheduler& scheduler, Context& context, Allocator& allocator, const Device& device) {
         Flux2Transformer2DModel::Config transformer_config;
         {
             transformer_config.patch_size = args_.get_optional<int64_t>("--transformer-patch_size").value_or(transformer_config.patch_size);
@@ -774,7 +808,6 @@ int main(int argc, char** argv) {
 
         auto tokenizer_dir = args_.get_one<std::string>("--tokenizer_dir");
 
-
         Flux2Transformer2DModel transformer(transformer_config);
         {
             TestCLI::CreateParametersVisitor create_parameters(context, args_, "transformer");
@@ -799,6 +832,8 @@ int main(int argc, char** argv) {
             visitor.rethrow();
         }
 
+        allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+
         auto tokenizer = Qwen2TokenizerFast::from_pretrained(tokenizer_dir);
 
         Flux2KleinPipeline pipeline(
@@ -822,15 +857,77 @@ int main(int argc, char** argv) {
             options.init_latents = std::move(
                 ArgumentParser::parser<Tensor>::TensorParser(*init_latents).parse().second);
 
-        auto images = pipeline(scheduler, context, context, context, cpu, std::move(options));
+        auto images = pipeline(scheduler, context, context, context, device, std::move(options));
         std::vector<Tensor> results;
 
         for (const auto& image : images) {
             std::vector<float> pixels(image.pixels().begin(), image.pixels().end());
-            cli.print_tensor_like(pixels, {(int64_t)image.height(), (int64_t)image.width(), (int64_t)image.channels()});
+            print_tensor_like(pixels, {(int64_t)image.height(), (int64_t)image.width(), (int64_t)image.channels()});
         }
 
         return EXIT_SUCCESS;
+    }
+};
+
+int main(int argc, char** argv) {
+    TestFlux2CLI cli(argc, argv);
+    auto& args_ = cli.args();
+
+    if (args_.get(0) == "Flux2KleinPipeline_call") {
+        ggml_time_init();
+        ggml_log_set([](ggml_log_level, const char* text, void*) { std::cerr << text; }, nullptr);
+
+        ggml_backend_load_all();
+
+        // TEMP: debug
+        setenv("GGML_SCHED_DEBUG", "2", 1);
+    
+        // This controls how many fake devices are used to run the tests.
+        auto n_devices = args_.get_optional<size_t>("--runner-n_devices").value_or(1);
+        auto use_gpu = args_.get_optional<bool>("--runner-use_gpu").value_or(false);
+
+        Context context(cli.get_graph_size());
+
+        // If more than one device, use Meta device.
+        if (n_devices > 1) {
+            if (use_gpu)
+                throw std::runtime_error("Multi-GPU tests are not supported");
+
+            Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+            std::vector<ggml_backend_dev_t> devices;
+
+            for (auto i = 0; i < n_devices; ++i)
+                devices.push_back(*cpu);
+
+            MetaDevice meta(std::move(devices));
+            Backend meta_backend(meta);
+            Backend cpu_backend(cpu);
+            Scheduler scheduler({&meta_backend, &cpu_backend}, cli.get_graph_size());
+
+            DeviceAllocator allocator(context, meta);
+
+            return cli.run_pipeline(scheduler, context, allocator, meta);
+        }
+
+        if (use_gpu) {
+            Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+            Device gpu(GGML_BACKEND_DEVICE_TYPE_GPU);
+            Backend cpu_backend(cpu);
+            Backend gpu_backend(gpu);
+            Scheduler scheduler({&gpu_backend, &cpu_backend}, cli.get_graph_size());
+
+            DeviceAllocator allocator(context, gpu);
+
+            return cli.run_pipeline(scheduler, context, allocator, gpu);
+        }
+
+        Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+        Backend cpu_backend(cpu);
+        Scheduler scheduler({&cpu_backend}, cli.get_graph_size());
+
+        DeviceAllocator allocator(context, cpu);
+
+        return cli.run_pipeline(scheduler, context, allocator, cpu);
     }
 
     return cli.main();

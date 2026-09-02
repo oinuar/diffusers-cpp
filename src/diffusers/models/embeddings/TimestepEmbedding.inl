@@ -23,11 +23,11 @@ TimestepEmbedding<ActFn, PostActFn>::TimestepEmbedding(
 }
 
 template <class ActFn, class PostActFn>
-Tensor TimestepEmbedding<ActFn, PostActFn>::forward(Context& context, Tensor sample, std::optional<Tensor> condition) {
+Tensor TimestepEmbedding<ActFn, PostActFn>::forward(Scope scope, Tensor sample, std::optional<Tensor> condition) {
     if (condition) {
         auto cond_proj = std::static_pointer_cast<Linear>(modules["cond_proj"]);
 
-        sample = sample + cond_proj->forward(context, condition.value());
+        sample = sample + cond_proj->forward(scope, condition.value());
     }
 
     auto linear_1 = std::static_pointer_cast<Linear>(modules["linear_1"]);
@@ -35,10 +35,10 @@ Tensor TimestepEmbedding<ActFn, PostActFn>::forward(Context& context, Tensor sam
     auto linear_2 = std::static_pointer_cast<Linear>(modules["linear_2"]);
     auto post_act = std::static_pointer_cast<PostActFn>(modules["post_act"]);
 
-    sample = linear_1->forward(context, sample);
-    sample = act->forward(context, sample);
-    sample = linear_2->forward(context, sample);
-    sample = post_act->forward(context, sample);
+    sample = linear_1->forward(scope, sample);
+    sample = act->forward(scope, sample);
+    sample = linear_2->forward(scope, sample);
+    sample = post_act->forward(scope, sample);
 
     return sample;
 }

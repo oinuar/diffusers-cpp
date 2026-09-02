@@ -32,10 +32,7 @@ Conv2d::Conv2d(
     }
 }
 
-Tensor Conv2d::forward(
-    Context& context,
-    Tensor x
-) {
+Tensor Conv2d::forward(Scope scope, Tensor x) {
     auto weight =
         std::static_pointer_cast<Parameter>(
             modules["weight"])
@@ -43,7 +40,7 @@ Tensor Conv2d::forward(
 
 
     auto conv = ggml_conv_2d_direct(
-        *context,
+        *scope.context(),
         *weight,
         *x,
         stride_,
@@ -69,7 +66,6 @@ Tensor Conv2d::forward(
 
 
     Tensor y(
-        *context,
         conv,
         shape
     );

@@ -11,7 +11,7 @@ public:
         float scale = 1.0f
     );
 
-    Tensor forward(Context& context, Tensor timesteps);
+    Tensor forward(Scope scope, Tensor timesteps);
 
 private:
     int64_t num_channels;

@@ -52,11 +52,7 @@ SpatialNorm::SpatialNorm(
         );
 }
 
-Tensor SpatialNorm::forward(
-    Context& context,
-    Tensor f,
-    Tensor zq
-) {
+Tensor SpatialNorm::forward(Scope scope, Tensor f, Tensor zq) {
     /*
         Python:
             f_size = f.shape[-2:]
@@ -70,7 +66,7 @@ Tensor SpatialNorm::forward(
         zq.shape()[3] != f.shape()[3]) {
 
         auto resized = ggml_interpolate(
-            *context,
+            *scope.context(),
             *zq,
             f.shape()[3], // W
             f.shape()[2], // H
@@ -80,7 +76,6 @@ Tensor SpatialNorm::forward(
         );
 
         zq = Tensor(
-            *context,
             resized,
             Tensor::Shape({
                 zq.shape()[0],
@@ -98,7 +93,7 @@ Tensor SpatialNorm::forward(
     auto norm_f =
         std::static_pointer_cast<GroupNorm>(
             modules["norm_layer"])
-        ->forward(context, f);
+        ->forward(scope, f);
 
 
     /*
@@ -107,12 +102,12 @@ Tensor SpatialNorm::forward(
     auto y =
         std::static_pointer_cast<Conv2d>(
             modules["conv_y"])
-        ->forward(context, zq);
+        ->forward(scope, zq);
 
     auto b =
         std::static_pointer_cast<Conv2d>(
             modules["conv_b"])
-        ->forward(context, zq);
+        ->forward(scope, zq);
 
 
     return norm_f * y + b;

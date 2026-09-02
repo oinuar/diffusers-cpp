@@ -8,11 +8,7 @@ class Qwen3RotaryEmbedding : public Module {
 public:
     Qwen3RotaryEmbedding(const Qwen3Config& config);
 
-    Tensor forward(
-        Context& context,
-        Tensor x,
-        Tensor position_ids
-    );
+    Tensor forward(Scope scope, Tensor x, Tensor position_ids);
 
 private:
     int64_t head_dim;

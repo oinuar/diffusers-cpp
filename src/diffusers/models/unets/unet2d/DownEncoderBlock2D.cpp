@@ -57,17 +57,17 @@ DownEncoderBlock2D::DownEncoderBlock2D(
         }));
 }
 
-Tensor DownEncoderBlock2D::forward(Context& context, Tensor hidden_states) {
+Tensor DownEncoderBlock2D::forward(Scope scope, Tensor hidden_states) {
     auto resnets = std::static_pointer_cast<ModuleList>(modules["resnets"]);
 
     for (auto i = 0; i < resnets->size(); ++i)
-        hidden_states = std::static_pointer_cast<ResnetBlock2D<SiLU>>((*resnets)[i])->forward(context, hidden_states);
+        hidden_states = std::static_pointer_cast<ResnetBlock2D<SiLU>>((*resnets)[i])->forward(scope, hidden_states);
 
     if (add_downsample_) {
         auto downsamplers = std::static_pointer_cast<ModuleList>(modules["downsamplers"]);
 
         for (auto i = 0; i < downsamplers->size(); ++i)
-            hidden_states = std::static_pointer_cast<Downsample2D>((*downsamplers)[i])->forward(context, hidden_states);
+            hidden_states = std::static_pointer_cast<Downsample2D>((*downsamplers)[i])->forward(scope, hidden_states);
     }
 
     return hidden_states;

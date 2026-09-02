@@ -4,5 +4,7 @@
 
 class SchedulerAllocator : public Allocator {
 public:
-    virtual void allocate(const std::optional<ggml_backend_buffer_usage>& = std::nullopt) {}
+    virtual void allocate(const std::optional<ggml_backend_buffer_usage>& = std::nullopt) {
+        // This does nothing because ggml scheduler automatically allocates tensors
+    }
 };

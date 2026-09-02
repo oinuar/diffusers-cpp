@@ -25,7 +25,7 @@ Qwen3ForCausalLM::Qwen3ForCausalLM(const Qwen3Config& config) {
 }
 
 Tensor Qwen3ForCausalLM::forward(
-    Context& context, 
+    Scope scope, 
     std::optional<Tensor> input_ids, 
     std::optional<Tensor> attention_mask,
     std::optional<Tensor> position_ids,
@@ -38,7 +38,7 @@ Tensor Qwen3ForCausalLM::forward(
 ) {
     auto model = std::static_pointer_cast<Qwen3Model>(modules["model"]);
     auto hidden_states = model->forward(
-        context,
+        scope,
         input_ids,
         inputs_embeds,
         attention_mask,
@@ -56,7 +56,7 @@ Tensor Qwen3ForCausalLM::forward(
         slice_hidden_states = hidden_states[{Tensor::Slice::all(), Tensor::Slice::range(seq_len - logits_to_keep, seq_len)}];
     }
 
-    auto logits = lm_head->forward(context, slice_hidden_states);
+    auto logits = lm_head->forward(scope, slice_hidden_states);
 
     // Note: Loss computation is omitted as per typical C++ porting of inference-only modules, 
     // but the primary output (logits) is returned to match the specification.

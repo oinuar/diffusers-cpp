@@ -14,7 +14,7 @@ public:
 
     Tensor forward() {
         if (!tensor_)
-            throw std::runtime_error("Undefined tensor Parameter; did you forget to set it?");
+            throw std::runtime_error("Undefined tensor Parameter. Did you forget to set it?");
 
         return tensor_;
     }
@@ -25,14 +25,14 @@ public:
 
     Tensor operator *() const {
         if (!tensor_)
-            throw std::runtime_error("Undefined tensor Parameter: not set");
+            throw std::runtime_error("Undefined tensor Parameter");
 
         return tensor_;
     }
 
     const Tensor* operator ->() const {
         if (!tensor_)
-            throw std::runtime_error("Undefined tensor Parameter: not set");
+            throw std::runtime_error("Undefined tensor Parameter");
 
         return &tensor_;
     }
@@ -48,5 +48,4 @@ public:
 private:
     Tensor::Shape shape_;
     Tensor tensor_;
-    std::optional<int64_t> split_dim_;
 };

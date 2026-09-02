@@ -1,5 +1,6 @@
 #include "diffusers/models/autoencoders/vae/DiagonalGaussianDistribution.hpp"
 #include "ggml/Context.hpp"
+#include "ggml/Scope.hpp"
 #include <cmath>
 
 DiagonalGaussianDistribution::DiagonalGaussianDistribution(

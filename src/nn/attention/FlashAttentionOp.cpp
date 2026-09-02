@@ -1,5 +1,6 @@
 #include "nn/attention/FlashAttentionOp.hpp"
 #include "ggml/Context.hpp"
+#include "ggml/Scope.hpp"
 
 Tensor FlashAttentionOp::operator ()(
     Scope scope,

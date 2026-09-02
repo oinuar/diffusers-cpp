@@ -9,6 +9,8 @@
 #include <optional>
 #include <ggml.h>
 
+class Context;
+
 class Tensor {
 public:
     template<typename T>
@@ -208,8 +210,8 @@ public:
     Tensor scale(float value) const;
 
     /** @brief Creates an uninitialized tensor with the given shape and type. */
-    template <typename T> static Tensor empty(const Shape& shape) {
-        return empty(shape, DType<T>::value);
+    template <typename T> static Tensor empty(Context& context, const Shape& shape) {
+        return empty(context, shape, DType<T>::value);
     }
 
     /** @brief Creates a scalar tensor filled with the given value. */
@@ -220,7 +222,7 @@ public:
     }
 
     /** @brief Creates an uninitialized tensor with the given shape and type. */
-    static Tensor empty(const Shape& shape, ggml_type type);
+    static Tensor empty(Context& context, const Shape& shape, ggml_type type);
 
     /** @brief Creates a filled tensor with the given value, shape and type. */
     static Tensor full(const Shape& shape, float value);
@@ -363,7 +365,6 @@ private:
     friend Tensor pow(float base, const Tensor& exponent);
 
     static int normalize_dim(const std::string& method, int64_t dim, int64_t rank, bool allow_end = false);
-    static ggml_type common_dtype(ggml_type lhs, ggml_type rhs);
 
     void throw_if_not_valid() const;
 };
@@ -440,4 +441,9 @@ struct Tensor::DType<int16_t> {
 template<>
 struct Tensor::DType<int8_t> {
     static constexpr ggml_type value = GGML_TYPE_I8;
+};
+
+template<>
+struct Tensor::DType<void> {
+    static ggml_type unify(ggml_type a, ggml_type rhs);
 };

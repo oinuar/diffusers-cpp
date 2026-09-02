@@ -33,7 +33,7 @@ public:
     explicit Flux2Transformer2DModel(const Config& config);
 
     Tensor forward(
-        Context& context,
+        Scope scope,
         Tensor hidden_states,
         Tensor encoder_hidden_states,
         Tensor timestep = {},

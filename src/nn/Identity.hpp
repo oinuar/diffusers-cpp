@@ -4,7 +4,7 @@
 
 class Identity : public Module {
 public:
-    Tensor forward(Context&, Tensor input) {
+    Tensor forward(Scope, Tensor input) {
         return input;
     }
 };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ggml/Tensor.hpp"
+#include "ggml/Scope.hpp"
 #include <ggml.h>
 #include <ggml-backend.h>
 #include <vector>
@@ -62,14 +63,18 @@ public:
 
     template <typename T>
     Tensor create(const Tensor::Shape& shape, const Provider<T>& provider) {
-        auto tensor = Tensor::empty<T>(ctx_, shape);
+        Scope scope(*this);
+
+        auto tensor = Tensor::empty<T>(shape);
         bind(tensor, provider, true);
         return tensor;
     }
 
     template <typename T>
     Tensor value(const Tensor::Shape& shape, const Provider<T>& provider) {
-        auto tensor = Tensor::empty<T>(ctx_, shape);
+        Scope scope(*this);
+
+        auto tensor = Tensor::empty<T>(shape);
         bind(tensor, provider);
         return tensor;
     }
@@ -157,4 +162,7 @@ private:
     std::vector<std::byte> metadata_;
     Bindings bindings_;
     size_t capacity_;
+    bool is_allocated_;
+
+    friend class DeviceAllocator;
 };

@@ -34,7 +34,7 @@ Qwen3Attention<AttnOp>::Qwen3Attention(const Qwen3Config& config, int layer_idx)
 
 template <class AttnOp>
 Tensor Qwen3Attention<AttnOp>::forward(
-    Context& context,
+    Scope scope,
     Qwen3RotaryEmbedding& rotary_emb,
     Tensor hidden_states,
     Tensor position_ids, 
@@ -54,17 +54,17 @@ Tensor Qwen3Attention<AttnOp>::forward(
     Tensor::Shape hidden_shape({batch_size, seq_len, -1, head_dim});
 
     // 1. Projections and reshaping to (batch, seq_len, num_heads, head_dim) -> [B, S, H, D]
-    auto query_states = q_proj->forward(context, hidden_states).reshape(hidden_shape);
-    auto key_states = k_proj->forward(context, hidden_states).reshape(hidden_shape);
-    auto value_states = v_proj->forward(context, hidden_states).reshape(hidden_shape);
+    auto query_states = q_proj->forward(scope, hidden_states).reshape(hidden_shape);
+    auto key_states = k_proj->forward(scope, hidden_states).reshape(hidden_shape);
+    auto value_states = v_proj->forward(scope, hidden_states).reshape(hidden_shape);
 
     // 2. Apply Q/K normalization
-    query_states = q_norm->forward(context, query_states);
-    key_states = k_norm->forward(context, key_states);
+    query_states = q_norm->forward(scope, query_states);
+    key_states = k_norm->forward(scope, key_states);
 
     // 3. RoPE calculation
-    query_states = rotary_emb.forward(context, query_states, position_ids);
-    key_states = rotary_emb.forward(context, key_states, position_ids);
+    query_states = rotary_emb.forward(scope, query_states, position_ids);
+    key_states = rotary_emb.forward(scope, key_states, position_ids);
 
     // Preserve optional code path for KV cache
     if (past_key_values.has_value()) {
@@ -73,10 +73,10 @@ Tensor Qwen3Attention<AttnOp>::forward(
 
     // 4. Attention calculation using operator
     AttnOp attn_op;
-    auto attn_output = attn_op(context, query_states, key_states, value_states, attention_mask, pow(head_dim, -0.5));
+    auto attn_output = attn_op(scope, query_states, key_states, value_states, attention_mask, pow(head_dim, -0.5));
 
     // 5. Transpose back, reshape and output projection
     auto attn_output_reshaped = attn_output.reshape({batch_size, seq_len, -1});
     
-    return o_proj->forward(context, attn_output_reshaped);
+    return o_proj->forward(scope, attn_output_reshaped);
 }

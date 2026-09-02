@@ -36,14 +36,14 @@ public:
     {
     }
 
-    Tensor forward(Context& context, Tensor x) {
+    Tensor forward(Scope scope, Tensor x) {
         auto linear_in = std::static_pointer_cast<Linear>(modules["linear_in"]);
         auto act_fn = std::static_pointer_cast<Flux2SwiGLU>(modules["act_fn"]);
         auto linear_out = std::static_pointer_cast<Linear>(modules["linear_out"]);
 
-        x = linear_in->forward(context, x);
-        x = act_fn->forward(context, x);
-        x = linear_out->forward(context, x);
+        x = linear_in->forward(scope, x);
+        x = act_fn->forward(scope, x);
+        x = linear_out->forward(scope, x);
 
         return x;
     }

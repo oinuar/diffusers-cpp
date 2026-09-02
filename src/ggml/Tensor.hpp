@@ -125,7 +125,7 @@ public:
     };
 
     /** @brief Default-constructs an invalid Tensor. */
-    Tensor() : ctx_(nullptr), t_(nullptr) {}
+    Tensor() : t_(nullptr) {}
 
     /** @brief Constructs a Tensor wrapping the given ggml pointers, inferring shape.
      *
@@ -135,10 +135,10 @@ public:
      * @remarks When Tensor shape is inferred, GGML collapses single dimensions so result can be not
      * what is expected. It is highly recommended to always pass the logical shape when constructing a Tensor.
      */
-    explicit Tensor(ggml_context* ctx, ggml_tensor* t)
-        : ctx_(ctx), t_(t), shape_()
+    explicit Tensor(ggml_tensor* t)
+        : t_(t), shape_()
     {
-        if (!ctx_ || !t_)
+        if (!!t_)
             return;
 
         Shape shape({t_->ne[3], t_->ne[2], t_->ne[1], t_->ne[0]});
@@ -151,8 +151,8 @@ public:
      * This is the only way to create a valid Tensor from raw ggml objects. The Tensor does not assume ownership
      * of either pointer — it is valid only while both ctx and t remain alive.
      */
-    explicit Tensor(ggml_context* ctx, ggml_tensor* t, const Shape& shape)
-        : ctx_(ctx), t_(t), shape_(shape) {}
+    explicit Tensor(ggml_tensor* t, const Shape& shape)
+        : t_(t), shape_(shape) {}
 
     /** @brief Returns the number of logical dimensions. */
     int ndim() const {
@@ -161,7 +161,7 @@ public:
 
     /** @brief Returns the total number of elements in the tensor. */
     int64_t numel() const {
-        if (!ctx_ || !t_)
+        if (!t_)
             return 0;
 
         return ggml_nelements(t_);
@@ -173,14 +173,9 @@ public:
         return t_->type;
     }
 
-    /** @brief Returns the tensor context. */
-    ggml_context* context() const {
-        return ctx_;
-    }
-
     /** @brief Returns true if tensor is valid; otherwise returns false. */
     operator bool() const {
-        return ctx_ != nullptr && t_ != nullptr;
+        return t_ != nullptr;
     }
 
     /** @brief Returns a contiguous copy of this tensor.
@@ -188,10 +183,7 @@ public:
      * Always produces a copy tensor regardless of whether the input is already contiguous. This is used when a 
      * shape-changing operation requires contiguous memory layout (e.g., reshape on non-contiguous tensors).
      */
-    Tensor contiguous() const {
-        throw_if_not_valid();
-        return Tensor(ctx_, ggml_cont(ctx_, t_), shape_);
-    }
+    Tensor contiguous() const;
 
     /** @brief Returns true if tensor is contiguous; otherwise returns false. */
     bool is_contiguous() const {
@@ -210,52 +202,37 @@ public:
     }
 
     /** @brief Returns a copy of this tensor. */
-    Tensor clone() const {
-        return Tensor(ctx_, ggml_dup(ctx_, t_), shape_);
-    }
+    Tensor clone() const;
+
+    /** @brief Scales a tensor with a constant. */
+    Tensor scale(float value) const;
 
     /** @brief Creates an uninitialized tensor with the given shape and type. */
-    template <typename T> static Tensor empty(ggml_context* ctx, const Shape& shape) {
-        return empty(ctx, shape, DType<T>::value);
+    template <typename T> static Tensor empty(const Shape& shape) {
+        return empty(shape, DType<T>::value);
     }
 
     /** @brief Creates a scalar tensor filled with the given value. */
     template <typename T>
-    static Tensor scalar(ggml_context* ctx, const T& value) {
-        auto tensor = full(ctx, {}, (float)value);
+    static Tensor scalar(const T& value) {
+        auto tensor = full({}, (float)value);
         return tensor.to(DType<T>::value);
     }
 
     /** @brief Creates an uninitialized tensor with the given shape and type. */
-    static Tensor empty(ggml_context* ctx, const Shape& shape, ggml_type type);
+    static Tensor empty(const Shape& shape, ggml_type type);
 
     /** @brief Creates a filled tensor with the given value, shape and type. */
-    static Tensor full(
-        ggml_context* ctx,
-        const Shape& shape,
-        float value)
-    {
-        // GGML supports filling only float tensors.
-        auto tensor = empty<float>(ctx, shape);
-        tensor.t_ = ggml_fill(ctx, tensor.t_, value);
-        
-        return tensor;
-    }
+    static Tensor full(const Shape& shape, float value);
 
     /** @brief Creates a zero-filled tensor with the given shape and type. */
-    static Tensor zeros(
-        ggml_context* ctx,
-        const Shape& shape)
-    {
-        return full(ctx, shape, 0.0f);
+    static Tensor zeros(const Shape& shape) {
+        return full(shape, 0.0f);
     }
 
     /** @brief Creates a one-filled tensor with the given shape and type. */
-    static Tensor ones(
-        ggml_context* ctx,
-        const Shape& shape)
-    {
-        return full(ctx, shape, 1.0f);
+    static Tensor ones(const Shape& shape) {
+        return full(shape, 1.0f);
     }
 
 
@@ -323,98 +300,42 @@ public:
     }
 
     /** @brief Converts a tensor to type `type`. */
-    Tensor astype(ggml_type type) const {
-        return Tensor(ctx_, ggml_cast(ctx_, t_, type), shape_);
-    }
+    Tensor astype(ggml_type type) const;
 
     /** @brief Copies this tensor to another tensor. */
-    Tensor copy_to(Tensor dest) const {
-        return Tensor(ctx_, ggml_cpy(ctx_, t_, *dest), dest.shape_);
-    }
+    Tensor copy_to(Tensor dest) const;
 
-    Tensor operator -() const {
-        return Tensor(ctx_, ggml_neg(ctx_, t_), shape_);
-    }
+    Tensor operator -() const;
 
-    Tensor operator+(Tensor rhs) const {
-        auto lhs = *this;
-        auto target = Shape::broadcast(lhs.shape_, rhs.shape_);
-        auto dtype = common_dtype(lhs.dtype(), rhs.dtype());
+    Tensor operator+(Tensor rhs) const;
 
-        lhs = lhs.to(dtype);
-        rhs = rhs.to(dtype);
+    Tensor operator-(Tensor rhs) const;
 
-        lhs = lhs.expand(target);
-        rhs = rhs.expand(target);
+    Tensor operator*(Tensor rhs) const;
 
-        return Tensor(lhs.ctx_, ggml_add(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_);
-    }
-
-    Tensor operator-(Tensor rhs) const {
-        auto lhs = *this;
-        auto target = Shape::broadcast(lhs.shape_, rhs.shape_);
-        auto dtype = common_dtype(lhs.dtype(), rhs.dtype());
-
-        lhs = lhs.to(dtype);
-        rhs = rhs.to(dtype);
-
-        lhs = lhs.expand(target);
-        rhs = rhs.expand(target);
-
-        return Tensor(lhs.ctx_, ggml_sub(ctx_, lhs.t_, rhs.t_), lhs.shape_).to(dtype);
-    }
-
-    Tensor operator*(Tensor rhs) const {
-        auto lhs = *this;
-        auto target = Shape::broadcast(lhs.shape_, rhs.shape_);
-        auto dtype = common_dtype(lhs.dtype(), rhs.dtype());
-
-        lhs = lhs.to(dtype);
-        rhs = rhs.to(dtype);
-
-        lhs = lhs.expand(target);
-        rhs = rhs.expand(target);
-
-        return Tensor(lhs.ctx_, ggml_mul(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_).to(dtype);
-    }
-
-    Tensor operator/(Tensor rhs) const {
-        auto lhs = *this;
-        auto target = Shape::broadcast(lhs.shape_, rhs.shape_);
-        auto dtype = common_dtype(lhs.dtype(), rhs.dtype());
-
-        lhs = lhs.to(dtype);
-        rhs = rhs.to(dtype);
-
-        lhs = lhs.expand(target);
-        rhs = rhs.expand(target);
-
-        return Tensor(lhs.ctx_, ggml_div(lhs.ctx_, lhs.t_, rhs.t_), lhs.shape_).to(dtype);
-    }
+    Tensor operator/(Tensor rhs) const;
 
     template <typename T>
     Tensor operator+(const T& rhs) const {
-        return *this + scalar<T>(ctx_, rhs);
+        return *this + scalar<T>(rhs);
     }
 
     template <typename T>
     Tensor operator-(const T& rhs) const {
-        return *this - scalar<T>(ctx_, rhs);
+        return *this - scalar<T>(rhs);
     }
 
     template <typename T>
     Tensor operator*(const T& rhs) const {
-        return Tensor(ctx_, ggml_scale(ctx_, t_, (float)rhs), shape_);
+        return scale((float)rhs);
     }
 
     template <typename T>
     Tensor operator/(const T& rhs) const {
-        return Tensor(ctx_, ggml_scale(ctx_, t_, 1.0f / (float)rhs), shape_);
+        return scale(1.0f / (float)rhs);
     }
 
-    Tensor clamp(float a, float b) const {
-        return Tensor(ctx_, ggml_clamp(ctx_, t_, a, b), shape_);
-    }
+    Tensor clamp(float a, float b) const;
 
     Tensor sum(int64_t dim, bool keepdim = false) const;
 
@@ -426,7 +347,6 @@ public:
 
     Tensor operator [](const std::vector<Slice>& indices) const;
 private:
-    ggml_context* ctx_;
     ggml_tensor* t_;
     Shape shape_;
 
@@ -455,7 +375,7 @@ inline Tensor operator+(const T& value, const Tensor& tensor) {
 
 template <typename T>
 inline Tensor operator-(const T& value, const Tensor& tensor) {
-    return Tensor::scalar<T>(tensor.ctx_, value) - tensor;
+    return Tensor::scalar<T>(value) - tensor;
 }
 
 template <typename T>
@@ -465,32 +385,20 @@ inline Tensor operator*(const T& value, const Tensor& tensor) {
 
 template <typename T>
 inline Tensor operator/(const T& value, const Tensor& tensor) {
-    return Tensor::scalar<T>(tensor.ctx_, value) / tensor;
+    return Tensor::scalar<T>(value) / tensor;
 }
 
-inline Tensor abs(const Tensor& tensor) {
-    return Tensor(tensor.ctx_, ggml_abs(tensor.ctx_, tensor.t_), tensor.shape_);
-}
+Tensor abs(const Tensor& tensor);
 
-inline Tensor sqrt(const Tensor& tensor) {
-    return Tensor(tensor.ctx_, ggml_sqrt(tensor.ctx_, tensor.t_), tensor.shape_);
-}
+Tensor sqrt(const Tensor& tensor);
 
-inline Tensor exp(const Tensor& tensor) {
-    return Tensor(tensor.ctx_, ggml_exp(tensor.ctx_, tensor.t_), tensor.shape_);
-}
+Tensor exp(const Tensor& tensor);
 
-inline Tensor log(const Tensor& tensor) {
-    return Tensor(tensor.ctx_, ggml_log(tensor.ctx_, tensor.t_), tensor.shape_);
-}
+Tensor log(const Tensor& tensor);
 
-inline Tensor sin(const Tensor& tensor) {
-    return Tensor(tensor.ctx_, ggml_sin(tensor.ctx_, tensor.t_), tensor.shape_);
-}
+Tensor sin(const Tensor& tensor);
 
-inline Tensor cos(const Tensor& tensor) {
-    return Tensor(tensor.ctx_, ggml_cos(tensor.ctx_, tensor.t_), tensor.shape_);
-}
+Tensor cos(const Tensor& tensor);
 
 inline Tensor pow(const Tensor& base, const Tensor& exponent) {
     // exp(exponent * log(x))  — works for arbitrary real exponents

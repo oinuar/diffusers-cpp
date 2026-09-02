@@ -20,7 +20,7 @@ public:
         int64_t downsample_padding = 1
     );
 
-    Tensor forward(Context& context, Tensor hidden_states);
+    Tensor forward(Scope scope, Tensor hidden_states);
 
 private:
     bool add_downsample_;

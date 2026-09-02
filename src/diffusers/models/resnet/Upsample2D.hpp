@@ -13,10 +13,7 @@ public:
         bool use_conv_transpose = false
     );
 
-    Tensor forward(
-        Context& context,
-        Tensor hidden_states
-    );
+    Tensor forward(Scope scope, Tensor hidden_states);
 
 private:
     bool use_conv_;

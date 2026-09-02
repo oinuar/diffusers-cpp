@@ -13,7 +13,7 @@ public:
         bool bias = true
     );
 
-    Tensor forward(Context& context, Tensor x);
+    Tensor forward(Scope scope, Tensor x);
 
 public:
     int64_t stride_;

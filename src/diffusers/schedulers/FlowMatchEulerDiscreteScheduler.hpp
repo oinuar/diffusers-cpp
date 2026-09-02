@@ -4,6 +4,7 @@
 #include <string>
 
 #include "diffusers/schedulers/Schedule.hpp"
+#include "ggml/Scope.hpp"
 
 class FlowMatchEulerDiscreteScheduler {
 public:
@@ -23,9 +24,10 @@ public:
     ) const;
 
     Tensor integrate(
-        const Tensor& model_output,
-        const Tensor& sample,
-        const Tensor& dt
+        Scope scope,
+        Tensor model_output,
+        Tensor sample,
+        Tensor dt
     ) const;
 
 private:

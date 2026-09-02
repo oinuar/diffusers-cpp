@@ -7,7 +7,7 @@ template <class AttnBackend>
 class ScaledDotProductAttention {
 public:
     Tensor operator()(
-        Context& context,
+        Scope& scope,
         Tensor query,
         Tensor key,
         Tensor value,
@@ -24,7 +24,7 @@ public:
         AttnBackend backend;
 
         auto hidden_states = backend(
-            context,
+            scope,
             query,
             key,
             value,

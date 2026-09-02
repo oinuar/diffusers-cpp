@@ -48,7 +48,7 @@ public:
     }
 
     virtual Tensor forward(
-        Context& context,
+        Scope scope,
         Tensor hidden_states,
         std::optional<Tensor> attention_mask = std::nullopt,
         std::optional<std::pair<std::shared_ptr<Flux2PosEmbed>, Tensor>> image_rotary_emb = std::nullopt
@@ -56,7 +56,7 @@ public:
         // Parallel in (QKV + MLP in) projection
         auto to_qkv_mlp_proj = std::static_pointer_cast<Linear>(modules["to_qkv_mlp_proj"]);
 
-        hidden_states = to_qkv_mlp_proj->forward(context, hidden_states);
+        hidden_states = to_qkv_mlp_proj->forward(scope, hidden_states);
 
         auto parts = hidden_states.split_with_sizes({3 * inner_dim_, mlp_hidden_dim_ * mlp_mult_factor_}, -1);
         auto qkv = parts.at(0);
@@ -75,18 +75,18 @@ public:
         auto norm_q = std::static_pointer_cast<RMSNorm>(modules["norm_q"]);
         auto norm_k = std::static_pointer_cast<RMSNorm>(modules["norm_k"]);
 
-        query = norm_q->forward(context, query);
-        key = norm_k->forward(context, key);
+        query = norm_q->forward(scope, query);
+        key = norm_k->forward(scope, key);
 
         if (image_rotary_emb) {
-            query = image_rotary_emb->first->forward(context, query, image_rotary_emb->second);
-            key = image_rotary_emb->first->forward(context, key, image_rotary_emb->second);
+            query = image_rotary_emb->first->forward(scope, query, image_rotary_emb->second);
+            key = image_rotary_emb->first->forward(scope, key, image_rotary_emb->second);
         }
 
         AttnOp dispatch_attention_fn;
 
         hidden_states = dispatch_attention_fn(
-            context,
+            scope,
             query,
             key,
             value,
@@ -99,13 +99,13 @@ public:
         auto mlp_act_fn = std::static_pointer_cast<Flux2SwiGLU>(modules["mlp_act_fn"]);
 
         // Handle the feedforward (FF) logic
-        mlp_hidden_states = mlp_act_fn->forward(context, mlp_hidden_states);
+        mlp_hidden_states = mlp_act_fn->forward(scope, mlp_hidden_states);
 
         auto to_out = std::static_pointer_cast<Linear>(modules["to_out"]);
 
         // Concatenate and parallel output projection
         hidden_states = Tensor::cat({hidden_states, mlp_hidden_states}, -1);
-        hidden_states = to_out->forward(context, hidden_states);
+        hidden_states = to_out->forward(scope, hidden_states);
 
         return hidden_states;
     }
@@ -125,7 +125,7 @@ protected:
     int64_t mlp_mult_factor_;
 
     static Tensor apply_rotary_emb(
-        Context& context,
+        Scope& scope,
         Tensor x,
         const Tensor& cos,
         const Tensor& sin

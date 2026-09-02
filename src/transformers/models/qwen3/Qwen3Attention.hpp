@@ -10,7 +10,7 @@ class Qwen3Attention : public Module {
 public:
     Qwen3Attention(const Qwen3Config& config, int layer_idx);
 
-    Tensor forward(Context& context, Qwen3RotaryEmbedding& rotary_emb,
+    Tensor forward(Scope scope, Qwen3RotaryEmbedding& rotary_emb,
                    Tensor hidden_states, Tensor position_ids, 
                    std::optional<Tensor> attention_mask = std::nullopt, 
                    std::optional<Tensor> past_key_values = std::nullopt);

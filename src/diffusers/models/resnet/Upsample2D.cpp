@@ -31,7 +31,7 @@ Upsample2D::Upsample2D(
 }
 
 Tensor Upsample2D::forward(
-    Context& context,
+    Scope scope,
     Tensor hidden_states
 )
 {
@@ -48,9 +48,8 @@ Tensor Upsample2D::forward(
     // ne3 = batch
     // Result: [B,C,H,W] -> [B,C,2H,2W]
     hidden_states = Tensor(
-        *context,
         ggml_upscale(
-            *context,
+            *scope.context(),
             *hidden_states,
             2,
             GGML_SCALE_MODE_NEAREST
@@ -67,10 +66,7 @@ Tensor Upsample2D::forward(
         hidden_states =
             std::static_pointer_cast<Conv2d>(
                 modules["conv"])
-            ->forward(
-                context,
-                hidden_states
-            );
+            ->forward(scope, hidden_states);
     }
 
     return hidden_states;

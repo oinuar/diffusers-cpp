@@ -14,7 +14,7 @@ Qwen3DecoderLayer::Qwen3DecoderLayer(const Qwen3Config& config, int layer_idx) {
 }
 
 Tensor Qwen3DecoderLayer::forward(
-    Context& context,
+    Scope scope,
     Qwen3RotaryEmbedding& rotary_emb,
     Tensor hidden_states,
     Tensor position_ids, 
@@ -27,10 +27,10 @@ Tensor Qwen3DecoderLayer::forward(
     auto residual = hidden_states;
     
     auto input_layernorm = std::static_pointer_cast<Qwen3RMSNorm>(modules["input_layernorm"]);
-    hidden_states = input_layernorm->forward(context, hidden_states);
+    hidden_states = input_layernorm->forward(scope, hidden_states);
 
     auto self_attn = std::static_pointer_cast<Qwen3Attention<ScaledDotProductAttention<FlashAttentionOp>>>(modules["self_attn"]);
-    hidden_states = self_attn->forward(context, rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
+    hidden_states = self_attn->forward(scope, rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
 
     hidden_states = residual + hidden_states;
 
@@ -38,10 +38,10 @@ Tensor Qwen3DecoderLayer::forward(
     residual = hidden_states;
     
     auto post_attention_layernorm = std::static_pointer_cast<Qwen3RMSNorm>(modules["post_attention_layernorm"]);
-    hidden_states = post_attention_layernorm->forward(context, hidden_states);
+    hidden_states = post_attention_layernorm->forward(scope, hidden_states);
 
     auto mlp = std::static_pointer_cast<Qwen3MLP>(modules["mlp"]);
-    hidden_states = mlp->forward(context, hidden_states);
+    hidden_states = mlp->forward(scope, hidden_states);
 
     hidden_states = residual + hidden_states;
 

@@ -22,10 +22,7 @@ GroupNorm::GroupNorm(int64_t num_groups, int64_t num_channels, float eps, bool a
     }
 }
 
-Tensor GroupNorm::forward(
-    Context& context,
-    Tensor input
-) {
+Tensor GroupNorm::forward(Scope scope, Tensor input) {
     auto shape = input.shape();
 
     const int64_t batch = shape[0];
@@ -52,9 +49,8 @@ Tensor GroupNorm::forward(
 
 
     input = Tensor(
-        *context,
         ggml_norm(
-            *context,
+            *scope.context(),
             *input,
             eps_
         ),

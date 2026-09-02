@@ -23,11 +23,11 @@ AdaLayerNormContinuous<NormFn>::AdaLayerNormContinuous(
 }
 
 template <class NormFn>
-Tensor AdaLayerNormContinuous<NormFn>::forward(Context& context, Tensor hidden_states, Tensor conditioning_embedding) {
+Tensor AdaLayerNormContinuous<NormFn>::forward(Scope scope, Tensor hidden_states, Tensor conditioning_embedding) {
     auto silu = std::static_pointer_cast<SiLU>(modules["silu"]);
     auto linear = std::static_pointer_cast<Linear>(modules["linear"]);
 
-    auto emb = linear->forward(context, silu->forward(context, conditioning_embedding));
+    auto emb = linear->forward(scope, silu->forward(scope, conditioning_embedding));
     auto chunk = emb.chunk(2, 1);
     auto scale = chunk.at(0);
     auto shift = chunk.at(1);
@@ -35,7 +35,7 @@ Tensor AdaLayerNormContinuous<NormFn>::forward(Context& context, Tensor hidden_s
     auto it = modules.find("norm");
 
     if (it != std::end(modules))
-        hidden_states = std::static_pointer_cast<NormFn>(it->second)->forward(context, hidden_states);
+        hidden_states = std::static_pointer_cast<NormFn>(it->second)->forward(scope, hidden_states);
 
     hidden_states = hidden_states * (1.0f + scale)[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}] + shift[{Tensor::Slice::all(), Tensor::Slice::none(), Tensor::Slice::all()}];
 

@@ -9,8 +9,8 @@ RMSNorm::RMSNorm(int64_t dim, float eps, bool elementwise_affine)
         modules["weight"] = std::make_shared<Parameter>(Tensor::Shape({dim}));
 }
 
-Tensor RMSNorm::forward(Context& context, Tensor x) {
-    x = Tensor(*context, ggml_rms_norm(*context, *x, eps_), x.shape());
+Tensor RMSNorm::forward(Scope scope, Tensor x) {
+    x = Tensor(ggml_rms_norm(*scope.context(), *x, eps_), x.shape());
 
     if (elementwise_affine_) {
         auto weight = std::static_pointer_cast<Parameter>(modules["weight"]);

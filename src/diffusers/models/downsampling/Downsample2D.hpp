@@ -11,10 +11,7 @@ public:
         int64_t padding = 1
     );
 
-    Tensor forward(
-        Context& context,
-        Tensor hidden_states
-    );
+    Tensor forward(Scope scope, Tensor hidden_states);
 
 private:
     bool use_conv_;

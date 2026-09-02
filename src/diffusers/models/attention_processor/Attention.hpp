@@ -20,10 +20,7 @@ public:
         bool upcast_softmax = false
     );
 
-    Tensor forward(
-        Context& context,
-        Tensor hidden_states
-    );
+    Tensor forward(Scope scope, Tensor hidden_states);
 
 private:
     int64_t heads_;

@@ -4,9 +4,9 @@
 #include <string>
 #include <memory>
 #include "ggml/Tensor.hpp"
+#include "ggml/Scope.hpp"
 
 class Visitor;
-class Context;
 
 class Module {
 public:

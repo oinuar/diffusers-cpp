@@ -8,7 +8,7 @@ Qwen3RotaryEmbedding::Qwen3RotaryEmbedding(const Qwen3Config& config)
 }
 
 Tensor Qwen3RotaryEmbedding::forward(
-    Context& context,
+    Scope scope,
     Tensor x,
     Tensor position_ids
 ) {
@@ -21,7 +21,7 @@ Tensor Qwen3RotaryEmbedding::forward(
         position_ids = position_ids.flatten();
 
     auto rope = ggml_rope_ext(
-        *context,
+        *scope.context(),
         *x,
         *position_ids,
         nullptr,             // freq_factors
@@ -33,5 +33,5 @@ Tensor Qwen3RotaryEmbedding::forward(
         0.0f, 1.0f, 0.0f, 0.0f // ext_factor, attn_factor=1.0, beta_fast, beta_slow
     );
 
-    return Tensor(*context, rope, x.shape());
+    return Tensor(rope, x.shape());
 }

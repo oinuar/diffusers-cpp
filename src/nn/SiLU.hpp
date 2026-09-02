@@ -5,7 +5,7 @@
 
 class SiLU : public Module {
 public:
-    Tensor forward(Context& context, Tensor x) {
-        return Tensor(*context, ggml_silu(*context, *x), x.shape());
+    Tensor forward(Scope scope, Tensor x) {
+        return Tensor(ggml_silu(*scope.context(), *x), x.shape());
     }
 };

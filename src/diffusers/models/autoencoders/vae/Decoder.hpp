@@ -111,21 +111,17 @@ public:
             );
     }
 
-    Tensor forward(
-        Context& context,
-        Tensor sample,
-        std::optional<Tensor> latent_embeds = std::nullopt
-    ) {
+    Tensor forward(Scope scope, Tensor sample, std::optional<Tensor> latent_embeds = std::nullopt) {
         sample =
             std::static_pointer_cast<Conv2d>(
                 modules["conv_in"])
-            ->forward(context, sample);
+            ->forward(scope, sample);
 
         sample =
             std::static_pointer_cast<UNetMidBlock2D>(
                 modules["mid_block"])
             ->forward(
-                context,
+                scope,
                 sample,
                 latent_embeds
             );
@@ -135,7 +131,7 @@ public:
         for (auto i = 0; i < up_blocks->size(); ++i) {
             auto up_block = std::static_pointer_cast<UpDecoderBlock2D>((*up_blocks)[i]);
 
-            sample = up_block->forward(context, sample, latent_embeds);
+            sample = up_block->forward(scope, sample, latent_embeds);
         }
 
         if (latent_embeds) {
@@ -143,7 +139,7 @@ public:
                 std::static_pointer_cast<SpatialNorm>(
                     modules["conv_norm_out"])
                 ->forward(
-                    context,
+                    scope,
                     sample,
                     latent_embeds.value()
                 );
@@ -153,7 +149,7 @@ public:
                 std::static_pointer_cast<GroupNorm>(
                     modules["conv_norm_out"])
                 ->forward(
-                    context,
+                    scope,
                     sample
                 );
         }
@@ -161,13 +157,13 @@ public:
         sample =
             std::static_pointer_cast<SiLU>(
                 modules["conv_act"])
-            ->forward(context, sample);
+            ->forward(scope, sample);
 
 
         sample =
             std::static_pointer_cast<Conv2d>(
                 modules["conv_out"])
-            ->forward(context, sample);
+            ->forward(scope, sample);
 
         return sample;
     }

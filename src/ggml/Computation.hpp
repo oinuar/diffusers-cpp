@@ -23,8 +23,14 @@ public:
         if (progress_ != nullptr)
             progress_->push("Initializing", bindings_.size() + 1);
 
-        for (auto& [tensor, binding] : bindings_) {
-            graph_.context().write(tensor, binding.first(rng_));
+        for (auto it = std::begin(bindings_); it != std::end(bindings_); ) {
+            graph_.context().write(it->first, it->second.first(rng_));
+
+            // Remove one-time bindings after using them
+            if (it->second.second)
+                it = bindings_.erase(it);
+            else
+                ++it;
 
             if (progress_ != nullptr)
                 progress_->next();

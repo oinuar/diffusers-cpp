@@ -14,10 +14,10 @@ Timesteps::Timesteps(
         scale(scale)
 {}
 
-Tensor Timesteps::forward(Context& context, Tensor timesteps) {
+Tensor Timesteps::forward(Scope scope, Tensor timesteps) {
     const int64_t half_dim = num_channels / 2;
 
-    auto exponent = context.arange(0.0f, static_cast<float>(half_dim));
+    auto exponent = scope.context().arange(0.0f, static_cast<float>(half_dim));
 
     exponent = exponent * (-std::log(10000.0f) / (half_dim - downscale_freq_shift));
 
@@ -38,7 +38,7 @@ Tensor Timesteps::forward(Context& context, Tensor timesteps) {
 
     // Pad
     if (num_channels % 2 == 1) {
-        auto zeros = Tensor::zeros(*context, {out.shape()[0], 1});
+        auto zeros = Tensor::zeros({out.shape()[0], 1});
         out = Tensor::cat({out, zeros}, -1);
     }
 

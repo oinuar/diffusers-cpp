@@ -92,48 +92,48 @@ AutoencoderKLFlux2::AutoencoderKLFlux2(
         );
 }
 
-Tensor AutoencoderKLFlux2::forward(Context& context, Tensor sample, bool sample_posterior) {
+Tensor AutoencoderKLFlux2::forward(Scope scope, Tensor sample, bool sample_posterior) {
     auto x = sample;
-    auto posterior = encode(context, x);
+    auto posterior = encode(scope, x);
 
     Tensor z;
 
     if (sample_posterior)
-        z = posterior.sample(context);
+        z = posterior.sample(scope);
     else
         z = posterior.mode();
     
-    auto dec = decode(context, z);
+    auto dec = decode(scope, z);
 
     return dec;
 }
 
-DiagonalGaussianDistribution AutoencoderKLFlux2::encode(Context& context, Tensor x) {
+DiagonalGaussianDistribution AutoencoderKLFlux2::encode(Scope& scope, Tensor x) {
     auto encoder = std::static_pointer_cast<Encoder>(modules["encoder"]);
 
-    auto enc = encoder->forward(context, x);
+    auto enc = encoder->forward(scope, x);
 
     if (use_quant_conv_) {
         auto quant_conv = std::static_pointer_cast<Conv2d>(modules["quant_conv"]);
 
-        enc = quant_conv->forward(context, enc);
+        enc = quant_conv->forward(scope, enc);
     }
 
-    auto posterior = DiagonalGaussianDistribution(context, enc);
+    auto posterior = DiagonalGaussianDistribution(scope, enc);
 
     return posterior;
 }
 
-Tensor AutoencoderKLFlux2::decode(Context& context, Tensor z) {
+Tensor AutoencoderKLFlux2::decode(Scope& scope, Tensor z) {
     if (use_post_quant_conv_) {
         auto post_quant_conv = std::static_pointer_cast<Conv2d>(modules["post_quant_conv"]);
 
-        z = post_quant_conv->forward(context, z);
+        z = post_quant_conv->forward(scope, z);
     }
 
     auto decoder = std::static_pointer_cast<Decoder>(modules["decoder"]);
 
-    auto dec = decoder->forward(context, z);
+    auto dec = decoder->forward(scope, z);
 
     return dec;
 }

@@ -3,7 +3,7 @@
 #include <cmath>
 
 DiagonalGaussianDistribution::DiagonalGaussianDistribution(
-    Context& context,
+    Scope& scope,
     Tensor parameters,
     bool deterministic
 )
@@ -16,8 +16,8 @@ DiagonalGaussianDistribution::DiagonalGaussianDistribution(
     logvar_ = logvar_.clamp(-30.0, 20.0).contiguous();
 
     if (deterministic) {
-        std_ = Tensor::zeros(*context, mean_.shape()).to(mean_.dtype());
-        var_ = Tensor::zeros(*context, mean_.shape()).to(mean_.dtype());
+        std_ = Tensor::zeros(mean_.shape()).to(mean_.dtype());
+        var_ = Tensor::zeros(mean_.shape()).to(mean_.dtype());
     }
     else {
         std_ = exp(0.5f * logvar_);
@@ -25,10 +25,10 @@ DiagonalGaussianDistribution::DiagonalGaussianDistribution(
     }
 }
 
-Tensor DiagonalGaussianDistribution::sample(Context& context) {
+Tensor DiagonalGaussianDistribution::sample(Scope& scope) {
     auto numel = mean_.numel();
 
-    auto sample = context.value<float>(mean_.shape(), [=](std::mt19937& rng) {
+    auto sample = scope.context().value<float>(mean_.shape(), [=](std::mt19937& rng) {
         std::vector<float> data(numel);
         std::normal_distribution<float> dist(0.0f, 1.0f);
 

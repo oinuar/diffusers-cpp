@@ -10,16 +10,16 @@ Qwen3MLP::Qwen3MLP(const Qwen3Config& config) {
     modules["act_fn"] = std::make_shared<SiLU>();
 }
 
-Tensor Qwen3MLP::forward(Context& context, Tensor x) {
+Tensor Qwen3MLP::forward(Scope scope, Tensor x) {
     auto gate_proj = std::static_pointer_cast<Linear>(modules["gate_proj"]);
     auto up_proj = std::static_pointer_cast<Linear>(modules["up_proj"]);
     auto down_proj = std::static_pointer_cast<Linear>(modules["down_proj"]);
     auto act_fn = std::static_pointer_cast<SiLU>(modules["act_fn"]);
 
-    auto gate = gate_proj->forward(context, x);
-    auto up = up_proj->forward(context, x);
+    auto gate = gate_proj->forward(scope, x);
+    auto up = up_proj->forward(scope, x);
     
-    gate = act_fn->forward(context, gate);
+    gate = act_fn->forward(scope, gate);
 
-    return down_proj->forward(context, gate * up);
+    return down_proj->forward(scope, gate * up);
 }

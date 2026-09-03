@@ -7,6 +7,34 @@
 #include <sstream>
 #include <algorithm>
 
+namespace {
+
+// ggml's elementwise binary ops natively broadcast their second argument
+// against the first: for every dim i, src[0]->ne[i] % src[1]->ne[i] must be
+// zero, and the result takes src[0]'s shape. The first argument must already
+// be a broadcast superset of the second — one operand at a time. Avoiding
+// repeat matters for the tensor-parallel meta device, where GGML_OP_REPEAT
+// is only supported with mirrored operands.
+//
+// True if a's shape is a broadcast superset of b's shape: every dim of a is
+// a multiple of the matching dim of b (missing dims count as 1).
+bool ggml_broadcasts(const Tensor::Shape& a, const Tensor::Shape& b) {
+    const int64_t rank = std::max(a.rank(), b.rank());
+
+    for (int64_t i = 0; i < rank; ++i) {
+        // Shape stores dims in ggml order (ne_[0] is the fastest dim), and a
+        // rank-0 (scalar) shape is backed by a ggml tensor with ne {1,1,1,1}.
+        const int64_t da = (a.rank() == 0 || i >= a.rank()) ? 1 : a.data()[i];
+        const int64_t db = (b.rank() == 0 || i >= b.rank()) ? 1 : b.data()[i];
+
+        if (db == 0 || da % db != 0)
+            return false;
+    }
+
+    return true;
+}
+
+}
 std::string Tensor::Shape::to_string() const {
     std::ostringstream oss;
     oss << '(';
@@ -62,10 +90,23 @@ Tensor Tensor::operator+(Tensor rhs) const {
     lhs = lhs.to(dtype);
     rhs = rhs.to(dtype);
 
+    // ggml_add() natively broadcasts its second argument against the first
+    // (the first must already be a broadcast superset). Addition is
+    // commutative, so use the argument order that lets ggml broadcast: no
+    // expand/repeat nodes needed.
+    if (ggml_broadcasts(lhs.shape_, rhs.shape_))
+        return Tensor(Scope::engine().add(lhs.t_, rhs.t_), target);
+
+    if (ggml_broadcasts(rhs.shape_, lhs.shape_))
+        return Tensor(Scope::engine().add(rhs.t_, lhs.t_), target);
+
+    // Neither shape is a superset of the other (both operands have
+    // singleton dims the other lacks): ggml broadcasts one operand at a
+    // time, so fall back to explicit expansion.
     lhs = lhs.expand(target);
     rhs = rhs.expand(target);
 
-    return Tensor(Scope::engine().add(lhs.t_, rhs.t_), lhs.shape_);
+    return Tensor(Scope::engine().add(lhs.t_, rhs.t_), target);
 }
 
 Tensor Tensor::operator-(Tensor rhs) const {
@@ -76,10 +117,21 @@ Tensor Tensor::operator-(Tensor rhs) const {
     lhs = lhs.to(dtype);
     rhs = rhs.to(dtype);
 
+    if (ggml_broadcasts(lhs.shape_, rhs.shape_))
+        return Tensor(Scope::engine().sub(lhs.t_, rhs.t_), target);
+
+    if (ggml_broadcasts(rhs.shape_, lhs.shape_)) {
+        // lhs - rhs = -(rhs - lhs) keeps both operands in an order ggml can
+        // broadcast natively, without expand/repeat nodes.
+        auto diff = Tensor(Scope::engine().sub(rhs.t_, lhs.t_), target);
+
+        return -diff;
+    }
+
     lhs = lhs.expand(target);
     rhs = rhs.expand(target);
 
-    return Tensor(Scope::engine().sub(lhs.t_, rhs.t_), lhs.shape_);
+    return Tensor(Scope::engine().sub(lhs.t_, rhs.t_), target);
 }
 
 Tensor Tensor::operator*(Tensor rhs) const {
@@ -90,10 +142,23 @@ Tensor Tensor::operator*(Tensor rhs) const {
     lhs = lhs.to(dtype);
     rhs = rhs.to(dtype);
 
+    // ggml_mul() natively broadcasts its second argument against the first
+    // (the first must already be a broadcast superset). Multiplication is
+    // commutative, so use the argument order that lets ggml broadcast: no
+    // expand/repeat nodes needed.
+    if (ggml_broadcasts(lhs.shape_, rhs.shape_))
+        return Tensor(Scope::engine().mul(lhs.t_, rhs.t_), target);
+
+    if (ggml_broadcasts(rhs.shape_, lhs.shape_))
+        return Tensor(Scope::engine().mul(rhs.t_, lhs.t_), target);
+
+    // Neither shape is a superset of the other (both operands have
+    // singleton dims the other lacks): ggml broadcasts one operand at a
+    // time, so fall back to explicit expansion.
     lhs = lhs.expand(target);
     rhs = rhs.expand(target);
 
-    return Tensor(Scope::engine().mul(lhs.t_, rhs.t_), lhs.shape_);
+    return Tensor(Scope::engine().mul(lhs.t_, rhs.t_), target);
 }
 
 Tensor Tensor::operator/(Tensor rhs) const {
@@ -104,10 +169,18 @@ Tensor Tensor::operator/(Tensor rhs) const {
     lhs = lhs.to(dtype);
     rhs = rhs.to(dtype);
 
+    if (ggml_broadcasts(lhs.shape_, rhs.shape_))
+        return Tensor(Scope::engine().div(lhs.t_, rhs.t_), target);
+
+    // ggml_div() only natively broadcasts the second argument; any other
+    // argument order falls back to explicit expansion. Note that the
+    // fallback is not executable on the tensor-parallel meta device with
+    // sharded operands: keep the dominating operand on the left, or use
+    // scale() for a scalar divisor.
     lhs = lhs.expand(target);
     rhs = rhs.expand(target);
 
-    return Tensor(Scope::engine().div(lhs.t_, rhs.t_), lhs.shape_);
+    return Tensor(Scope::engine().div(lhs.t_, rhs.t_), target);
 }
 
 Tensor Tensor::clamp(float a, float b) const {
@@ -630,6 +703,10 @@ std::vector<Tensor> Tensor::split_with_sizes(const std::vector<int64_t>& split_s
 
 Tensor Tensor::expand(const Shape& new_shape) const {
     throw_if_not_valid();
+
+    // Expanding to the current shape is a no-op (avoids a redundant REPEAT node).
+    if (new_shape == shape_)
+        return *this;
 
     // Expanding to a scalar is a no-op.
     if (new_shape.rank() == 0) {

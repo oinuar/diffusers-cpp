@@ -15,6 +15,4 @@ void DeviceAllocator::allocate(const std::optional<ggml_backend_buffer_usage>& u
     auto buffer = ggml_backend_alloc_ctx_tensors_from_buft(*context_, buft_);
 
     buffer_.emplace(buffer, usage);
-
-    context_.is_allocated_ = true;
 }

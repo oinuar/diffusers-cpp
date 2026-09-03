@@ -2,6 +2,7 @@
 
 #include "ggml/Tensor.hpp"
 #include "ggml/Context.hpp"
+#include "ggml/Scope.hpp"
 #include "ggml/Scheduler.hpp"
 #include <ggml.h>
 #include <ggml-backend.h>
@@ -14,10 +15,11 @@ public:
     Graph(Scheduler& scheduler, Context& context, std::vector<Tensor>&& outputs, size_t capacity = GGML_DEFAULT_GRAPH_SIZE)
         : scheduler_(scheduler), context_(context), gf_(ggml_new_graph_custom(*context_, context_.capacity(), false)), outputs_(std::move(outputs)), views_()
     {
+        Scope scope(context_);
+
         for (auto& tensor : outputs_) {
             // Materialize tensor if needed.
             if (!tensor.is_contiguous()) {
-                Scope scope(context_);
                 tensor = tensor.contiguous();
             }
 

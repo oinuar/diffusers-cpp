@@ -61,6 +61,36 @@ class TestTensorDiv(TestCase):
 
         self.assertTensors(actual, [expected])
 
+    def test_div_lhs_broadcast(self):
+        # [8] / [2, 4, 8] -> [2, 4, 8] — lhs is the broadcastable operand.
+        a = torch.randn(8)
+        b = torch.randn(2, 4, 8)
+
+        expected = a / b
+
+        actual = self.cli(
+            'div',
+            '--lhs', str(a.tolist()),
+            '--rhs', str(b.tolist()),
+        )
+
+        self.assertTensors(actual, [expected])
+
+    def test_div_lhs_singleton_broadcast(self):
+        # [1, 77, 1] / [2, 77, 8] -> [2, 77, 8] — lhs is the broadcastable operand.
+        a = torch.randn(1, 77, 1)
+        b = torch.randn(2, 77, 8)
+
+        expected = a / b
+
+        actual = self.cli(
+            'div',
+            '--lhs', str(a.tolist()),
+            '--rhs', str(b.tolist()),
+        )
+
+        self.assertTensors(actual, [expected])
+
     def test_div_scalar(self):
         a = torch.randn(2, 3, 4)
         b = torch.tensor(2.0)

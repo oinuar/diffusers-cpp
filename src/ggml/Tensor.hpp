@@ -415,7 +415,7 @@ inline Tensor pow(float base, const Tensor& exponent) {
 }
 
 inline Tensor rsqrt(const Tensor& tensor) {
-    return 1.0f / sqrt(tensor);
+    return pow(tensor, -0.5f);
 }
 
 template<>

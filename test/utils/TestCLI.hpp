@@ -105,15 +105,15 @@ protected:
 public:
     class CreateParametersVisitor : public Visitor {
     public:
-        CreateParametersVisitor(Context& context, const ArgumentParser& args, const std::string& prefix = "")
-            : context_(context), args_(args), prefix_(prefix)
+        CreateParametersVisitor(Scope scope, const ArgumentParser& args, const std::string& prefix = "")
+            : scope_(scope), args_(args), prefix_(prefix)
         {}
 
         virtual void visit(Parameter& parameter, std::vector<std::string> path) {
             auto joined_path = join_path(path, prefix_);
 
             auto tensor_value = args_.get_one<std::string>(joined_path);
-            ArgumentParser::parser<Tensor> parser(context_);
+            ArgumentParser::parser<Tensor> parser(scope_);
             Tensor tensor;
 
             // Read tensor value from file
@@ -138,7 +138,7 @@ public:
         }
 
     private:
-        Context& context_;
+        Scope scope_;
         const ArgumentParser& args_;
         std::string prefix_;
         

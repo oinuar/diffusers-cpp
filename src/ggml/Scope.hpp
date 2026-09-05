@@ -10,32 +10,35 @@ class Engine;
 class Scope {
 public:
     Scope(Context& context, Engine& engine = ExecutionEngine::Default)
-        : previous_context_(current_context_)
-        , previous_engine_(current_engine_)
+        : frame_(std::make_shared<Frame>(
+              current_context_,
+              current_engine_))
     {
         current_context_ = &context;
         current_engine_ = &engine;
     }
 
+    // Set Engine in the scope, but does not change Context.
     explicit Scope(Engine& engine)
-        : previous_context_(current_context_)
-        , previous_engine_(current_engine_)
+        : frame_(std::make_shared<Frame>(
+              current_context_,
+              current_engine_))
     {
-        current_context_ = nullptr;
         current_engine_ = &engine;
     }
 
-    Scope(const Scope& other)
-        : previous_context_(current_context_)
-        , previous_engine_(current_engine_)
-    {
-        current_context_ = other.current_context_;
-        current_engine_ = other.current_engine_;
-    }
+    // Forks share the same scope frame.
+    Scope(const Scope&) = default;
+
+    Scope& operator=(const Scope&) = delete;
+    Scope(Scope&&) = delete;
+    Scope& operator=(Scope&&) = delete;
 
     ~Scope() {
-        current_context_ = previous_context_;
-        current_engine_ = previous_engine_;
+        if (frame_.unique()) {
+            current_context_ = frame_->previous_context;
+            current_engine_ = frame_->previous_engine;
+        }
     }
 
     static Context& context() {
@@ -53,9 +56,18 @@ public:
     }
 
 private:
+    struct Frame {
+        Context* previous_context;
+        Engine* previous_engine;
+
+        Frame(Context* previous_context, Engine* previous_engine)
+            : previous_context(previous_context)
+            , previous_engine(previous_engine)
+        {}
+    };
+
+    std::shared_ptr<Frame> frame_;
+
     inline static thread_local Context* current_context_ = nullptr;
     inline static thread_local Engine* current_engine_ = nullptr;
-
-    Context* previous_context_;
-    Engine* previous_engine_;
 };

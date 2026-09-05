@@ -7,7 +7,7 @@ import torch
 class TestCase(unittest.TestCase):
     def cli(self, *args: str) -> list:
         cli_bin = os.environ['CLI']
-        n_devices = os.environ.get('N_DEVICES', 1)
+        n_devices = os.environ.get('N_DEVICES', 2)
         use_gpu = os.environ.get('USE_GPU', 'false')
 
         command = [

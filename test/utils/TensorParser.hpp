@@ -12,7 +12,7 @@
 
 template <>
 struct ArgumentParser::parser<Tensor> {
-    parser(Context& context, Allocator* allocator = nullptr) : context_(context) {
+    parser(Scope scope, Allocator* allocator = nullptr) : scope_(scope) {
 
     }
 
@@ -24,7 +24,7 @@ struct ArgumentParser::parser<Tensor> {
 
             // std::cerr << "inferred shape for " << option << ": " << shape.to_string() << " (data size = " << data.size() << ')' << std::endl;
 
-            auto tensor = context_.create<float>(shape, [data = std::move(data)](std::mt19937&) {
+            auto tensor = scope_.context().create<float>(shape, [data = std::move(data)](std::mt19937&) {
                 return data;
             });
 
@@ -37,7 +37,7 @@ struct ArgumentParser::parser<Tensor> {
     }
 
 private:
-    Context& context_;
+    Scope scope_;
 
 public:
     class TensorParser {

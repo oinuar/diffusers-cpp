@@ -85,7 +85,7 @@ Flux2KleinPipeline::Flux2KleinPipeline(
 {
 }
 
-std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Context& context, int batch, const std::string& prompt, size_t max_sequence_length) {
+std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Scope scope, int batch, const std::string& prompt, size_t max_sequence_length) {
     std::vector<int> mask;
     size_t num_real_tokens;
 
@@ -98,14 +98,14 @@ std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Context& context, i
 
     auto tokens = tokenizer_.encode(text, max_sequence_length, &mask, &num_real_tokens);
 
-    auto input_ids = context.create<int32_t>({batch, (int64_t)tokens.size()},
+    auto input_ids = scope.context().create<int32_t>({batch, (int64_t)tokens.size()},
         [=](std::mt19937&) {
             std::vector<int32_t> ids(size_t(batch) * tokens.size());
             for (auto b=0; b<batch; ++b) std::copy(tokens.begin(), tokens.end(), ids.begin() + b * tokens.size());
             return std::move(ids);
         });
 
-    auto attention_mask = context.create<float>({batch, (int64_t)mask.size()},
+    auto attention_mask = scope.context().create<float>({batch, (int64_t)mask.size()},
         [=](std::mt19937&) {
             std::vector<float> m(size_t(batch) * mask.size());
             for (auto b=0; b<batch; ++b) std::copy(mask.begin(), mask.end(), m.begin() + b * mask.size());
@@ -113,8 +113,6 @@ std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Context& context, i
         });
 
     std::vector<Tensor> hidden_states;
-
-    Scope scope(context);
 
     text_encoder_.forward(
         scope,
@@ -154,7 +152,7 @@ std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Context& context, i
     //  w = torch.arange(1)
     //  l = torch.arange(L)
     //  coords = torch.cartesian_prod(t, h, w, l)
-    auto txt_ids = context.create<float>({batch, seq_len, 4},
+    auto txt_ids = scope.context().create<float>({batch, seq_len, 4},
         [=](std::mt19937&) {
             std::vector<float> ids(size_t(batch) * seq_len * 4, 0.0f);
             for (int b = 0; b < batch; ++b) {
@@ -173,9 +171,9 @@ std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Context& context, i
 }
 
 // 4D img_ids: (B, N, 4) -> [0, y, x, 0]
-static Tensor prepare_img_ids(Context& context, int batch, int packed_h, int packed_w) {
+static Tensor prepare_img_ids(Scope scope, int batch, int packed_h, int packed_w) {
     int64_t N = int64_t(packed_h) * packed_w;
-    return context.create<float>({batch, N, 4},
+    return scope.context().create<float>({batch, N, 4},
         [=](std::mt19937&) {
             std::vector<float> ids(size_t(batch) * N * 4, 0.0f);
             for (int b = 0; b < batch; ++b) {
@@ -194,7 +192,7 @@ static Tensor prepare_img_ids(Context& context, int batch, int packed_h, int pac
 }
 
 // 4D image_latent_ids for img2img: (B, N_ref, 4) -> [scale + i*scale, y, x, 0]
-static Tensor prepare_image_ids(Context& context, int batch, const std::vector<Image>& images, int vae_multiple) {
+static Tensor prepare_image_ids(Scope scope, int batch, const std::vector<Image>& images, int vae_multiple) {
     int64_t total_tokens = 0;
 
     for (const auto& image : images) {
@@ -205,7 +203,7 @@ static Tensor prepare_image_ids(Context& context, int batch, const std::vector<I
             int64_t(packed_h) * packed_w;
     }
 
-    return context.create<float>(
+    return scope.context().create<float>(
         {batch, total_tokens, 4},
         [=, &images](std::mt19937&) {
             std::vector<float> ids(
@@ -262,11 +260,11 @@ static float compute_empirical_mu(int64_t image_seq_len, int num_steps) {
     return a * (float)num_steps + b;
 }
 
-static Tensor make_packed_latents(Context& context, int batch, int packed_h, int packed_w, int num_latent_channels) {
+static Tensor make_packed_latents(Scope scope, int batch, int packed_h, int packed_w, int num_latent_channels) {
     const int64_t token_dim = int64_t(num_latent_channels) * 4; // C * 4
     const size_t count = size_t(batch) * packed_h * packed_w * token_dim;
 
-    return context.create<float>({batch, int64_t(packed_h) * packed_w, token_dim},
+    return scope.context().create<float>({batch, int64_t(packed_h) * packed_w, token_dim},
         [=](std::mt19937& rng) {
             std::vector<float> noise(count);
             std::normal_distribution<float> normal(0.0f, 1.0f);
@@ -302,7 +300,7 @@ static std::vector<Image> latents_to_images(const std::vector<float>& data, int 
     return std::move(images);
 }
 
-static Tensor image_to_tensor(Context& context, const Image& img) {
+static Tensor image_to_tensor(Scope scope, const Image& img) {
     const size_t width = img.width();
     const size_t height = img.height();
     const size_t channels = img.channels();
@@ -321,7 +319,7 @@ static Tensor image_to_tensor(Context& context, const Image& img) {
             "image_to_tensor(): pixel buffer size does not match image dimensions");
     }
 
-    return context.create<float>(
+    return scope.context().create<float>(
         {1, 3, static_cast<int64_t>(height), static_cast<int64_t>(width)},
         [pixels, width, height](std::mt19937&) {
             const size_t plane = width * height;
@@ -442,7 +440,7 @@ Tensor Flux2KleinPipeline::patchify_latents(Tensor latents, int channels, int pa
 
 Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
     Scheduler& scheduler,
-    Context& context,
+    Scope scope,
     const std::string& prompt,
     size_t max_sequence_length,
     int batch,
@@ -454,14 +452,14 @@ Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
 
     auto [prompt_embeds, txt_ids] =
         encode_prompt(
-            context,
+            scope,
             batch,
             prompt,
             max_sequence_length);
 
     auto img_ids =
         prepare_img_ids(
-            context,
+            scope,
             batch,
             packed_h,
             packed_w);
@@ -474,9 +472,8 @@ Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
         packed_imgs.reserve(images.size());
 
         for (auto& img : images) {
-            Scope scope(context);
             img = preprocess_reference_image(img, vae_multiple);
-            auto img_tensor = image_to_tensor(context, img);
+            auto img_tensor = image_to_tensor(scope, img);
             auto dist = vae_.encode(scope, img_tensor);
             auto mode = dist.mode(); // Shape: (B, C, H, W)
 
@@ -508,7 +505,7 @@ Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
         // Repeat reference latents for num_images_per_prompt.
         image_latents_concat = repeat_batch(*image_latents_concat, batch);
 
-        image_latent_ids_concat = prepare_image_ids(context, batch, images, vae_multiple);
+        image_latent_ids_concat = prepare_image_ids(scope, batch, images, vae_multiple);
     }
 
     std::vector<Tensor> outputs = {
@@ -523,7 +520,7 @@ Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
     if (image_latent_ids_concat)
         outputs.push_back(*image_latent_ids_concat);
 
-    Embeddings embeddings = { Graph(scheduler, context, std::move(outputs)) };
+    Embeddings embeddings = { Graph(scheduler, scope.context(), std::move(outputs)) };
 
     // This is not very nice, but Graph might relocate tensors so we cannot reference
     // tensors that may become stale.
@@ -543,7 +540,7 @@ Flux2KleinPipeline::Embeddings Flux2KleinPipeline::make_embeddings_graph(
 
 Graph Flux2KleinPipeline::make_denoise_graph(
     Scheduler& scheduler,
-    Context& context,
+    Scope scope,
     int batch,
     int packed_h,
     int packed_w,
@@ -565,11 +562,9 @@ Graph Flux2KleinPipeline::make_denoise_graph(
         latent_image_ids = Tensor::cat({img_ids, *image_latent_ids}, /*axis=*/1);
     }
 
-    auto timestep = context.value<float>({batch}, [batch, current_timestep](std::mt19937&) {
+    auto timestep = scope.context().value<float>({batch}, [batch, current_timestep](std::mt19937&) {
         return std::vector<float>(batch, *current_timestep);
     });
-
-    Scope scope(context);
 
     auto noise_pred = transformer_.forward(scope,
         /*hidden_states=*/          latent_model_input,
@@ -585,19 +580,19 @@ Graph Flux2KleinPipeline::make_denoise_graph(
     if (num_ref_tokens > 0)
         noise_pred = noise_pred[{Tensor::Slice::all(), Tensor::Slice::range(0, latents.shape()[1])}];
 
-    auto dt = context.value<float>({}, [current_dt](std::mt19937&) {
+    auto dt = scope.context().value<float>({}, [current_dt](std::mt19937&) {
         return std::vector<float>{*current_dt};
     });
 
     // Integrate latents over dt
-    auto next_latents = scheduler_.integrate(context, noise_pred, latents, dt);
+    auto next_latents = scheduler_.integrate(scope, noise_pred, latents, dt);
 
-    return std::move(Graph(scheduler, context, {next_latents}));
+    return std::move(Graph(scheduler, scope.context(), {next_latents}));
 }
 
 Graph Flux2KleinPipeline::make_decode_graph(
     Scheduler& scheduler,
-    Context& context,
+    Scope scope,
     int packed_h,
     int packed_w,
     Tensor latents
@@ -614,10 +609,9 @@ Graph Flux2KleinPipeline::make_decode_graph(
     auto z = unpatchify_latents(z_packed, vae_.latent_channels(), packed_h, packed_w);
 
     // 4. VAE decode
-    Scope scope(context);
     auto decoded = vae_.decode(scope, z);    // (B, 3, H, W)
 
-    return std::move(Graph(scheduler, context, {decoded}));
+    return std::move(Graph(scheduler, scope.context(), {decoded}));
 }
 
 std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Context& vae_context, Context& text_encoder_context, Context& transformer_context, const Device& device, GenerationOptions&& options) {

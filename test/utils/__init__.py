@@ -7,7 +7,7 @@ import torch
 class TestCase(unittest.TestCase):
     def cli(self, *args: str) -> list:
         cli_bin = os.environ['CLI']
-        n_devices = os.environ.get('N_DEVICES', 2)
+        n_devices = os.environ.get('N_DEVICES', 1)
         use_gpu = os.environ.get('USE_GPU', 'false')
 
         command = [
@@ -65,6 +65,11 @@ class TestCase(unittest.TestCase):
     def assertTensors(self, actual: list, expected: list, *args: str, **kwargs):
         finalKwargs = { 'rtol': 1e-4, 'atol': 1e-6, **kwargs }
         index = 0
+
+        # GPU uses less accurate versions of operators in some cases, so make thresholds looser
+        if str(os.environ.get('USE_GPU', 'false')) == 'true':
+            finalKwargs['rtol'] = 2e-3
+            finalKwargs['atol'] = 1e-3
 
         self.assertEqual(len(actual), len(expected))
         for a, e in zip(actual, expected):

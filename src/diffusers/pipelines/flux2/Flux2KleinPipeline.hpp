@@ -112,7 +112,7 @@ public:
 
     Embeddings make_embeddings_graph(
         Scheduler& scheduler,
-        Context& context,
+        Scope scope,
         const std::string& prompt,
         size_t max_sequence_length,
         int batch,
@@ -123,7 +123,7 @@ public:
 
     Graph make_denoise_graph(
         Scheduler& scheduler,
-        Context& context,
+        Scope scope,
         int batch,
         int packed_h,
         int packed_w,
@@ -140,7 +140,7 @@ public:
 
     Graph make_decode_graph(
         Scheduler& scheduler,
-        Context& context,
+        Scope scope,
         int packed_h,
         int packed_w,
         Tensor latents
@@ -151,7 +151,7 @@ public:
     }
 
 private:
-    std::tuple<Tensor, Tensor> encode_prompt(Context& context, int batch, const std::string& prompt, size_t max_sequence_length);
+    std::tuple<Tensor, Tensor> encode_prompt(Scope scope, int batch, const std::string& prompt, size_t max_sequence_length);
 
     Flux2Transformer2DModel transformer_;
     AutoencoderKLFlux2 vae_;

@@ -23,30 +23,6 @@ public:
                 tensor = tensor.contiguous();
             }
 
-            auto view_only = *tensor;
-            auto is_pure_view = true;
-
-            // Walk the view chain down to the first tensor that computes
-            // something or to the root leaf.
-            for (auto t = *tensor; t->view_src != nullptr; t = t->view_src) {
-                views_.push_back(t);
-
-                if (is_noop_view(t->op)) 
-                    view_only = t->view_src;
-                else
-                    is_pure_view = false;
-            }
-
-            // Pure view of a leaf: nothing to compute, keep the leaf only if it has the backing buffer.
-            if (is_noop_view(view_only->op) && is_pure_view) {
-                ggml_set_output(view_only);
-                ggml_build_forward_expand(gf_, view_only);
-                continue;
-            }
-
-            views_.clear();
-
-            // Otherwise, this is a real compute node.
             ggml_set_output(*tensor);
             ggml_build_forward_expand(gf_, *tensor);
         }
@@ -64,14 +40,6 @@ public:
         if (!ggml_backend_sched_alloc_graph(*scheduler_, gf_))
             throw std::runtime_error("Graph allocation failed");
 
-        // The allocator only initializes the buffer/data pointers of views it
-        // can see in the graph. Views kept out of the graph (pure views of
-        // leaves) need to be initialized here, from the leaf outwards.
-        for (auto it = views_.rbegin(); it != views_.rend(); ++it) {
-            if ((*it)->buffer == nullptr && (*it)->view_src->buffer != nullptr)
-                ggml_backend_view_init(*it);
-        }
-
         Context::Bindings result;
 
         // Add Graph context bindings
@@ -87,6 +55,10 @@ public:
         }
 
         for (auto& context : contexts) {
+            // Skip null context
+            if (context == nullptr)
+                continue;
+
             // Skip Graph's context
             if (context == &context_)
                 continue;

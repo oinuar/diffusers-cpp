@@ -13,14 +13,12 @@ public:
     // -------------------------------------------------------------------------
 
     virtual ggml_tensor* new_tensor(
-        ggml_context* ctx,
         ggml_type type,
         int n_dims,
         const int64_t* ne
     ) = 0;
 
     virtual ggml_tensor* new_tensor_1d(
-        ggml_context* ctx,
         ggml_type type,
         int64_t ne0
     ) = 0;
@@ -59,14 +57,6 @@ public:
     // -------------------------------------------------------------------------
     // Unary arithmetic
     // -------------------------------------------------------------------------
-
-    virtual ggml_tensor* neg(
-        ggml_tensor* tensor
-    ) = 0;
-
-    virtual ggml_tensor* abs(
-        ggml_tensor* tensor
-    ) = 0;
 
     virtual ggml_tensor* sqrt(
         ggml_tensor* tensor

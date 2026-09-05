@@ -7,6 +7,7 @@
 #include <vector>
 #include <cmath>
 #include <optional>
+#include <limits>
 #include <ggml.h>
 
 class Context;
@@ -206,12 +207,15 @@ public:
     /** @brief Returns a copy of this tensor. */
     Tensor clone() const;
 
+    /** @brief Return an input Tensor. */
+    Tensor input();
+
     /** @brief Scales a tensor with a constant. */
     Tensor scale(float value) const;
 
     /** @brief Creates an uninitialized tensor with the given shape and type. */
-    template <typename T> static Tensor empty(Context& context, const Shape& shape) {
-        return empty(context, shape, DType<T>::value);
+    template <typename T> static Tensor empty(const Shape& shape) {
+        return empty(shape, DType<T>::value);
     }
 
     /** @brief Creates a scalar tensor filled with the given value. */
@@ -222,7 +226,7 @@ public:
     }
 
     /** @brief Creates an uninitialized tensor with the given shape and type. */
-    static Tensor empty(Context& context, const Shape& shape, ggml_type type);
+    static Tensor empty(const Shape& shape, ggml_type type);
 
     /** @brief Creates a filled tensor with the given value, shape and type. */
     static Tensor full(const Shape& shape, float value);
@@ -307,8 +311,6 @@ public:
     /** @brief Copies this tensor to another tensor. */
     Tensor copy_to(Tensor dest) const;
 
-    Tensor operator -() const;
-
     Tensor operator+(Tensor rhs) const;
 
     Tensor operator-(Tensor rhs) const;
@@ -316,6 +318,10 @@ public:
     Tensor operator*(Tensor rhs) const;
 
     Tensor operator/(Tensor rhs) const;
+
+    Tensor operator -() const {
+        return *this * -1.0f;
+    }
 
     template <typename T>
     Tensor operator+(const T& rhs) const {
@@ -389,7 +395,12 @@ inline Tensor operator/(const T& value, const Tensor& tensor) {
     return Tensor::scalar<T>(value) / tensor;
 }
 
-Tensor abs(const Tensor& tensor);
+inline Tensor abs(const Tensor& tensor) {
+    auto pos = tensor.clamp(0.0f, std::numeric_limits<float>::infinity());
+    auto neg = tensor.clamp(-std::numeric_limits<float>::infinity(), 0.0f);
+
+    return pos - neg;
+}
 
 Tensor sqrt(const Tensor& tensor);
 
@@ -415,7 +426,7 @@ inline Tensor pow(float base, const Tensor& exponent) {
 }
 
 inline Tensor rsqrt(const Tensor& tensor) {
-    return pow(tensor, -0.5f);
+    return 1.0f / sqrt(tensor);
 }
 
 template<>

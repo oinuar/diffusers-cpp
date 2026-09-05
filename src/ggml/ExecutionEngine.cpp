@@ -9,20 +9,18 @@ ExecutionEngine ExecutionEngine::Default;
 // -------------------------------------------------------------------------
 
 ggml_tensor* ExecutionEngine::new_tensor(
-    ggml_context* ctx,
     ggml_type type,
     int n_dims,
     const int64_t* ne
 ) {
-    return ggml_new_tensor(ctx, type, n_dims, ne);
+    return ggml_new_tensor(*Scope::context(), type, n_dims, ne);
 }
 
 ggml_tensor* ExecutionEngine::new_tensor_1d(
-    ggml_context* ctx,
     ggml_type type,
     int64_t ne0
 ) {
-    return ggml_new_tensor_1d(ctx, type, ne0);
+    return ggml_new_tensor_1d(*Scope::context(), type, ne0);
 }
 
 void ExecutionEngine::set_input(
@@ -71,18 +69,6 @@ ggml_tensor* ExecutionEngine::cpy(
 // -----------------------------------------------------------------------------
 // Unary arithmetic
 // -----------------------------------------------------------------------------
-
-ggml_tensor* ExecutionEngine::neg(
-    ggml_tensor* tensor
-) {
-    return ggml_neg(*Scope::context(), tensor);
-}
-
-ggml_tensor* ExecutionEngine::abs(
-    ggml_tensor* tensor
-) {
-    return ggml_abs(*Scope::context(), tensor);
-}
 
 ggml_tensor* ExecutionEngine::sqrt(
     ggml_tensor* tensor

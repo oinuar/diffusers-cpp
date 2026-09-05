@@ -581,6 +581,8 @@ public:
             auto schedule = flow_match_scheduler.schedule(num_inference_steps, mu);
 
             if (args_.get(0) == "FlowMatchEulerDiscreteScheduler_schedule") {
+                Scope scope(context);
+
                 auto timesteps = context.value<float>(
                     {static_cast<int64_t>(schedule.size())},
                     [&schedule](std::mt19937&) { return schedule.timesteps(); }
@@ -594,7 +596,7 @@ public:
                 Graph graph(scheduler, context, {timesteps, sigmas});
 
                 if (local_allocator)
-                local_allocator->allocate();
+                    local_allocator->allocate();
 
                 Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
                 return computation().results();
@@ -604,6 +606,7 @@ public:
                 auto index = args_.get_one<int>("--index");
                 auto model_output = args_.get_one<Tensor>("--model_output", {context});
                 auto sample = args_.get_one<Tensor>("--sample", {context});
+                Scope scope(context);
 
                 auto dt = context.value<float>(
                     {1},
@@ -615,7 +618,7 @@ public:
                 Graph graph(scheduler, context, {next_sample});
 
                 if (local_allocator)
-                local_allocator->allocate();
+                    local_allocator->allocate();
 
                 Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
                 return computation().results();

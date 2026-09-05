@@ -62,14 +62,14 @@ public:
 
     template <typename T>
     Tensor create(const Tensor::Shape& shape, const Provider<T>& provider) {
-        auto tensor = Tensor::empty<T>(*this, shape);
+        auto tensor = Tensor::empty<T>(shape).input();
         bind(tensor, provider, true);
         return tensor;
     }
 
     template <typename T>
     Tensor value(const Tensor::Shape& shape, const Provider<T>& provider) {
-        auto tensor = Tensor::empty<T>(*this, shape);
+        auto tensor = Tensor::empty<T>(shape).input();
         bind(tensor, provider);
         return tensor;
     }

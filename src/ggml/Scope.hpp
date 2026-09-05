@@ -17,6 +17,14 @@ public:
         current_engine_ = &engine;
     }
 
+    explicit Scope(Engine& engine)
+        : previous_context_(current_context_)
+        , previous_engine_(current_engine_)
+    {
+        current_context_ = nullptr;
+        current_engine_ = &engine;
+    }
+
     Scope(const Scope& other)
         : previous_context_(current_context_)
         , previous_engine_(current_engine_)

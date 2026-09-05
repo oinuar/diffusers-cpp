@@ -58,13 +58,18 @@ Tensor Tensor::clone() const {
     return Tensor(Scope::engine().dup(t_), shape_);
 }
 
+Tensor Tensor::input() {
+    Scope::engine().set_input(t_);
+    return *this;
+}
+
 Tensor Tensor::scale(float value) const {
     return Tensor(Scope::engine().scale(t_, value), shape_);
 }
 
 Tensor Tensor::full(const Shape& shape, float value) {
     // GGML supports filling only float tensors.
-    auto tensor = empty<float>(Scope::context(), shape);
+    auto tensor = empty<float>(shape);
     tensor.t_ = Scope::engine().fill(tensor.t_, value);
     
     return tensor;
@@ -76,10 +81,6 @@ Tensor Tensor::astype(ggml_type type) const {
 
 Tensor Tensor::copy_to(Tensor dest) const {
     return Tensor(Scope::engine().cpy(t_, *dest), dest.shape_);
-}
-
-Tensor Tensor::operator -() const {
-    return Tensor(Scope::engine().neg(t_), shape_);
 }
 
 Tensor Tensor::operator+(Tensor rhs) const {
@@ -222,15 +223,11 @@ Tensor::Shape Tensor::Shape::broadcast(const Tensor::Shape& lhs, const Tensor::S
     return result;
 }
 
-Tensor Tensor::empty(Context& context, const Tensor::Shape& shape, ggml_type type) {
+Tensor Tensor::empty(const Tensor::Shape& shape, ggml_type type) {
     // GGML does not support scalar tensors, let's fake it with 1D tensor
-    auto tensor = shape.rank() == 0
-        ? Tensor(Scope::engine().new_tensor_1d(*context, type, 1), shape)
-        : Tensor(Scope::engine().new_tensor(*context, type, shape.rank(), shape.data()), shape);
-
-    Scope::engine().set_input(*tensor);
-
-    return tensor;
+    return shape.rank() == 0
+        ? Tensor(Scope::engine().new_tensor_1d(type, 1), shape)
+        : Tensor(Scope::engine().new_tensor(type, shape.rank(), shape.data()), shape);
 }
 
 Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
@@ -834,7 +831,7 @@ Tensor Tensor::repeat(const Shape& repeats) const {
 
     // GGML repeat requires the target tensor to describe the
     // desired output shape.
-    auto target = empty(Scope::context(), out, dtype());
+    auto target = empty(out, dtype());
 
     return Tensor(Scope::engine().repeat(t_, *target), out);
 }
@@ -1034,10 +1031,6 @@ int Tensor::normalize_dim(const std::string& method, int64_t dim, int64_t rank, 
 void Tensor::throw_if_not_valid() const {
     if (!t_)
         throw std::runtime_error("undefined Tensor");
-}
-
-Tensor abs(const Tensor& tensor) {
-    return Tensor(Scope::engine().abs(tensor.t_), tensor.shape_);
 }
 
 Tensor sqrt(const Tensor& tensor) {

@@ -11,14 +11,12 @@ public:
     // -------------------------------------------------------------------------
 
     ggml_tensor* new_tensor(
-        ggml_context* ctx,
         ggml_type type,
         int n_dims,
         const int64_t* ne
     ) override;
 
     ggml_tensor* new_tensor_1d(
-        ggml_context* ctx,
         ggml_type type,
         int64_t ne0
     ) override;
@@ -52,14 +50,6 @@ public:
     ) override;
 
     // Unary
-    ggml_tensor* neg(
-        ggml_tensor* tensor
-    ) override;
-
-    ggml_tensor* abs(
-        ggml_tensor* tensor
-    ) override;
-
     ggml_tensor* sqrt(
         ggml_tensor* tensor
     ) override;

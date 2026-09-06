@@ -7,7 +7,6 @@
 #include "ggml/MetaDevice.hpp"
 #include "ggml/Scheduler.hpp"
 #include "ggml/DeviceAllocator.hpp"
-#include "ggml/SchedulerAllocator.hpp"
 #include "nn/Visitor.hpp"
 #include "nn/Parameter.hpp"
 #include "./ArgumentParser.hpp"
@@ -66,7 +65,12 @@ public:
         Backend cpu_backend(cpu);
         Scheduler scheduler({&cpu_backend}, get_graph_size());
 
-        SchedulerAllocator allocator;
+        // A real allocator for the global context: with a local context in
+        // use, weights/inputs must be allocated before the local context,
+        // because the local context may contain view tensors whose source
+        // lives in the global context. Without a local context the
+        // allocator is never asked to allocate and the scheduler does it.
+        DeviceAllocator allocator(context, cpu);
 
         return main(scheduler, context, allocator, cpu);
     }

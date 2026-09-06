@@ -78,6 +78,10 @@ public:
         ggml_tensor* tensor
     ) = 0;
 
+    virtual ggml_tensor* sigmoid(
+        ggml_tensor* tensor
+    ) = 0;
+
     // -------------------------------------------------------------------------
     // Binary arithmetic
     // -------------------------------------------------------------------------
@@ -232,10 +236,6 @@ public:
     // -------------------------------------------------------------------------
 
     virtual ggml_tensor* sum_rows(
-        ggml_tensor* tensor
-    ) = 0;
-
-    virtual ggml_tensor* silu(
         ggml_tensor* tensor
     ) = 0;
 

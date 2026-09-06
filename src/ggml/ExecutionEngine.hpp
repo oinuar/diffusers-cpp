@@ -70,6 +70,10 @@ public:
         ggml_tensor* tensor
     ) override;
 
+    ggml_tensor* sigmoid(
+        ggml_tensor* tensor
+    ) override;
+
     // Binary
     ggml_tensor* add(
         ggml_tensor* lhs,
@@ -197,10 +201,6 @@ public:
 
     // Reduction
     ggml_tensor* sum_rows(
-        ggml_tensor* tensor
-    ) override;
-
-    ggml_tensor* silu(
         ggml_tensor* tensor
     ) override;
 

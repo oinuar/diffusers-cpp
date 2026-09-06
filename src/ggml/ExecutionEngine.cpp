@@ -100,6 +100,12 @@ ggml_tensor* ExecutionEngine::cos(
     return ggml_cos(*Scope::context(), tensor);
 }
 
+ggml_tensor* ExecutionEngine::sigmoid(
+    ggml_tensor* tensor
+) {
+    return ggml_sigmoid(*Scope::context(), tensor);
+}
+
 // -----------------------------------------------------------------------------
 // Binary arithmetic
 // -----------------------------------------------------------------------------
@@ -339,12 +345,6 @@ ggml_tensor* ExecutionEngine::sum_rows(
     ggml_tensor* tensor
 ) {
     return ggml_sum_rows(*Scope::context(), tensor);
-}
-
-ggml_tensor* ExecutionEngine::silu(
-    ggml_tensor* tensor
-) {
-    return ggml_silu(*Scope::context(), tensor);
 }
 
 ggml_tensor * ExecutionEngine::flash_attn_ext(

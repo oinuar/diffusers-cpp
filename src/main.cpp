@@ -75,7 +75,7 @@
 //          (S(a), {S(a), R}) -> S(a)      2nd operand has ne[a] == 1
 //                                         (a broadcast, e.g. a bias)
 //          the sharded operand must be the 1st (ggml's broadcast order)
-//      elementwise unary sqrt/log/sin/cos/scale/clamp/leaky_relu/unary:
+//      elementwise unary sqrt/log/sin/cos/sigmoid/scale/clamp/leaky_relu/unary:
 //          state carries over: (R, {R}), (S(a), {S(a)})
 //      sum_rows and friends (per-row ops):
 //          (R, {R}), (S(a), {S(a)}) for a >= 1 -- the axis is preserved
@@ -114,7 +114,7 @@
 //          in-place op wrappers that clone first, e.g. Tensor::clamp(),
 //          are not sharding-compatible; the demo below clamps in place.)
 //      Not handled by the meta backend at all (default case of the switch
-//          -> GGML_ABORT "ggml op not implemented"): exp, cast, silu.
+//          -> GGML_ABORT "ggml op not implemented"): exp, cast.
 //          The planner gives these nodes zero candidates, so any graph
 //          using them is reported infeasible with a clear reason.
 //  * A P tensor is produced only by a row-parallel mul_mat, and every
@@ -350,6 +350,10 @@ public:
         ggml_tensor* tensor
     ) = 0;
 
+    virtual ggml_tensor* sigmoid(
+        ggml_tensor* tensor
+    ) = 0;
+
     // -------------------------------------------------------------------------
     // Binary arithmetic
     // -------------------------------------------------------------------------
@@ -504,10 +508,6 @@ public:
     // -------------------------------------------------------------------------
 
     virtual ggml_tensor* sum_rows(
-        ggml_tensor* tensor
-    ) = 0;
-
-    virtual ggml_tensor* silu(
         ggml_tensor* tensor
     ) = 0;
 
@@ -828,6 +828,7 @@ public:
     ggml_tensor* log(ggml_tensor* t) override { return carry_over_op("log", t, w_comp_); }
     ggml_tensor* sin(ggml_tensor* t) override { return carry_over_op("sin", t, w_comp_); }
     ggml_tensor* cos(ggml_tensor* t) override { return carry_over_op("cos", t, w_comp_); }
+    ggml_tensor* sigmoid(ggml_tensor* t) override { return carry_over_op("sigmoid", t, w_comp_); }
 
     // ---------------------------------------------------------------------
     // Engine: binary arithmetic
@@ -961,14 +962,6 @@ public:
         for (int a = 1; a < in_rank; ++a)
             cands.push_back({shard(a), {shard(a)}, sharded_comp()});
         return make_tensor(trace_op("sum_rows", {id}, std::move(cands), in_rank > 0 ? in_rank - 1 : 0, out_ne));
-    }
-
-    ggml_tensor* silu(ggml_tensor* t) override {
-        // GGML_OP_SILU is not in the meta backend's switch -> GGML_ABORT
-        // ("ggml op not implemented"). No candidates: a graph that uses silu
-        // is infeasible on the meta device. Use a supported activation
-        // instead (clamp-based ReLU, leaky relu, ggml_unary ops, ...).
-        return unsupported_op("silu", t);
     }
 
     // ---------------------------------------------------------------------
@@ -1361,6 +1354,10 @@ private:
     // ---------------------------------------------------------------------
     // Dynamic program
     // ---------------------------------------------------------------------
+    // Tree DP over the trace DAG: F(node, d) pays every shared input once
+    // per consumer (a sound bound, used only to select a plan);
+    // finalize() recomputes the emitted plan's true per-tensor cost.
+    //
     // F(node, d): node produces exactly d.
     ExactState& exact(int node, const Dist& d) {
         auto& m = exact_memo_[node][d];
@@ -1481,7 +1478,6 @@ Plan PlannerEngine::finalize(int root, Dist required) {
         plan.infeasible_reason = infeasibility_reason(required);
         return plan;
     }
-    plan.total_cost = total;
 
     std::set<std::pair<int, Dist>> emitted;
     emit(root, required, plan, emitted);
@@ -1504,6 +1500,20 @@ Plan PlannerEngine::finalize(int root, Dist required) {
             return plan;
         }
     }
+
+    // True cost of the emitted plan: every tensor is planned (and paid
+    // for) exactly once, plus its P -> R bridge. The DP above pays a
+    // shared input (e.g. the x that both the sigmoid and the mul of
+    // x * sigmoid(x) consume) once per consumer, so its total overcounts
+    // such subtrees.
+    double cost = 0.0;
+    for (const PlanNode& pn : plan.nodes) {
+        const ExactState& e = exact(pn.id, pn.produced);
+        if (e.cand >= 0)
+            cost += nodes_[pn.id].candidates[e.cand].comp_cost;
+        cost += pn.bridge_cost;
+    }
+    plan.total_cost = cost;
 
     // The plan -> GGML tensor split mapping.
     for (const auto& [id, dist] : plan.callback_dists)
@@ -1899,9 +1909,9 @@ Tensor::Shape Tensor::Shape::broadcast(const Tensor::Shape& lhs, const Tensor::S
 }
 
 // True if a's shape is a broadcast superset of b's shape (mirrors the
-// project's helper): every dim of a is a multiple of the matching dim of
-// b (missing dims count as 1).
-bool ggml_broadcasts(const Tensor::Shape& a, const Tensor::Shape& b) {
+// project's ggml_broadcasts helper): every dim of a is a multiple of the
+// matching dim of b (missing dims count as 1).
+bool Tensor::Shape::broadcasts(const Shape& a, const Shape& b) {
     const int64_t rank = std::max(a.rank(), b.rank());
     for (int64_t i = 0; i < rank; ++i) {
         const int64_t da = (a.rank() == 0 || i >= a.rank()) ? 1 : a.data()[i];
@@ -2007,11 +2017,12 @@ public:
 
 class SiLU : public Module {
 public:
-    // Mirrors the project's nn/SiLU (src/nn/SiLU.hpp). NOTE: GGML_OP_SILU
-    // is not handled by the meta backend, so a graph that uses this module
-    // is infeasible on the meta device (see demo 2).
+    // Mirrors the project's nn/SiLU (src/nn/SiLU.hpp): SiLU(x) = x *
+    // sigmoid(x), composed of ops the meta backend supports (MUL +
+    // UNARY carry the state over) -- ggml_silu (GGML_OP_SILU) has no
+    // split-state rule there.
     Tensor forward(Scope scope, Tensor x) {
-        return Tensor(scope.engine().silu(*x), x.shape());
+        return x * Tensor(scope.engine().sigmoid(*x), x.shape());
     }
 };
 
@@ -2238,20 +2249,21 @@ int main() {
         std::cout << "traced graph:\n" << planner.dump_trace() << "\n";
         Plan plan = planner.finalize();
         std::cout << plan.to_string();
-        print_callback_table(plan);
 
         std::string error;
         if (planner.verify(plan, error))
             std::cout << "verification: OK -- the plan matches the meta backend's split-state derivation\n";
         else
             std::cout << "verification FAILED: " << error << "\n";
+
+        print_callback_table(plan);
     }
 
     {
-        // Demo 2: the same MLP with a SiLU activation. GGML_OP_SILU is not
-        // in the meta backend's switch, so the planner must report the graph
-        // infeasible instead of planning something the meta device would
-        // abort on.
+        // Demo 2: the same MLP with a SiLU activation, written as
+        // x * sigmoid(x) (the project's nn/SiLU does the same): both ops
+        // carry the split state over, so the block plans exactly like the
+        // clamp version -- and stays sharding-compatible.
         Context context;
         PlannerEngine planner(/*device_count=*/2, /*w_comm=*/0.5, /*w_comp=*/1.0, /*w_mem=*/0.1);
         Scope scope(context, planner);
@@ -2264,7 +2276,16 @@ int main() {
         (void)model.forward(scope, x);
 
         std::cout << "\n";
-        std::cout << planner.finalize().to_string();
+        Plan plan = planner.finalize();
+        std::cout << plan.to_string();
+
+        std::string error;
+        if (planner.verify(plan, error))
+            std::cout << "verification: OK -- the plan matches the meta backend's split-state derivation\n";
+        else
+            std::cout << "verification FAILED: " << error << "\n";
+
+        print_callback_table(plan);
     }
 
     {
@@ -2291,13 +2312,14 @@ int main() {
         std::cout << "traced graph:\n" << planner.dump_trace() << "\n";
         Plan plan = planner.finalize();
         std::cout << plan.to_string();
-        print_callback_table(plan);
 
         std::string error;
         if (planner.verify(plan, error))
             std::cout << "verification: OK -- the plan matches the meta backend's split-state derivation\n";
         else
             std::cout << "verification FAILED: " << error << "\n";
+
+        print_callback_table(plan);
     }
 
     {
@@ -2326,6 +2348,8 @@ int main() {
             std::cout << "verification: OK -- the plan matches the meta backend's split-state derivation\n";
         else
             std::cout << "verification FAILED: " << error << "\n";
+
+        print_callback_table(plan);
     }
 
     {
@@ -2356,6 +2380,8 @@ int main() {
             std::cout << "verification: OK -- the plan matches the meta backend's split-state derivation\n";
         else
             std::cout << "verification FAILED: " << error << "\n";
+
+        print_callback_table(plan);
     }
 
     return 0;

@@ -30,6 +30,9 @@ public:
 
             Flux2SwiGLU model;
 
+            if (local_allocator)
+                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+
             auto output = model.forward(local_context ? *local_context : context, x);
 
             Graph graph(scheduler, local_context ? *local_context : context, {output});

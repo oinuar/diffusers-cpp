@@ -209,7 +209,7 @@ public:
                 Graph graph(scheduler, context, std::move(hidden_states));
 
                 if (local_allocator)
-                local_allocator->allocate();
+                    local_allocator->allocate();
 
                 Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
                 return computation().results();

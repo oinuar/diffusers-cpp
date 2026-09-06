@@ -8,13 +8,13 @@ class TestCase(unittest.TestCase):
     def cli(self, *args: str) -> list:
         cli_bin = os.environ['CLI']
         n_devices = os.environ.get('N_DEVICES', 1)
-        use_gpu = os.environ.get('USE_GPU', 'true')
+        use_gpu = os.environ.get('USE_GPU', 'false')
 
         command = [
             *args,
             '--runner-n_devices', str(n_devices),
             '--runner-use_gpu', str(use_gpu),
-            '--runner-use_local_context', "false",
+            '--runner-use_local_context', "true",
         ]
 
         #print(" ".join([cli_bin] + list(map(lambda x: x if x.startswith("--") else f'"{x}"', command))))
@@ -67,7 +67,7 @@ class TestCase(unittest.TestCase):
         index = 0
 
         # GPU uses less accurate versions of operators in some cases, so make thresholds looser
-        if str(os.environ.get('USE_GPU', 'true')) == 'true':
+        if str(os.environ.get('USE_GPU', 'false')) == 'true':
             finalKwargs['rtol'] = 2e-3
             finalKwargs['atol'] = 1e-3
 

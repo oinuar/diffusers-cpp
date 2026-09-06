@@ -54,8 +54,7 @@ Tensor Embedding::forward(Scope scope, Tensor input) {
     if (!ggml_is_vector(*input))
         input = input.flatten();
 
-    auto lookup_result = ggml_get_rows(
-        *scope.context(),
+    auto lookup_result = scope.engine().get_rows(
         *weight,
         *input
     );

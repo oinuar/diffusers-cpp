@@ -65,8 +65,7 @@ Tensor SpatialNorm::forward(Scope scope, Tensor f, Tensor zq) {
     if (zq.shape()[2] != f.shape()[2] ||
         zq.shape()[3] != f.shape()[3]) {
 
-        auto resized = ggml_interpolate(
-            *scope.context(),
+        auto resized = scope.engine().interpolate(
             *zq,
             f.shape()[3], // W
             f.shape()[2], // H

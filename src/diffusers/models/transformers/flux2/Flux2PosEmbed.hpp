@@ -74,8 +74,7 @@ public:
             //
             //   (x0,x1), (x2,x3), ...
             //
-            auto rope = ggml_rope_ext(
-                *scope.context(),
+            auto rope = scope.engine().rope_ext(
                 *x_axis,
                 *pos_axis,
                 nullptr,                // no YaRN frequency tensor

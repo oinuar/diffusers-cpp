@@ -238,4 +238,72 @@ public:
     virtual ggml_tensor* silu(
         ggml_tensor* tensor
     ) = 0;
+
+    virtual ggml_tensor * flash_attn_ext(
+        ggml_tensor* q,
+        ggml_tensor* k,
+        ggml_tensor* v,
+        ggml_tensor* mask,
+        float scale,
+        float max_bias,
+        float logit_softcap) = 0;
+
+    virtual ggml_tensor * conv_2d_direct(
+        ggml_tensor* a,
+        ggml_tensor* b,
+        int s0,
+        int s1,
+        int p0,
+        int p1,
+        int d0,
+        int d1) = 0;
+
+    virtual ggml_tensor* get_rows(
+        ggml_tensor* a,
+        ggml_tensor* b) = 0;
+
+    virtual ggml_tensor* norm(
+        ggml_tensor* a,
+        float eps) = 0;
+
+    virtual ggml_tensor* rms_norm(
+        ggml_tensor* a,
+        float eps) = 0;
+
+    virtual ggml_tensor* rope_ext(
+        ggml_tensor* a,
+        ggml_tensor* b,
+        ggml_tensor* c,
+        int n_dims,
+        int mode,
+        int n_ctx_orig,
+        float freq_base,
+        float freq_scale,
+        float ext_factor,
+        float attn_factor,
+        float beta_fast,
+        float beta_slow) = 0;
+
+    virtual ggml_tensor* pool_2d(
+        ggml_tensor* a,
+        ggml_op_pool op,
+        int k0,
+        int k1,
+        int s0,
+        int s1,
+        float p0,
+        float p1) = 0;
+
+    virtual ggml_tensor* interpolate(
+        ggml_tensor* a,
+        int64_t ne0,
+        int64_t ne1,
+        int64_t ne2,
+        int64_t ne3,
+        uint32_t mode) = 0;
+
+    virtual ggml_tensor* upscale(
+        ggml_tensor* a,
+        int scale_factor,
+        ggml_scale_mode mode) = 0;
 };

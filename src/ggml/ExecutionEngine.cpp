@@ -346,3 +346,98 @@ ggml_tensor* ExecutionEngine::silu(
 ) {
     return ggml_silu(*Scope::context(), tensor);
 }
+
+ggml_tensor * ExecutionEngine::flash_attn_ext(
+    ggml_tensor* q,
+    ggml_tensor* k,
+    ggml_tensor* v,
+    ggml_tensor* mask,
+    float scale,
+    float max_bias,
+    float logit_softcap)
+{
+    return ggml_flash_attn_ext(*Scope::context(), q, k, v, mask, scale, max_bias, logit_softcap);
+}
+
+ggml_tensor * ExecutionEngine::conv_2d_direct(
+    ggml_tensor* a,
+    ggml_tensor* b,
+    int s0,
+    int s1,
+    int p0,
+    int p1,
+    int d0,
+    int d1)
+{
+    return ggml_conv_2d_direct(*Scope::context(), a, b, s0, s1, p0, p1, d0, d1);
+}
+
+ggml_tensor* ExecutionEngine::get_rows(
+    ggml_tensor* a,
+    ggml_tensor* b)
+{
+    return ggml_get_rows(*Scope::context(), a, b);
+}
+
+ggml_tensor* ExecutionEngine::norm(
+    ggml_tensor* a,
+    float eps) 
+{
+    return ggml_norm(*Scope::context(), a, eps);
+}
+
+ggml_tensor* ExecutionEngine::rms_norm(
+    ggml_tensor* a,
+    float eps)
+{
+    return ggml_rms_norm(*Scope::context(), a, eps);
+}
+
+ggml_tensor* ExecutionEngine::rope_ext(
+    ggml_tensor* a,
+    ggml_tensor* b,
+    ggml_tensor* c,
+    int n_dims,
+    int mode,
+    int n_ctx_orig,
+    float freq_base,
+    float freq_scale,
+    float ext_factor,
+    float attn_factor,
+    float beta_fast,
+    float beta_slow) 
+{
+    return ggml_rope_ext(*Scope::context(), a, b, c, n_dims, mode, n_ctx_orig, freq_base, freq_scale, ext_factor, attn_factor, beta_fast, beta_slow);
+}
+
+ggml_tensor* ExecutionEngine::pool_2d(
+    ggml_tensor* a,
+    ggml_op_pool op,
+    int k0,
+    int k1,
+    int s0,
+    int s1,
+    float p0,
+    float p1) 
+{
+    return ggml_pool_2d(*Scope::context(), a, op, k0, k1, s0, s1, p0, p1);
+}
+
+ggml_tensor* ExecutionEngine::interpolate(
+    ggml_tensor* a,
+    int64_t ne0,
+    int64_t ne1,
+    int64_t ne2,
+    int64_t ne3,
+    uint32_t mode) 
+{
+    return ggml_interpolate(*Scope::context(), a, ne0, ne1, ne2, ne3, mode);
+}
+
+ggml_tensor* ExecutionEngine::upscale(
+    ggml_tensor* a,
+    int scale_factor,
+    ggml_scale_mode mode)
+{
+    return ggml_upscale(*Scope::context(), a, scale_factor, mode);
+}

@@ -14,7 +14,7 @@ LayerNorm::LayerNorm(int64_t dim, float eps, bool elementwise_affine, bool bias)
 }
 
 Tensor LayerNorm::forward(Scope scope, Tensor x) {
-    x = Tensor(ggml_norm(*scope.context(), *x, eps_), x.shape());
+    x = Tensor(scope.engine().norm(*x, eps_), x.shape());
 
     if (elementwise_affine_) {
         auto weight = std::static_pointer_cast<Parameter>(modules["weight"]);

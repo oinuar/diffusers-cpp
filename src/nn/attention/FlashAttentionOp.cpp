@@ -79,8 +79,7 @@ Tensor FlashAttentionOp::operator ()(
      * the output of ggml_flash_attn_ext().
      */
     auto attn = Tensor(
-        ggml_flash_attn_ext(
-            *scope.context(),
+        scope.engine().flash_attn_ext(
             *q,
             *k,
             *v,

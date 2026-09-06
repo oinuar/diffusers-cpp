@@ -80,6 +80,24 @@
 //      sum_rows and friends (per-row ops):
 //          (R, {R}), (S(a), {S(a)}) for a >= 1 -- the axis is preserved
 //          (the meta asserts axis != 0 and returns the src state unchanged)
+//      norm and rms_norm (the meta's handle_per_row, like sum_rows):
+//          (R, {R}), (S(a), {S(a)}) for a >= 1 -- axis 0 is the reduced
+//          axis; a src sharded along it GGML_ASSERTs
+//      rope_ext (the meta's handle_rope): the position src must be R; the
+//          first src's state carries over unchanged, any axis (even 0)
+//      get_rows (the meta's handle_get_rows):
+//          (R, {R, R}), (S(0), {S(0), R}) -- the data may be sharded along
+//          axis 0 with replicated row indices
+//      flash_attn_ext (the meta's handle_flash_attn_ext): q, k and v are
+//          HARD-asserted to be S(2) (the sequence axis of the rank-4
+//          {head_dim, heads, seq, batch} layout), the mask must be R and
+//          the output is S(1). There is no replicated candidate: a graph
+//          that uses attention must route a shard onto axis 2 (the
+//          planner does it through zero-cost reshape/permute views)
+//      conv_2d_direct, pool_2d, upscale and interpolate: GGML_OP_CONV_2D,
+//          POOL_2D and UPSCALE (ggml_interpolate creates a GGML_OP_UPSCALE
+//          node) all go through the meta's handle_generic with
+//          scalar_only = true -- a sharded input ABORTS, only R is planned
 //      reshape/cont (ggml's handle_reshape, ported verbatim below) and
 //      permute (S(b) -> S(i) where the permute puts axis b at position i):
 //          exact axis remap, zero cost
@@ -96,9 +114,9 @@
 //          in-place op wrappers that clone first, e.g. Tensor::clamp(),
 //          are not sharding-compatible; the demo below clamps in place.)
 //      Not handled by the meta backend at all (default case of the switch
-//          -> GGML_ABORT "ggml op not implemented"): neg, abs, exp, cast,
-//          silu. The planner gives these nodes zero candidates, so any
-//          graph using them is reported infeasible with a clear reason.
+//          -> GGML_ABORT "ggml op not implemented"): exp, cast, silu.
+//          The planner gives these nodes zero candidates, so any graph
+//          using them is reported infeasible with a clear reason.
 //  * A P tensor is produced only by a row-parallel mul_mat, and every
 //    consumer of it sees MIRRORED (the meta derives source states with
 //    assume_sync = true). In the plan: the P node carries the AllReduce
@@ -182,6 +200,21 @@ struct ggml_context { int dummy; };
 constexpr ggml_type kMockType = 0;   // the mock graph is dtype-uniform (f32-like, blck size 1)
 
 int ggml_blck_size(ggml_type) { return 1; }   // mock dtypes are f32-like
+// Mirror of ggml.h's op enums (the Engine interface takes them by value).
+enum ggml_op_pool {
+    GGML_OP_POOL_MAX,
+    GGML_OP_POOL_AVG,
+    GGML_OP_POOL_COUNT,
+};
+
+enum ggml_scale_mode {
+    GGML_SCALE_MODE_NEAREST  = 0,
+    GGML_SCALE_MODE_BILINEAR = 1,
+    GGML_SCALE_MODE_BICUBIC  = 2,
+    GGML_SCALE_MODE_LANCZOS3 = 3,
+    GGML_SCALE_MODE_LANCZOS4 = 4,
+    GGML_SCALE_MODE_COUNT,
+};
 
 void ggml_time_init() {}
 void ggml_backend_load_all() {}
@@ -247,64 +280,304 @@ class Engine {
 public:
     virtual ~Engine() = default;
 
+    // -------------------------------------------------------------------------
     // Tensor creation / initialization
-    virtual ggml_tensor* new_tensor(ggml_context* ctx, ggml_type type, int n_dims, const int64_t* ne) = 0;
-    virtual ggml_tensor* new_tensor_1d(ggml_context* ctx, ggml_type type, int64_t ne0) = 0;
-    virtual void set_input(ggml_tensor* tensor) = 0;
-    virtual ggml_tensor* fill(ggml_tensor* tensor, float value) = 0;
+    // -------------------------------------------------------------------------
 
+    virtual ggml_tensor* new_tensor(
+        ggml_type type,
+        int n_dims,
+        const int64_t* ne
+    ) = 0;
+
+    virtual ggml_tensor* new_tensor_1d(
+        ggml_type type,
+        int64_t ne0
+    ) = 0;
+
+    virtual void set_input(
+        ggml_tensor* tensor
+    ) = 0;
+
+    virtual ggml_tensor* fill(
+        ggml_tensor* tensor,
+        float value
+    ) = 0;
+
+    // -------------------------------------------------------------------------
     // Copy / cast
-    virtual ggml_tensor* cont(ggml_tensor* tensor) = 0;
-    virtual ggml_tensor* dup(ggml_tensor* tensor) = 0;
-    virtual ggml_tensor* cast(ggml_tensor* tensor, ggml_type type) = 0;
-    virtual ggml_tensor* cpy(ggml_tensor* src, ggml_tensor* dst) = 0;
+    // -------------------------------------------------------------------------
 
+    virtual ggml_tensor* cont(
+        ggml_tensor* tensor
+    ) = 0;
+
+    virtual ggml_tensor* dup(
+        ggml_tensor* tensor
+    ) = 0;
+
+    virtual ggml_tensor* cast(
+        ggml_tensor* tensor,
+        ggml_type type
+    ) = 0;
+
+    virtual ggml_tensor* cpy(
+        ggml_tensor* src,
+        ggml_tensor* dst
+    ) = 0;
+
+    // -------------------------------------------------------------------------
     // Unary arithmetic
-    virtual ggml_tensor* neg(ggml_tensor* tensor) = 0;
-    virtual ggml_tensor* abs(ggml_tensor* tensor) = 0;
-    virtual ggml_tensor* sqrt(ggml_tensor* tensor) = 0;
-    virtual ggml_tensor* exp(ggml_tensor* tensor) = 0;
-    virtual ggml_tensor* log(ggml_tensor* tensor) = 0;
-    virtual ggml_tensor* sin(ggml_tensor* tensor) = 0;
-    virtual ggml_tensor* cos(ggml_tensor* tensor) = 0;
+    // -------------------------------------------------------------------------
 
+    virtual ggml_tensor* sqrt(
+        ggml_tensor* tensor
+    ) = 0;
+
+    virtual ggml_tensor* exp(
+        ggml_tensor* tensor
+    ) = 0;
+
+    virtual ggml_tensor* log(
+        ggml_tensor* tensor
+    ) = 0;
+
+    virtual ggml_tensor* sin(
+        ggml_tensor* tensor
+    ) = 0;
+
+    virtual ggml_tensor* cos(
+        ggml_tensor* tensor
+    ) = 0;
+
+    // -------------------------------------------------------------------------
     // Binary arithmetic
-    virtual ggml_tensor* add(ggml_tensor* lhs, ggml_tensor* rhs) = 0;
-    virtual ggml_tensor* sub(ggml_tensor* lhs, ggml_tensor* rhs) = 0;
-    virtual ggml_tensor* mul(ggml_tensor* lhs, ggml_tensor* rhs) = 0;
-    virtual ggml_tensor* div(ggml_tensor* lhs, ggml_tensor* rhs) = 0;
+    // -------------------------------------------------------------------------
 
+    virtual ggml_tensor* add(
+        ggml_tensor* lhs,
+        ggml_tensor* rhs
+    ) = 0;
+
+    virtual ggml_tensor* sub(
+        ggml_tensor* lhs,
+        ggml_tensor* rhs
+    ) = 0;
+
+    virtual ggml_tensor* mul(
+        ggml_tensor* lhs,
+        ggml_tensor* rhs
+    ) = 0;
+
+    virtual ggml_tensor* div(
+        ggml_tensor* lhs,
+        ggml_tensor* rhs
+    ) = 0;
+
+    // -------------------------------------------------------------------------
     // Scalar arithmetic
-    virtual ggml_tensor* scale(ggml_tensor* tensor, float value) = 0;
-    virtual ggml_tensor* clamp(ggml_tensor* tensor, float min, float max) = 0;
+    // -------------------------------------------------------------------------
 
+    virtual ggml_tensor* scale(
+        ggml_tensor* tensor,
+        float value
+    ) = 0;
+
+    virtual ggml_tensor* clamp(
+        ggml_tensor* tensor,
+        float min,
+        float max
+    ) = 0;
+
+    // -------------------------------------------------------------------------
     // Matrix operations
-    virtual ggml_tensor* mul_mat(ggml_tensor* lhs, ggml_tensor* rhs) = 0;
+    // -------------------------------------------------------------------------
 
+    virtual ggml_tensor* mul_mat(
+        ggml_tensor* lhs,
+        ggml_tensor* rhs
+    ) = 0;
+
+    // -------------------------------------------------------------------------
     // Reshape
-    virtual ggml_tensor* reshape_1d(ggml_tensor* tensor, int64_t ne0) = 0;
-    virtual ggml_tensor* reshape_2d(ggml_tensor* tensor, int64_t ne0, int64_t ne1) = 0;
-    virtual ggml_tensor* reshape_3d(ggml_tensor* tensor, int64_t ne0, int64_t ne1, int64_t ne2) = 0;
-    virtual ggml_tensor* reshape_4d(ggml_tensor* tensor, int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3) = 0;
+    // -------------------------------------------------------------------------
 
+    virtual ggml_tensor* reshape_1d(
+        ggml_tensor* tensor,
+        int64_t ne0
+    ) = 0;
+
+    virtual ggml_tensor* reshape_2d(
+        ggml_tensor* tensor,
+        int64_t ne0,
+        int64_t ne1
+    ) = 0;
+
+    virtual ggml_tensor* reshape_3d(
+        ggml_tensor* tensor,
+        int64_t ne0,
+        int64_t ne1,
+        int64_t ne2
+    ) = 0;
+
+    virtual ggml_tensor* reshape_4d(
+        ggml_tensor* tensor,
+        int64_t ne0,
+        int64_t ne1,
+        int64_t ne2,
+        int64_t ne3
+    ) = 0;
+
+    // -------------------------------------------------------------------------
     // Permute / transpose
-    virtual ggml_tensor* permute(ggml_tensor* tensor, int axis0, int axis1, int axis2, int axis3) = 0;
+    // -------------------------------------------------------------------------
 
+    virtual ggml_tensor* permute(
+        ggml_tensor* tensor,
+        int axis0,
+        int axis1,
+        int axis2,
+        int axis3
+    ) = 0;
+
+    // -------------------------------------------------------------------------
     // Views
-    virtual ggml_tensor* view_1d(ggml_tensor* tensor, int64_t ne0, size_t offset) = 0;
-    virtual ggml_tensor* view_2d(ggml_tensor* tensor, int64_t ne0, int64_t ne1, size_t nb1, size_t offset) = 0;
-    virtual ggml_tensor* view_3d(ggml_tensor* tensor, int64_t ne0, int64_t ne1, int64_t ne2, size_t nb1, size_t nb2, size_t offset) = 0;
-    virtual ggml_tensor* view_4d(ggml_tensor* tensor, int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3, size_t nb1, size_t nb2, size_t nb3, size_t offset) = 0;
+    // -------------------------------------------------------------------------
 
+    virtual ggml_tensor* view_1d(
+        ggml_tensor* tensor,
+        int64_t ne0,
+        size_t offset
+    ) = 0;
+
+    virtual ggml_tensor* view_2d(
+        ggml_tensor* tensor,
+        int64_t ne0,
+        int64_t ne1,
+        size_t nb1,
+        size_t offset
+    ) = 0;
+
+    virtual ggml_tensor* view_3d(
+        ggml_tensor* tensor,
+        int64_t ne0,
+        int64_t ne1,
+        int64_t ne2,
+        size_t nb1,
+        size_t nb2,
+        size_t offset
+    ) = 0;
+
+    virtual ggml_tensor* view_4d(
+        ggml_tensor* tensor,
+        int64_t ne0,
+        int64_t ne1,
+        int64_t ne2,
+        int64_t ne3,
+        size_t nb1,
+        size_t nb2,
+        size_t nb3,
+        size_t offset
+    ) = 0;
+
+    // -------------------------------------------------------------------------
     // Repeat / broadcast
-    virtual ggml_tensor* repeat(ggml_tensor* tensor, ggml_tensor* target) = 0;
+    // -------------------------------------------------------------------------
 
+    virtual ggml_tensor* repeat(
+        ggml_tensor* tensor,
+        ggml_tensor* target
+    ) = 0;
+
+    // -------------------------------------------------------------------------
     // Concatenation
-    virtual ggml_tensor* concat(ggml_tensor* a, ggml_tensor* b, int dim) = 0;
+    // -------------------------------------------------------------------------
 
+    virtual ggml_tensor* concat(
+        ggml_tensor* a,
+        ggml_tensor* b,
+        int dim
+    ) = 0;
+
+    // -------------------------------------------------------------------------
     // Reduction
-    virtual ggml_tensor* sum_rows(ggml_tensor* tensor) = 0;
-    virtual ggml_tensor* silu(ggml_tensor* tensor) = 0;
+    // -------------------------------------------------------------------------
+
+    virtual ggml_tensor* sum_rows(
+        ggml_tensor* tensor
+    ) = 0;
+
+    virtual ggml_tensor* silu(
+        ggml_tensor* tensor
+    ) = 0;
+
+    virtual ggml_tensor * flash_attn_ext(
+        ggml_tensor* q,
+        ggml_tensor* k,
+        ggml_tensor* v,
+        ggml_tensor* mask,
+        float scale,
+        float max_bias,
+        float logit_softcap) = 0;
+
+    virtual ggml_tensor * conv_2d_direct(
+        ggml_tensor* a,
+        ggml_tensor* b,
+        int s0,
+        int s1,
+        int p0,
+        int p1,
+        int d0,
+        int d1) = 0;
+
+    virtual ggml_tensor* get_rows(
+        ggml_tensor* a,
+        ggml_tensor* b) = 0;
+
+    virtual ggml_tensor* norm(
+        ggml_tensor* a,
+        float eps) = 0;
+
+    virtual ggml_tensor* rms_norm(
+        ggml_tensor* a,
+        float eps) = 0;
+
+    virtual ggml_tensor* rope_ext(
+        ggml_tensor* a,
+        ggml_tensor* b,
+        ggml_tensor* c,
+        int n_dims,
+        int mode,
+        int n_ctx_orig,
+        float freq_base,
+        float freq_scale,
+        float ext_factor,
+        float attn_factor,
+        float beta_fast,
+        float beta_slow) = 0;
+
+    virtual ggml_tensor* pool_2d(
+        ggml_tensor* a,
+        ggml_op_pool op,
+        int k0,
+        int k1,
+        int s0,
+        int s1,
+        float p0,
+        float p1) = 0;
+
+    virtual ggml_tensor* interpolate(
+        ggml_tensor* a,
+        int64_t ne0,
+        int64_t ne1,
+        int64_t ne2,
+        int64_t ne3,
+        uint32_t mode) = 0;
+
+    virtual ggml_tensor* upscale(
+        ggml_tensor* a,
+        int scale_factor,
+        ggml_scale_mode mode) = 0;
 };
 
 // ============================================================================
@@ -464,7 +737,7 @@ public:
     // ---------------------------------------------------------------------
     // Engine: tensor creation / initialization
     // ---------------------------------------------------------------------
-    ggml_tensor* new_tensor(ggml_context*, ggml_type type, int n_dims, const int64_t* ne) override {
+    ggml_tensor* new_tensor(ggml_type type, int n_dims, const int64_t* ne) override {
         const int rank = std::clamp(n_dims, 0, 4);
         int64_t padded[4] = {1, 1, 1, 1};
         for (int i = 0; i < rank; ++i)
@@ -477,9 +750,9 @@ public:
         return t;
     }
 
-    ggml_tensor* new_tensor_1d(ggml_context* ctx, ggml_type type, int64_t ne0) override {
+    ggml_tensor* new_tensor_1d(ggml_type type, int64_t ne0) override {
         const int64_t ne[1] = {ne0};
-        return new_tensor(ctx, type, 1, ne);
+        return new_tensor(type, 1, ne);
     }
 
     // A tensor whose state is externally fixed: a graph input or a compute
@@ -550,8 +823,6 @@ public:
     // ---------------------------------------------------------------------
     // Engine: unary arithmetic
     // ---------------------------------------------------------------------
-    ggml_tensor* neg(ggml_tensor* t) override { return unsupported_op("neg", t); }
-    ggml_tensor* abs(ggml_tensor* t) override { return unsupported_op("abs", t); }
     ggml_tensor* sqrt(ggml_tensor* t) override { return carry_over_op("sqrt", t, w_comp_); }
     ggml_tensor* exp(ggml_tensor* t) override { return unsupported_op("exp", t); }
     ggml_tensor* log(ggml_tensor* t) override { return carry_over_op("log", t, w_comp_); }
@@ -698,6 +969,133 @@ public:
         // is infeasible on the meta device. Use a supported activation
         // instead (clamp-based ReLU, leaky relu, ggml_unary ops, ...).
         return unsupported_op("silu", t);
+    }
+
+    // ---------------------------------------------------------------------
+    // Engine: attention
+    // ---------------------------------------------------------------------
+    ggml_tensor* flash_attn_ext(ggml_tensor* q, ggml_tensor* k, ggml_tensor* v, ggml_tensor* mask, float, float, float) override {
+        // GGML_OP_FLASH_ATTN_EXT (the meta's handle_flash_attn_ext): q, k
+        // and v are HARD-asserted to be S(2) (the sequence axis of the
+        // rank-4 {head_dim, heads, seq, batch} layout), a present mask must
+        // be MIRRORED, and the output is S(1). There is no replicated
+        // candidate. ggml shape: out ne = {v->ne[0], q->ne[2], q->ne[1], q->ne[3]}.
+        const int qi = get_id(q);
+        const int ki = get_id(k);
+        const int vi = get_id(v);
+        const TraceNode& qt = nodes_[qi];
+        const int64_t out_ne[4] = {nodes_[vi].ne[0], qt.ne[2], qt.ne[1], qt.ne[3]};
+
+        std::vector<int> inputs = {qi, ki, vi};
+        std::vector<Dist> in_dists = {shard(2), shard(2), shard(2)};
+        if (mask) {
+            inputs.push_back(get_id(mask));
+            in_dists.push_back(rep());
+        }
+        return make_tensor(trace_op("flash_attn", inputs, {{shard(1), std::move(in_dists), sharded_comp()}}, qt.rank, out_ne));
+    }
+
+    // ---------------------------------------------------------------------
+    // Engine: convolution / pooling / resampling (vision)
+    // ---------------------------------------------------------------------
+    ggml_tensor* conv_2d_direct(ggml_tensor* a, ggml_tensor* b, int s0, int s1, int p0, int p1, int d0, int d1) override {
+        // GGML_OP_CONV_2D goes through the meta's handle_generic with
+        // scalar_only = true: a sharded src would ABORT. Only the
+        // replicated form is planned. a is the kernel [KW, KH, IC, OC], b
+        // the input [W, H, C, N]; out = [OW, OH, OC, N].
+        const int ai = get_id(a);
+        const int bi = get_id(b);
+        const int64_t out_ne[4] = {
+            conv_out_size(nodes_[bi].ne[0], nodes_[ai].ne[0], s0, p0, d0),
+            conv_out_size(nodes_[bi].ne[1], nodes_[ai].ne[1], s1, p1, d1),
+            nodes_[ai].ne[3],
+            nodes_[bi].ne[3],
+        };
+        return make_tensor(trace_op("conv_2d", {ai, bi}, {{rep(), {rep(), rep()}, w_comp_}}, 4, out_ne));
+    }
+
+    ggml_tensor* pool_2d(ggml_tensor* a, ggml_op_pool, int k0, int k1, int s0, int s1, float p0, float p1) override {
+        // GGML_OP_POOL_2D goes through the meta's handle_generic with
+        // scalar_only = true: a sharded src would ABORT. Only the
+        // replicated form is planned.
+        const int ai = get_id(a);
+        const int64_t out_ne[4] = {
+            pool_out_size(nodes_[ai].ne[0], k0, s0, p0),
+            pool_out_size(nodes_[ai].ne[1], k1, s1, p1),
+            nodes_[ai].ne[2],
+            nodes_[ai].ne[3],
+        };
+        return make_tensor(trace_op("pool_2d", {ai}, {{rep(), {rep()}, w_comp_}}, 4, out_ne));
+    }
+
+    ggml_tensor* interpolate(ggml_tensor* a, int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3, uint32_t) override {
+        // ggml_interpolate creates a GGML_OP_UPSCALE node, which goes
+        // through the meta's handle_generic with scalar_only = true: a
+        // sharded src would ABORT. Only the replicated form is planned.
+        const int ai = get_id(a);
+        const int64_t out_ne[4] = {ne0, ne1, ne2, ne3};
+        return make_tensor(trace_op("interpolate", {ai}, {{rep(), {rep()}, w_comp_}}, out_rank_of(out_ne), out_ne));
+    }
+
+    ggml_tensor* upscale(ggml_tensor* a, int scale_factor, ggml_scale_mode) override {
+        // GGML_OP_UPSCALE goes through the meta's handle_generic with
+        // scalar_only = true: a sharded src would ABORT. Only the
+        // replicated form is planned. ne0/ne1 are multiplied by the scale
+        // factor.
+        const int ai = get_id(a);
+        const int64_t out_ne[4] = {nodes_[ai].ne[0] * scale_factor, nodes_[ai].ne[1] * scale_factor, nodes_[ai].ne[2], nodes_[ai].ne[3]};
+        return make_tensor(trace_op("upscale", {ai}, {{rep(), {rep()}, w_comp_}}, out_rank_of(out_ne), out_ne));
+    }
+
+    // ---------------------------------------------------------------------
+    // Engine: embeddings / normalization / rotary embeddings
+    // ---------------------------------------------------------------------
+    ggml_tensor* get_rows(ggml_tensor* a, ggml_tensor* b) override {
+        // GGML_OP_GET_ROWS (the meta's handle_get_rows): the data may be
+        // sharded along axis 0 while the row indices stay replicated;
+        // otherwise everything must be replicated (scalar_only fallback).
+        // ggml asserts b = {n_rows, a->ne[2], a->ne[3], 1};
+        // out ne = {a->ne[0], b->ne[0], b->ne[1], b->ne[2]}.
+        const int ai = get_id(a);
+        const int bi = get_id(b);
+        const int64_t out_ne[4] = {nodes_[ai].ne[0], nodes_[bi].ne[0], nodes_[bi].ne[1], nodes_[bi].ne[2]};
+        std::vector<Candidate> cands = {
+            {rep(), {rep(), rep()}, w_comp_},
+            {shard(0), {shard(0), rep()}, sharded_comp()},
+        };
+        return make_tensor(trace_op("get_rows", {ai, bi}, std::move(cands), out_rank_of(out_ne), out_ne));
+    }
+
+    ggml_tensor* norm(ggml_tensor* a, float) override { return per_row_op("norm", a); }
+    ggml_tensor* rms_norm(ggml_tensor* a, float) override { return per_row_op("rms_norm", a); }
+
+    ggml_tensor* rope_ext(ggml_tensor* a, ggml_tensor* b, ggml_tensor* c,
+                          int, int, int, float, float, float, float, float, float) override {
+        // GGML_OP_ROPE (the meta's handle_rope): the position src b must be
+        // MIRRORED (hard assert); a's state carries over unchanged, any
+        // axis (even 0). c (cos/sin cache) is not state-checked by the
+        // meta; a sharded one would fail its ratio asserts, so only a
+        // replicated c is planned.
+        const int ai = get_id(a);
+        const TraceNode& at = nodes_[ai];
+        const bool has_c = c != nullptr;
+
+        std::vector<int> inputs = {ai, get_id(b)};
+        if (has_c)
+            inputs.push_back(get_id(c));
+
+        std::vector<Candidate> cands;
+        {
+            std::vector<Dist> ins = {rep(), rep()};
+            if (has_c) ins.push_back(rep());
+            cands.push_back({rep(), std::move(ins), w_comp_});
+        }
+        for (int ax = 0; ax < at.rank; ++ax) {
+            std::vector<Dist> ins = {shard(ax), rep()};
+            if (has_c) ins.push_back(rep());
+            cands.push_back({shard(ax), std::move(ins), sharded_comp()});
+        }
+        return make_tensor(trace_op("rope", inputs, std::move(cands), at.rank, at.ne));
     }
 
 private:
@@ -850,9 +1248,29 @@ private:
 
     static int out_rank_of(const int64_t ne[4]) { return ggml_n_dims(ne); }
 
+    // ggml's output-size formulas (ggml.c), for conv_2d_direct and pool_2d.
+    static int64_t conv_out_size(int64_t in, int64_t k, int s, int p, int d) {
+        return (in + 2 * p - d * (k - 1) - 1) / s + 1;
+    }
+    static int64_t pool_out_size(int64_t in, int k, int s, float p) {
+        return (in + 2 * p - k) / s + 1;
+    }
+
     ggml_tensor* carry_over_op(const char* name, ggml_tensor* t, double cost) {
         const int id = get_id(t);
         return make_tensor(trace_op(name, {id}, carry_over_candidates(nodes_[id].rank, cost), nodes_[id].rank, nodes_[id].ne));
+    }
+
+    // GGML_OP_NORM / GGML_OP_RMS_NORM (the meta's handle_per_row): the src
+    // must not be sharded along the reduced axis 0; the state carries over
+    // unchanged (axis preserved, ne preserved).
+    ggml_tensor* per_row_op(const char* name, ggml_tensor* t) {
+        const int id = get_id(t);
+        const int rank = nodes_[id].rank;
+        std::vector<Candidate> cands = {{rep(), {rep()}, w_comp_}};
+        for (int a = 1; a < rank; ++a)
+            cands.push_back({shard(a), {shard(a)}, sharded_comp()});
+        return make_tensor(trace_op(name, {id}, std::move(cands), rank, nodes_[id].ne));
     }
 
     // An op the meta backend does not handle: zero candidates, so the DP
@@ -1287,8 +1705,8 @@ public:
     // the compute buffer as MIRRORED / GGML_OP_NONE).
     static Tensor empty(Context& context, const Shape& shape, ggml_type type) {
         auto tensor = shape.rank() == 0
-            ? Tensor(Scope::engine().new_tensor_1d(*context, type, 1), shape, type)
-            : Tensor(Scope::engine().new_tensor(*context, type, (int)shape.rank(), shape.data()), shape, type);
+            ? Tensor(Scope::engine().new_tensor_1d(type, 1), shape, type)
+            : Tensor(Scope::engine().new_tensor(type, (int)shape.rank(), shape.data()), shape, type);
         Scope::engine().set_input(tensor.t_);
         return tensor;
     }
@@ -1613,6 +2031,149 @@ public:
     }
 };
 
+// Demo 3 module: an attention block built on flash_attn_ext.
+//
+// The meta's flash-attn rule requires q, k, v in S(2) (the sequence axis of
+// the rank-4 {head_dim, heads, seq, batch} layout) and has no replicated
+// candidate. With a replicated block input, the planner's only feasible
+// route is a column-parallel projection (shard on the feature axis) moved
+// onto the sequence axis by zero-cost views:
+//
+//   x {hidden, seq, batch} R
+//   q2 = mul_mat(w_q, x)               w_q S(1) -> q2 S(0)  (column-parallel)
+//   q4 = reshape_4d(q2, hd, H, S, B)                  S(0) -> S(1)
+//   q' = permute(q4, 0, 2, 1, 3)                      S(1) -> S(2)
+//   attn = flash_attn_ext(q', k', v', mask)           S(2)^3, R -> S(1)
+//   attn2 = reshape_3d(attn, hidden, S, B)            S(1) -> S(0)
+//   out = mul_mat(w_o, attn2)                         (S(0), S(0)) -> P --AllReduce--> R
+class AttentionBlock : public Module {
+public:
+    AttentionBlock(int64_t hidden, int64_t heads)
+        : hidden_(hidden), heads_(heads), head_dim_(hidden / heads) {
+        modules["w_q"] = std::make_shared<Parameter>(Tensor::Shape{hidden, hidden});
+        modules["w_k"] = std::make_shared<Parameter>(Tensor::Shape{hidden, hidden});
+        modules["w_v"] = std::make_shared<Parameter>(Tensor::Shape{hidden, hidden});
+        modules["w_o"] = std::make_shared<Parameter>(Tensor::Shape{hidden, hidden});
+    }
+
+    Tensor forward(Scope scope, Tensor x) {
+        auto& e = scope.engine();
+        const int64_t seq = x.shape()[1];
+        const int64_t batch = x.shape()[2];
+        const int64_t head_dim = head_dim_;
+
+        auto w_q = std::static_pointer_cast<Parameter>(modules["w_q"])->forward();
+        auto w_k = std::static_pointer_cast<Parameter>(modules["w_k"])->forward();
+        auto w_v = std::static_pointer_cast<Parameter>(modules["w_v"])->forward();
+        auto w_o = std::static_pointer_cast<Parameter>(modules["w_o"])->forward();
+
+        auto q2 = e.mul_mat(*w_q, *x);   // ggml_tensor*, {hidden, seq, batch}
+        auto k2 = e.mul_mat(*w_k, *x);
+        auto v2 = e.mul_mat(*w_v, *x);
+
+        // rank 4: GGML {head_dim, heads, seq, batch} == PyTorch (batch, seq, heads, head_dim)
+        auto q4 = e.reshape_4d(q2, head_dim, heads_, seq, batch);
+        auto k4 = e.reshape_4d(k2, head_dim, heads_, seq, batch);
+        auto v4 = e.reshape_4d(v2, head_dim, heads_, seq, batch);
+
+        // GGML {head_dim, seq, heads, batch}: the shard (heads, S(1)) moves to axis 2.
+        auto qp = e.permute(q4, 0, 2, 1, 3);
+        auto kp = e.permute(k4, 0, 2, 1, 3);
+        auto vp = e.permute(v4, 0, 2, 1, 3);
+
+        // Attention mask: a compute leaf (fixed R), GGML {1, 1, 1, batch}.
+        auto mask = Tensor::empty(scope.context(), Tensor::Shape{1, 1, 1, batch}, kMockType);
+
+        // ggml: out ne = {v->ne[0], q->ne[2], q->ne[1], q->ne[3]} = {head_dim, heads, seq, batch}
+        auto attn = e.flash_attn_ext(qp, kp, vp, mask.t_, 0.5f, 0.0f, 0.0f);
+
+        // Back to {hidden, seq, batch} for the output projection.
+        auto attn2 = e.reshape_3d(attn, hidden_, seq, batch);   // (S(1) -> S(0))
+
+        auto out = e.mul_mat(*w_o, attn2);   // (S(0), S(0)) -> P
+        return Tensor(out, Tensor::Shape{batch, seq, hidden_});
+    }
+
+private:
+    int64_t hidden_, heads_, head_dim_;
+};
+
+// Demo 4 module: a projection path over rope_ext and get_rows.
+//
+// handle_rope asserts only that the position src is MIRRORED and carries a's
+// state over (any axis, even 0); handle_get_rows lets the data be sharded
+// along axis 0 with replicated indices. The shard is created by a
+// column-parallel mul_mat and consumed by a row-parallel projection
+// (the only P -> R bridge):
+//
+//   x {hidden, seq, batch} R
+//   y = mul_mat(w1, x)                  w1 S(1) -> y S(0)   (column-parallel)
+//   r = rope_ext(y, pos, nullptr)                   S(0) -> S(0)
+//   g = get_rows(r, idx)                         (S(0), R) -> S(0)
+//   out = mul_mat(w2, g)                        (S(0), S(0)) -> P --AllReduce--> R
+class RopeGetRows : public Module {
+public:
+    RopeGetRows(int64_t hidden, int64_t n_rows)
+        : hidden_(hidden), n_rows_(n_rows) {
+        modules["w1"] = std::make_shared<Parameter>(Tensor::Shape{hidden, hidden});
+        modules["w2"] = std::make_shared<Parameter>(Tensor::Shape{n_rows_, hidden});
+    }
+
+    Tensor forward(Scope scope, Tensor x) {
+        auto& e = scope.engine();
+        auto w1 = std::static_pointer_cast<Parameter>(modules["w1"])->forward();
+        auto w2 = std::static_pointer_cast<Parameter>(modules["w2"])->forward();
+
+        auto y = e.mul_mat(*w1, *x);   // ggml_tensor*, {hidden, seq, batch}
+
+        // Positions: a compute leaf (fixed R), GGML {1, seq, 1}.
+        auto pos = Tensor::empty(scope.context(), Tensor::Shape{1, x.shape()[1], 1}, kMockType);
+        auto r = e.rope_ext(y, pos.t_, nullptr, 0, 0, 0, 10000.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f);
+
+        // Row indices: ggml_get_rows requires b = {n_rows, a->ne[2], a->ne[3], 1};
+        // for a = {hidden, seq, batch} that is {n_rows, batch, 1, 1}.
+        auto idx = Tensor::empty(scope.context(), Tensor::Shape{x.shape()[0], n_rows_}, kMockType);
+        auto g = e.get_rows(r, idx.t_);   // {hidden, n_rows, batch, 1}
+
+        auto out = e.mul_mat(*w2, g);   // {n_rows, n_rows, batch, 1}
+        return Tensor(out, Tensor::Shape{x.shape()[0], n_rows_, n_rows_});
+    }
+
+private:
+    int64_t hidden_, n_rows_;
+};
+
+// Demo 5 module: a VAE-style upsampler built on the vision ops.
+//
+// conv_2d_direct, pool_2d, upscale and interpolate are scalar_only in the
+// meta backend (a sharded input aborts), so the whole block is forced to
+// the replicated form -- including the norm nodes riding along.
+class Upsampler : public Module {
+public:
+    Upsampler(int64_t in_channels, int64_t out_channels)
+        : out_channels_(out_channels) {
+        modules["w_conv"] = std::make_shared<Parameter>(Tensor::Shape{3, 3, in_channels, out_channels});
+    }
+
+    Tensor forward(Scope scope, Tensor x) {
+        // x: PyTorch (batch, channels, height, width) == GGML {w, h, c, n}
+        auto& e = scope.engine();
+        auto w = std::static_pointer_cast<Parameter>(modules["w_conv"])->forward();
+        const int64_t batch = x.shape()[0], h = x.shape()[2], wdt = x.shape()[3];
+
+        // 3x3, pad 1: same spatial size.
+        auto c = e.conv_2d_direct(w.t_, x.t_, 1, 1, 1, 1, 1, 1);
+        auto n = e.norm(c, 1e-6f);
+        auto u = e.upscale(n, 2, GGML_SCALE_MODE_NEAREST);
+        auto i = e.interpolate(u, 4 * wdt, 4 * h, out_channels_, batch, GGML_SCALE_MODE_BILINEAR);
+        auto p = e.pool_2d(i, GGML_OP_POOL_MAX, 2, 2, 2, 2, 0.0f, 0.0f);
+        return Tensor(p, Tensor::Shape{batch, out_channels_, 2 * h, 2 * wdt});
+    }
+
+private:
+    int64_t out_channels_;
+};
+
 // Stand-in for the GGUF loader: gives every Parameter a tensor of the right
 // shape and the dotted name the callback table is keyed by. (Tests use tiny
 // random models; the planner does not care about values.)
@@ -1624,7 +2185,7 @@ public:
             name += (i ? "." : "") + path[i];
 
         Tensor::Shape shape = parameter.shape();
-        Tensor t = Tensor(Scope::engine().new_tensor(*Scope::context(), kMockType, (int)shape.rank(), shape.data()), shape);
+        Tensor t = Tensor(Scope::engine().new_tensor(kMockType, (int)shape.rank(), shape.data()), shape);
         ggml_set_name(t.t_, name.c_str());
         parameter.set(std::move(t));
     }
@@ -1704,6 +2265,97 @@ int main() {
 
         std::cout << "\n";
         std::cout << planner.finalize().to_string();
+    }
+
+    {
+        // Demo 3: an attention block on flash_attn_ext. The meta backend
+        // hard-asserts q, k, v in S(2) and offers no replicated candidate,
+        // so with a replicated block input the only feasible plan routes a
+        // column-parallel shard onto the sequence axis through zero-cost
+        // reshape/permute views (see the module). The block ends with a
+        // row-parallel projection: P -> AllReduce -> R.
+        Context context;
+        PlannerEngine planner(/*device_count=*/2, /*w_comm=*/0.5, /*w_comp=*/1.0, /*w_mem=*/0.1);
+        Scope scope(context, planner);
+
+        // Block input: PyTorch (batch, seq, hidden) == GGML {hidden, seq, batch}.
+        Tensor x = Tensor::empty(context, Tensor::Shape{2, 4, 8}, kMockType);
+
+        AttentionBlock model(/*hidden=*/8, /*heads=*/4);
+        CreateRandomParametersVisitor visitor;
+        model.accept(visitor);
+
+        (void)model.forward(scope, x);
+
+        std::cout << "\nDemo 3: attention block (flash_attn_ext)\n";
+        std::cout << "traced graph:\n" << planner.dump_trace() << "\n";
+        Plan plan = planner.finalize();
+        std::cout << plan.to_string();
+        print_callback_table(plan);
+
+        std::string error;
+        if (planner.verify(plan, error))
+            std::cout << "verification: OK -- the plan matches the meta backend's split-state derivation\n";
+        else
+            std::cout << "verification FAILED: " << error << "\n";
+    }
+
+    {
+        // Demo 4: rope_ext + get_rows. The shard is created by a
+        // column-parallel mul_mat (feature axis S(0)); rope carries the
+        // state over (any axis) and get_rows keeps the S(0) shard with
+        // replicated indices; the row-parallel projection ends the block
+        // (P -> AllReduce -> R).
+        Context context;
+        PlannerEngine planner(/*device_count=*/2, /*w_comm=*/0.5, /*w_comp=*/1.0, /*w_mem=*/0.1);
+        Scope scope(context, planner);
+        Tensor x = Tensor::empty(context, Tensor::Shape{2, 4, 8}, kMockType);
+
+        RopeGetRows model(/*hidden=*/8, /*n_rows=*/6);
+        CreateRandomParametersVisitor visitor;
+        model.accept(visitor);
+
+        (void)model.forward(scope, x);
+
+        std::cout << "\nDemo 4: rope_ext + get_rows\n";
+        Plan plan = planner.finalize();
+        std::cout << plan.to_string();
+
+        std::string error;
+        if (planner.verify(plan, error))
+            std::cout << "verification: OK -- the plan matches the meta backend's split-state derivation\n";
+        else
+            std::cout << "verification FAILED: " << error << "\n";
+    }
+
+    {
+        // Demo 5: a VAE-style upsampler: conv_2d_direct, norm, upscale,
+        // interpolate, pool_2d. Every one of these ops is scalar_only in
+        // the meta backend, so the whole block must be replicated -- any
+        // shard would abort, and the all-replicated plan is the correct
+        // (and only) outcome.
+        Context context;
+        PlannerEngine planner(/*device_count=*/2, /*w_comm=*/0.5, /*w_comp=*/1.0, /*w_mem=*/0.1);
+        Scope scope(context, planner);
+
+        // Block input: PyTorch (batch, channels, h, w) == GGML {w, h, c, n}.
+        Tensor x = Tensor::empty(context, Tensor::Shape{2, 4, 8, 8}, kMockType);
+
+        Upsampler model(/*in_channels=*/4, /*out_channels=*/8);
+        CreateRandomParametersVisitor visitor;
+        model.accept(visitor);
+
+        (void)model.forward(scope, x);
+
+        std::cout << "\nDemo 5: VAE-style upsampler (conv_2d_direct, upscale, interpolate, pool_2d)\n";
+        Plan plan = planner.finalize();
+        std::cout << plan.to_string();
+
+        std::string error;
+        if (planner.verify(plan, error))
+            std::cout << "verification: OK -- the plan matches the meta backend's split-state derivation\n";
+        else
+            std::cout << "verification FAILED: " << error << "\n";
     }
 
     return 0;

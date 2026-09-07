@@ -25,7 +25,13 @@ public:
         }
     };
 
-    typedef std::unordered_map<Tensor, std::pair<Provider<std::byte>, bool>, TensorInputHash, TensorInputEqual> Bindings;
+    struct Binding {
+        Provider<std::byte> provider;
+        bool once;
+        bool unbound;
+    };
+
+    typedef std::unordered_map<Tensor, Binding, TensorInputHash, TensorInputEqual> Bindings;
 
     Context(size_t capacity = GGML_DEFAULT_GRAPH_SIZE)
         : ctx_(nullptr), metadata_(ggml_tensor_overhead() * capacity + ggml_graph_overhead()), bindings_(), capacity_(capacity)
@@ -76,21 +82,30 @@ public:
 
     template <typename T>
     void bind(Tensor tensor, const Provider<T>& provider, bool once = false) {
-        bindings_[tensor] = std::make_pair([tensor, provider](std::mt19937& rng) {
-            auto values = provider(rng);
+        bindings_[tensor] = {
+            [tensor, provider](std::mt19937& rng) {
+                auto values = provider(rng);
 
-            if constexpr (std::is_same_v<T, std::byte>)
-                return std::move(values);
+                if constexpr (std::is_same_v<T, std::byte>)
+                    return std::move(values);
 
-            // Convert T[] to std::byte[]
-            std::vector<std::byte> bytes(values.size() * sizeof(T));
-            std::memcpy(bytes.data(), values.data(), bytes.size());
-            return bytes;
-        }, once);
+                // Convert T[] to std::byte[]
+                std::vector<std::byte> bytes(values.size() * sizeof(T));
+                std::memcpy(bytes.data(), values.data(), bytes.size());
+                return bytes;
+            },
+            once,
+            /*unbound = */false
+        };
     }
 
     void unbind(Tensor tensor) {
-        bindings_.erase(tensor);
+        auto it = bindings_.find(tensor);
+
+        // Mark binding as unbound. We need to keep track of all
+        // the bindings to support context reallocation.
+        if (it != std::end(bindings_))
+            it->second.unbound = true;
     }
 
     void copy(const Tensor& src, const Tensor& dst) {
@@ -146,6 +161,11 @@ public:
 
             return values;
         });
+    }
+
+    void reset() {
+        for (auto& [tensor, binding] : bindings_)
+            binding.unbound = false;
     }
 
     Context(const Context&) = delete;

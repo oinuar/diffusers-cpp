@@ -2,18 +2,10 @@
 #include "ggml/Context.hpp"
 #include "ggml/Allocator.hpp"
 #include "nn/Parameter.hpp"
+#include "nn/ModulePath.hpp"
 #include <string>
 #include <fstream>
-#include <numeric>
 #include <iostream>
-
-static std::string join_path(const std::vector<std::string>& path) {
-    return std::accumulate(std::begin(path), std::end(path), std::string(""), [](const std::string& acc, const std::string& x) {
-        if (acc.empty())
-            return x;
-        return acc + "." + x;
-    });
-}
 
 static std::optional<std::filesystem::path> find_first_gguf(const std::filesystem::path& path)
 {
@@ -97,7 +89,8 @@ void GGUFLoaderVisitor::validate() const {
 }
 
 void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> path) {
-    auto model_path = join_path(path);
+    ModulePath module_path;
+    auto model_path = module_path(path);
     auto it = lookup_.find(model_path);
 
     if (it == std::end(lookup_))
@@ -136,7 +129,7 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
     Scope scope(context_);
     auto tensor = Tensor::empty(expected_shape, type);
 
-    ggml_set_name(*tensor, name);
+    tensor.name(name);
 
     auto n_bytes = ggml_nbytes(*tensor);
 

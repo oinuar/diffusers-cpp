@@ -24,10 +24,10 @@ public:
             progress_->push("Initializing", bindings_.size() + 1);
 
         for (auto it = std::begin(bindings_); it != std::end(bindings_); ) {
-            graph_.context().write(it->first, it->second.first(rng_));
+            graph_.context().write(it->first, it->second.provider(rng_));
 
             // Remove one-time bindings after using them
-            if (it->second.second)
+            if (it->second.once)
                 it = bindings_.erase(it);
             else
                 ++it;

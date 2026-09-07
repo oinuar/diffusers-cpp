@@ -181,6 +181,16 @@ public:
         return t_ != nullptr;
     }
 
+    /** @brief Returns the name of this tensor. */
+    const char* name() const {
+        return ggml_get_name(t_);
+    }
+
+    /** @brief Sets the name of this tensor. */
+    void name(const char* value) const {
+        ggml_set_name(t_, value);
+    }
+
     /** @brief Returns a contiguous copy of this tensor.
      *
      * Always produces a copy tensor regardless of whether the input is already contiguous. This is used when a 

@@ -19,6 +19,8 @@ public:
      */
     void allocate(const std::optional<ggml_backend_buffer_usage>& usage = std::nullopt);
 
+    void reset();
+
     Context& context() {
         return context_;
     }

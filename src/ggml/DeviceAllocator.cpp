@@ -19,3 +19,8 @@ void DeviceAllocator::allocate(const std::optional<ggml_backend_buffer_usage>& u
 
     buffers_.emplace_back(buffer, usage);
 }
+
+void DeviceAllocator::reset() {
+    buffers_.clear();
+    context_.reset();
+}

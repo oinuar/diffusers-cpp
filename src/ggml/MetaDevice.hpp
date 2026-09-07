@@ -5,7 +5,9 @@
 #include "nn/Parameter.hpp"
 #include <unordered_map>
 #include <vector>
+#include <map>
 #include <stdexcept>
+#include <cstring>
 #include <iostream>
 
 /** @brief A virtual device that shards tensors across N underlying devices
@@ -21,8 +23,10 @@
  */
 class MetaDevice : public Device {
 public:
+    typedef std::map<std::string, ggml_backend_meta_split_state> Splits;
+
     explicit MetaDevice(std::vector<ggml_backend_dev_t> devices)
-        : Device(ggml_backend_meta_device(devices.data(), devices.size(), get_split_state, nullptr)),
+        : Device(ggml_backend_meta_device(devices.data(), devices.size(), get_split_state, this)),
           n_devices_(devices.size())
     {
     }
@@ -44,42 +48,36 @@ public:
         return n_devices_;
     }
 
+    Splits& splits() {
+        return splits_;
+    }
+
     MetaDevice(const MetaDevice&) = delete;
     MetaDevice& operator=(const MetaDevice&) = delete;
     MetaDevice(MetaDevice&&) = delete;
     MetaDevice& operator=(MetaDevice&&) = delete;
 
 private:
-    typedef std::unordered_map<const ggml_tensor*, ggml_backend_meta_split_state> SplitSpecs;
+    Splits splits_;
     size_t n_devices_;
 
-    static ggml_backend_meta_split_state get_split_state(const ggml_tensor* tensor, void*) {
-        // TODO: make a real split configuration for tensors here
+    static ggml_backend_meta_split_state get_split_state(const ggml_tensor* tensor, void* ud) {
+        auto self = reinterpret_cast<MetaDevice*>(ud);
+        auto key = ggml_get_name(tensor);
 
-        ggml_backend_meta_split_state state = {};
+        auto it = self->splits().find(key);
 
-        state.axis = GGML_BACKEND_SPLIT_AXIS_MIRRORED;
-        state.n_segments = 1;
-        state.nr[0] = 1;
+        if (it == std::end(self->splits())) {
+            ggml_backend_meta_split_state st;
+            std::memset(&st, 0, sizeof(st));
 
-        // Naive 50/50 tensor split
-        //
-        // For a tensor split along axis 0:
-        //
-        //   GPU 0 gets first half
-        //   GPU 1 gets second half
-        //
-        // ggml_backend_meta_split_state::ne is laid out as:
-        //   [segment0_dev0, segment0_dev1, ...]
-        /*
-        state.axis = GGML_BACKEND_SPLIT_AXIS_0;
-        
-        const int64_t n = tensor->ne[0];
+            st.axis = GGML_BACKEND_SPLIT_AXIS_NONE;
+            st.nr[0] = 1;
+            st.n_segments = 1;
 
-        state.ne[0] = n / 2;
-        state.ne[1] = n - state.ne[0];*/
+            return st;
+        }
 
-
-        return state;
+        return it->second;
     }
 };

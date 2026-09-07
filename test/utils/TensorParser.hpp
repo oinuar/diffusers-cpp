@@ -12,7 +12,7 @@
 
 template <>
 struct ArgumentParser::parser<Tensor> {
-    parser(Scope scope, Allocator* allocator = nullptr) : scope_(scope) {
+    parser(Scope scope) : scope_(scope) {
 
     }
 
@@ -28,7 +28,7 @@ struct ArgumentParser::parser<Tensor> {
                 return data;
             });
 
-            ggml_set_name(*tensor, option.c_str());
+            tensor.name(option.c_str());
 
             return tensor;
         } catch (const std::runtime_error& error) {

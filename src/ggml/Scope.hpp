@@ -9,13 +9,27 @@ class Engine;
 
 class Scope {
 public:
-    Scope(Context& context, Engine& engine = ExecutionEngine::Default)
+
+    explicit Scope(Context& context, Engine& engine)
         : frame_(std::make_shared<Frame>(
               current_context_,
               current_engine_))
     {
         current_context_ = &context;
         current_engine_ = &engine;
+    }
+
+    // Set Context in the scope, but does not overwrite Engine.
+    Scope(Context& context)
+        : frame_(std::make_shared<Frame>(
+              current_context_,
+              current_engine_))
+    {
+        current_context_ = &context;
+
+        // Set Engine to default if it is not set.
+        if (!current_engine_)
+            current_engine_ = &ExecutionEngine::Default;
     }
 
     // Set Engine in the scope, but does not change Context.

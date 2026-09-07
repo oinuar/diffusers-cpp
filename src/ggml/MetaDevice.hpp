@@ -23,7 +23,7 @@
  */
 class MetaDevice : public Device {
 public:
-    typedef std::map<std::string, ggml_backend_meta_split_state> Splits;
+    typedef std::map<const ggml_tensor*, ggml_backend_meta_split_state> Splits;
 
     explicit MetaDevice(std::vector<ggml_backend_dev_t> devices)
         : Device(ggml_backend_meta_device(devices.data(), devices.size(), get_split_state, this)),
@@ -63,15 +63,13 @@ private:
 
     static ggml_backend_meta_split_state get_split_state(const ggml_tensor* tensor, void* ud) {
         auto self = reinterpret_cast<MetaDevice*>(ud);
-        auto key = ggml_get_name(tensor);
-
-        auto it = self->splits().find(key);
+        auto it = self->splits().find(tensor);
 
         if (it == std::end(self->splits())) {
             ggml_backend_meta_split_state st;
             std::memset(&st, 0, sizeof(st));
 
-            st.axis = GGML_BACKEND_SPLIT_AXIS_NONE;
+            st.axis = GGML_BACKEND_SPLIT_AXIS_MIRRORED;
             st.nr[0] = 1;
             st.n_segments = 1;
 

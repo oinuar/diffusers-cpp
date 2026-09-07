@@ -1,5 +1,7 @@
 #pragma once
+
 #include "ggml/Engine.hpp"
+#include "ggml/MetaDevice.hpp"
 #include <vector>
 #include <string>
 #include <map>
@@ -14,14 +16,27 @@
 #include <sstream>
 #include <iomanip>
 
+
 class PlannerEngine : public Engine {
 public:
     static constexpr double kInf = 1e30;
 
     struct Dist {
         enum Type { R, S, P };
+
         Type type = Type::R;
         std::optional<int> axis = std::nullopt;
+
+        bool operator==(const Dist& o) const { return type == o.type && axis == o.axis; }
+        bool operator!=(const Dist& o) const { return !(*this == o); }
+        bool operator<(const Dist& o) const {
+            if (type != o.type) return type < o.type;
+            return axis < o.axis;
+        }
+
+        static constexpr Dist replicated() { return Dist{}; }
+        static constexpr Dist shard(int axis) { return {Type::S, axis}; }
+        static constexpr Dist partial() { return {Type::P}; }
 
         std::string to_string() const {
             switch (type) {
@@ -32,16 +47,16 @@ public:
             return "?";
         }
 
-        static constexpr Dist replicated() { return Dist{}; }
-        static constexpr Dist shard(int axis) { return {Type::S, axis}; }
-        static constexpr Dist partial() { return {Type::P}; }
-
-        bool operator==(const Dist& o) const { return type == o.type && axis == o.axis; }
-        bool operator!=(const Dist& o) const { return !(*this == o); }
-        bool operator<(const Dist& o) const {
-            if (type != o.type) return type < o.type;
-            return axis < o.axis;
+        // The plan -> GGML mapping for the axis field of the split state.
+        enum ggml_backend_meta_split_axis to_split_axis() const {
+            switch (type) {
+                case Type::R: return GGML_BACKEND_SPLIT_AXIS_MIRRORED;
+                case Type::S: return static_cast<enum ggml_backend_meta_split_axis>(*axis);
+                case Type::P: return GGML_BACKEND_SPLIT_AXIS_PARTIAL;
+            }
+            return GGML_BACKEND_SPLIT_AXIS_NONE;
         }
+
     };
 
     // One way an op can compute: the distribution it produces, the distributions
@@ -59,26 +74,26 @@ public:
         int64_t ne[4] = {1, 1, 1, 1};            // GGML order, padded with 1s
         std::vector<int> inputs;                 // trace node ids
         std::vector<Candidate> candidates;       // empty = the meta backend cannot run this op
-        bool is_param = false;                   // static tensor: R or S(a) storage decision
+        bool is_param = false;                   // set via set_param(): static param, R or S(a) storage decision
         bool is_fixed = false;                   // graph input / compute leaf: externally fixed to R
     };
 
-    struct Plan {
-        struct Node {
-            int id = 0;
-            std::string op_name;
-            std::string tensor_name;        // non-empty for params (the callback key)
-            Dist produced;
-            Dist required;
-            std::string bridge;                 // collective between produced and required
-            double bridge_cost = 0.0;
-        };
+    struct PlanNode {
+        int id = 0;
+        std::string op_name;
+        std::string tensor_name;        // non-empty for params (the callback key)
+        Dist produced;
+        Dist required;
+        std::string bridge;                 // collective between produced and required
+        double bridge_cost = 0.0;
+    };
 
+    struct Plan {
         double total_cost = 0.0;
         size_t device_count = 0;   // for printing the per-device split sizes
         bool infeasible = false;
         std::string infeasible_reason;
-        std::vector<Node> nodes;        // DFS preorder; printed in reverse = execution order
+        std::vector<PlanNode> nodes;        // DFS preorder; printed in reverse = execution order
         std::map<int, Dist> callback_dists; // param node id -> storage distribution
         // The plan -> GGML tensor split mapping: for every statically allocated
         // tensor, the split state a ggml_backend_meta_get_split_state_t callback
@@ -96,7 +111,7 @@ public:
             }
             ss << "=== plan (total cost " << std::fixed << std::setprecision(2) << total_cost << ") ===\n";
             for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
-                const Node& pn = *it;
+                const PlanNode& pn = *it;
                 ss << "  [" << pn.id << "] " << pn.op_name << (pn.tensor_name.empty() ? "" : " " + pn.tensor_name) << ": ";
                 if (pn.produced == pn.required) {
                     ss << pn.produced.to_string();
@@ -108,9 +123,11 @@ public:
             return ss.str();
         }
     };
-
-    PlannerEngine(int device_count, double w_comm = 0.5, double w_comp = 1.0, double w_mem = 0.1)
-        : device_count_(device_count < 1 ? 1 : device_count),
+    // `parent` creates every ggml tensor (in its ggml_context); the planner
+    // only borrows the pointers and traces the graph.
+    PlannerEngine(Engine& parent, MetaDevice& device, double w_comm, double w_comp, double w_mem)
+        : parent_(parent),
+          device_(device),
           w_comm_(w_comm), w_comp_(w_comp), w_mem_(w_mem) {}
 
     // Solve the DP and reconstruct the plan. The root defaults to the last
@@ -133,15 +150,15 @@ public:
     // Engine: tensor creation / initialization
     // ---------------------------------------------------------------------
     ggml_tensor* new_tensor(ggml_type type, int n_dims, const int64_t* ne) override {
+        ggml_tensor* t = parent_.new_tensor(type, n_dims, ne);
         const int rank = std::clamp(n_dims, 0, 4);
         int64_t padded[4] = {1, 1, 1, 1};
         for (int i = 0; i < rank; ++i)
             padded[i] = ne[i];
 
-        const int id = trace_op("param", {}, param_candidates(rank), rank, padded);
-        nodes_[id].is_param = true;
-        ggml_tensor* t = make_tensor(id);
-        t->type = type;
+        // A bare tensor is a static-tensor candidate (R or S(a)); set_param()
+        // promotes it to a model param, set_input() fixes it to R.
+        trace_op("new_tensor", {}, param_candidates(rank), rank, padded, t);
         return t;
     }
 
@@ -155,22 +172,35 @@ public:
     // compute buffer as GGML_OP_NONE, which is MIRRORED -- so the only
     // legal fixed state is R.
     void set_input(ggml_tensor* t) override {
-        TraceNode& n = nodes_[get_id(t)];
+        parent_.set_input(t);
+        TraceNode& n = nodes_[ensure_node(t)];
         n.is_fixed = true;
-        n.op_name = "input";   // a compute leaf, not a model param
+        n.op_name = "input";
         n.is_param = false;
         n.candidates = {{Dist::replicated(), {}, 0.0}};
     }
 
-    ggml_tensor* fill(ggml_tensor* t, float) override {
+    // Marks a tensor as a model param (the project's Parameter::forward()
+    // calls this when a weight enters the graph): a static tensor whose
+    // storage split (R or S(a)) the plan materializes in the callback
+    // table, keyed by the tensor name.
+    void set_param(ggml_tensor* t) override {
+        parent_.set_param(t);
+        TraceNode& n = nodes_[ensure_node(t)];
+        n.is_param = true;
+        n.op_name = "param";
+    }
+
+    ggml_tensor* fill(ggml_tensor* t, float value) override {
         // The meta runs FILL through handle_generic (state carries over from
         // the shape template); each device simply fills its own slice.
+        ggml_tensor* out = parent_.fill(t, value);
         const int id = get_id(t);
         const int rank = rank_of(t);
         std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}, 0.0}};
         for (int a = 0; a < rank; ++a)
             cands.push_back({Dist::shard(a), {Dist::shard(a)}, 0.0});
-        return make_tensor(trace_op("fill", {id}, std::move(cands), rank, nodes_[id].ne));
+        return traced("fill", {id}, std::move(cands), rank, nodes_[id].ne, out);
     }
 
     // ---------------------------------------------------------------------
@@ -178,23 +208,24 @@ public:
     // ---------------------------------------------------------------------
     ggml_tensor* cont(ggml_tensor* t) override {
         // GGML_OP_CONT and GGML_OP_RESHAPE share the meta's handle_reshape rule.
-        const int id = get_id(t);
-        return reinterpret_op("cont", id, nodes_[id].ne);
+        return reinterpret_op("cont", parent_.cont(t), t, nodes_[get_id(t)].ne);
     }
 
     ggml_tensor* dup(ggml_tensor* t) override {
         // The meta runs DUP with scalar_only: a DUP of a sharded tensor
         // ABORTS. Only a replicated copy is planned.
+        ggml_tensor* out = parent_.dup(t);
         const int id = get_id(t);
-        return make_tensor(trace_op("dup", {id}, {{Dist::replicated(), {Dist::replicated()}, w_comp_}}, nodes_[id].rank, nodes_[id].ne));
+        return traced("dup", {id}, {{Dist::replicated(), {Dist::replicated()}, w_comp_}}, nodes_[id].rank, nodes_[id].ne, out);
     }
 
-    ggml_tensor* cast(ggml_tensor* t, ggml_type) override {
+    ggml_tensor* cast(ggml_tensor* t, ggml_type type) override {
         // GGML_OP_CAST is not in the meta backend's switch -> it ABORTs on
         // any split state. The node gets no candidates: any graph that casts
         // is infeasible (keep the graph dtype-uniform instead).
+        ggml_tensor* out = parent_.cast(t, type);
         const int id = get_id(t);
-        return make_tensor(trace_op("cast", {id}, {}, nodes_[id].rank, nodes_[id].ne));
+        return traced("cast", {id}, {}, nodes_[id].rank, nodes_[id].ne, out);
     }
 
     ggml_tensor* cpy(ggml_tensor* src, ggml_tensor* dst) override {
@@ -202,6 +233,7 @@ public:
         // sharded CPY through handle_reshape (the shard remaps to the dst
         // shape); a replicated CPY is a plain copy. handle_reshape requires
         // src_rank <= dst_rank, so sharded candidates only exist then.
+        ggml_tensor* out = parent_.cpy(src, dst);
         const int si = get_id(src);
         const int di = get_id(dst);
         const int rank = nodes_[di].rank;
@@ -212,32 +244,32 @@ public:
                     cands.push_back({Dist::shard(derive_reshape_axis(nodes_[si].ne, nodes_[di].ne, a)), {Dist::shard(a), Dist::replicated()}, sharded_comp()});
             }
         }
-        return make_tensor(trace_op("cpy", {si, di}, std::move(cands), rank, nodes_[di].ne));
+        return traced("cpy", {si, di}, std::move(cands), rank, nodes_[di].ne, out);
     }
 
     // ---------------------------------------------------------------------
     // Engine: unary arithmetic
     // ---------------------------------------------------------------------
-    ggml_tensor* sqrt(ggml_tensor* t) override { return carry_over_op("sqrt", t, w_comp_); }
-    ggml_tensor* exp(ggml_tensor* t) override { return unsupported_op("exp", t); }
-    ggml_tensor* log(ggml_tensor* t) override { return carry_over_op("log", t, w_comp_); }
-    ggml_tensor* sin(ggml_tensor* t) override { return carry_over_op("sin", t, w_comp_); }
-    ggml_tensor* cos(ggml_tensor* t) override { return carry_over_op("cos", t, w_comp_); }
-    ggml_tensor* sigmoid(ggml_tensor* t) override { return carry_over_op("sigmoid", t, w_comp_); }
+    ggml_tensor* sqrt(ggml_tensor* t) override { return carry_over_op("sqrt", parent_.sqrt(t), t, w_comp_); }
+    ggml_tensor* exp(ggml_tensor* t) override { return unsupported_op("exp", parent_.exp(t), t); }
+    ggml_tensor* log(ggml_tensor* t) override { return carry_over_op("log", parent_.log(t), t, w_comp_); }
+    ggml_tensor* sin(ggml_tensor* t) override { return carry_over_op("sin", parent_.sin(t), t, w_comp_); }
+    ggml_tensor* cos(ggml_tensor* t) override { return carry_over_op("cos", parent_.cos(t), t, w_comp_); }
+    ggml_tensor* sigmoid(ggml_tensor* t) override { return carry_over_op("sigmoid", parent_.sigmoid(t), t, w_comp_); }
 
     // ---------------------------------------------------------------------
     // Engine: binary arithmetic
     // ---------------------------------------------------------------------
-    ggml_tensor* add(ggml_tensor* l, ggml_tensor* r) override { return binary_op("add", l, r); }
-    ggml_tensor* sub(ggml_tensor* l, ggml_tensor* r) override { return binary_op("sub", l, r); }
-    ggml_tensor* mul(ggml_tensor* l, ggml_tensor* r) override { return binary_op("mul", l, r); }
-    ggml_tensor* div(ggml_tensor* l, ggml_tensor* r) override { return binary_op("div", l, r); }
+    ggml_tensor* add(ggml_tensor* l, ggml_tensor* r) override { return binary_op("add", parent_.add(l, r), l, r); }
+    ggml_tensor* sub(ggml_tensor* l, ggml_tensor* r) override { return binary_op("sub", parent_.sub(l, r), l, r); }
+    ggml_tensor* mul(ggml_tensor* l, ggml_tensor* r) override { return binary_op("mul", parent_.mul(l, r), l, r); }
+    ggml_tensor* div(ggml_tensor* l, ggml_tensor* r) override { return binary_op("div", parent_.div(l, r), l, r); }
 
     // ---------------------------------------------------------------------
     // Engine: scalar arithmetic
     // ---------------------------------------------------------------------
-    ggml_tensor* scale(ggml_tensor* t, float) override { return carry_over_op("scale", t, w_comp_); }
-    ggml_tensor* clamp(ggml_tensor* t, float, float) override { return carry_over_op("clamp", t, w_comp_); }
+    ggml_tensor* scale(ggml_tensor* t, float value) override { return carry_over_op("scale", parent_.scale(t, value), t, w_comp_); }
+    ggml_tensor* clamp(ggml_tensor* t, float min, float max) override { return carry_over_op("clamp", parent_.clamp(t, min, max), t, w_comp_); }
 
     // ---------------------------------------------------------------------
     // Engine: matrix operations
@@ -246,12 +278,13 @@ public:
         // Convention (see nn/Linear): lhs = weight [in, out], rhs = activation.
         // ggml_mul_mat: result ne = {lhs->ne[1], rhs->ne[1], rhs->ne[2], rhs->ne[3]},
         // so the batch dims (and the output rank) come from the rhs.
+        ggml_tensor* out = parent_.mul_mat(l, r);
         const int li = get_id(l);
         const int ri = get_id(r);
         const TraceNode& w = nodes_[li];
         const TraceNode& a = nodes_[ri];
         const int64_t out_ne[4] = {w.ne[1], a.ne[1], a.ne[2], a.ne[3]};
-        return make_tensor(trace_op("mul_mat", {li, ri}, mul_mat_candidates(w, a), a.rank, out_ne));
+        return traced("mul_mat", {li, ri}, mul_mat_candidates(w, a), a.rank, out_ne, out);
     }
 
     // ---------------------------------------------------------------------
@@ -259,22 +292,23 @@ public:
     // ---------------------------------------------------------------------
     ggml_tensor* reshape_1d(ggml_tensor* t, int64_t ne0) override {
         const int64_t out_ne[4] = {ne0, 1, 1, 1};
-        return reinterpret_op("reshape", get_id(t), out_ne);
+        return reinterpret_op("reshape", parent_.reshape_1d(t, ne0), t, out_ne);
     }
     ggml_tensor* reshape_2d(ggml_tensor* t, int64_t ne0, int64_t ne1) override {
         const int64_t out_ne[4] = {ne0, ne1, 1, 1};
-        return reinterpret_op("reshape", get_id(t), out_ne);
+        return reinterpret_op("reshape", parent_.reshape_2d(t, ne0, ne1), t, out_ne);
     }
     ggml_tensor* reshape_3d(ggml_tensor* t, int64_t ne0, int64_t ne1, int64_t ne2) override {
         const int64_t out_ne[4] = {ne0, ne1, ne2, 1};
-        return reinterpret_op("reshape", get_id(t), out_ne);
+        return reinterpret_op("reshape", parent_.reshape_3d(t, ne0, ne1, ne2), t, out_ne);
     }
     ggml_tensor* reshape_4d(ggml_tensor* t, int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3) override {
         const int64_t out_ne[4] = {ne0, ne1, ne2, ne3};
-        return reinterpret_op("reshape", get_id(t), out_ne);
+        return reinterpret_op("reshape", parent_.reshape_4d(t, ne0, ne1, ne2, ne3), t, out_ne);
     }
 
     ggml_tensor* permute(ggml_tensor* t, int a0, int a1, int a2, int a3) override {
+        ggml_tensor* out = parent_.permute(t, a0, a1, a2, a3);
         const int id = get_id(t);
         const TraceNode& src = nodes_[id];
         const int ax[4] = {a0, a1, a2, a3};
@@ -291,24 +325,24 @@ public:
                     cands.push_back({Dist::shard(i), {Dist::shard(b)}, 0.0});
             }
         }
-        return make_tensor(trace_op("permute", {id}, std::move(cands), src.rank, out_ne));
+        return traced("permute", {id}, std::move(cands), src.rank, out_ne, out);
     }
 
-    ggml_tensor* view_1d(ggml_tensor* t, int64_t ne0, size_t) override {
+    ggml_tensor* view_1d(ggml_tensor* t, int64_t ne0, size_t offset) override {
         const int64_t out_ne[4] = {ne0, 1, 1, 1};
-        return reinterpret_op("view", get_id(t), out_ne);
+        return reinterpret_op("view", parent_.view_1d(t, ne0, offset), t, out_ne);
     }
-    ggml_tensor* view_2d(ggml_tensor* t, int64_t ne0, int64_t ne1, size_t, size_t) override {
+    ggml_tensor* view_2d(ggml_tensor* t, int64_t ne0, int64_t ne1, size_t nb1, size_t offset) override {
         const int64_t out_ne[4] = {ne0, ne1, 1, 1};
-        return reinterpret_op("view", get_id(t), out_ne);
+        return reinterpret_op("view", parent_.view_2d(t, ne0, ne1, nb1, offset), t, out_ne);
     }
-    ggml_tensor* view_3d(ggml_tensor* t, int64_t ne0, int64_t ne1, int64_t ne2, size_t, size_t, size_t) override {
+    ggml_tensor* view_3d(ggml_tensor* t, int64_t ne0, int64_t ne1, int64_t ne2, size_t nb1, size_t nb2, size_t offset) override {
         const int64_t out_ne[4] = {ne0, ne1, ne2, 1};
-        return reinterpret_op("view", get_id(t), out_ne);
+        return reinterpret_op("view", parent_.view_3d(t, ne0, ne1, ne2, nb1, nb2, offset), t, out_ne);
     }
-    ggml_tensor* view_4d(ggml_tensor* t, int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3, size_t, size_t, size_t, size_t) override {
+    ggml_tensor* view_4d(ggml_tensor* t, int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3, size_t nb1, size_t nb2, size_t nb3, size_t offset) override {
         const int64_t out_ne[4] = {ne0, ne1, ne2, ne3};
-        return reinterpret_op("view", get_id(t), out_ne);
+        return reinterpret_op("view", parent_.view_4d(t, ne0, ne1, ne2, ne3, nb1, nb2, nb3, offset), t, out_ne);
     }
 
     // ---------------------------------------------------------------------
@@ -318,15 +352,17 @@ public:
         // The meta runs REPEAT through handle_generic: all srcs must be in
         // the SAME state. The target is a compute leaf (fixed R), so only a
         // replicated source can be broadcast.
+        ggml_tensor* out = parent_.repeat(t, target);
         const int ti = get_id(t);
         const int ri = get_id(target);
-        return make_tensor(trace_op("repeat", {ti, ri}, {{Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp_}}, nodes_[ri].rank, nodes_[ri].ne));
+        return traced("repeat", {ti, ri}, {{Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp_}}, nodes_[ri].rank, nodes_[ri].ne, out);
     }
 
     ggml_tensor* concat(ggml_tensor* a, ggml_tensor* b, int dim) override {
         // GGML_OP_CONCAT (the meta's handle_concat): one operand may be
         // sharded along any axis OTHER than the concat dim; both may be
         // sharded along the same axis. (dim is the GGML axis.)
+        ggml_tensor* out = parent_.concat(a, b, dim);
         const int ai = get_id(a);
         const int bi = get_id(b);
         const int rank = std::max(nodes_[ai].rank, nodes_[bi].rank);
@@ -340,7 +376,7 @@ public:
             cands.push_back({Dist::shard(a), {Dist::shard(a), Dist::replicated()}, sharded_comp()});
             cands.push_back({Dist::shard(a), {Dist::replicated(), Dist::shard(a)}, sharded_comp()});
         }
-        return make_tensor(trace_op("concat", {ai, bi}, std::move(cands), rank, out_ne));
+        return traced("concat", {ai, bi}, std::move(cands), rank, out_ne, out);
     }
 
     // ---------------------------------------------------------------------
@@ -350,24 +386,26 @@ public:
         // GGML_OP_SUM_ROWS (the meta's handle_per_row): asserts the src is
         // not sharded along the reduced axis 0 and keeps the src state
         // UNCHANGED (axis preserved, ne preserved).
+        ggml_tensor* out = parent_.sum_rows(t);
         const int id = get_id(t);
         const int in_rank = nodes_[id].rank;
         int64_t out_ne[4] = {1, nodes_[id].ne[1], nodes_[id].ne[2], nodes_[id].ne[3]};
         std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}, w_comp_}};
         for (int a = 1; a < in_rank; ++a)
             cands.push_back({Dist::shard(a), {Dist::shard(a)}, sharded_comp()});
-        return make_tensor(trace_op("sum_rows", {id}, std::move(cands), in_rank > 0 ? in_rank - 1 : 0, out_ne));
+        return traced("sum_rows", {id}, std::move(cands), in_rank > 0 ? in_rank - 1 : 0, out_ne, out);
     }
 
     // ---------------------------------------------------------------------
     // Engine: attention
     // ---------------------------------------------------------------------
-    ggml_tensor* flash_attn_ext(ggml_tensor* q, ggml_tensor* k, ggml_tensor* v, ggml_tensor* mask, float, float, float) override {
+    ggml_tensor* flash_attn_ext(ggml_tensor* q, ggml_tensor* k, ggml_tensor* v, ggml_tensor* mask, float scale, float max_bias, float logit_softcap) override {
         // GGML_OP_FLASH_ATTN_EXT (the meta's handle_flash_attn_ext): q, k
         // and v are HARD-asserted to be S(2) (the sequence axis of the
         // rank-4 {head_dim, heads, seq, batch} layout), a present mask must
         // be MIRRORED, and the output is S(1). There is no replicated
         // candidate. ggml shape: out ne = {v->ne[0], q->ne[2], q->ne[1], q->ne[3]}.
+        ggml_tensor* out = parent_.flash_attn_ext(q, k, v, mask, scale, max_bias, logit_softcap);
         const int qi = get_id(q);
         const int ki = get_id(k);
         const int vi = get_id(v);
@@ -380,7 +418,7 @@ public:
             inputs.push_back(get_id(mask));
             in_dists.push_back(Dist::replicated());
         }
-        return make_tensor(trace_op("flash_attn", inputs, {{Dist::shard(1), std::move(in_dists), sharded_comp()}}, qt.rank, out_ne));
+        return traced("flash_attn", inputs, {{Dist::shard(1), std::move(in_dists), sharded_comp()}}, qt.rank, out_ne, out);
     }
 
     // ---------------------------------------------------------------------
@@ -391,6 +429,7 @@ public:
         // scalar_only = true: a sharded src would ABORT. Only the
         // replicated form is planned. a is the kernel [KW, KH, IC, OC], b
         // the input [W, H, C, N]; out = [OW, OH, OC, N].
+        ggml_tensor* out = parent_.conv_2d_direct(a, b, s0, s1, p0, p1, d0, d1);
         const int ai = get_id(a);
         const int bi = get_id(b);
         const int64_t out_ne[4] = {
@@ -399,13 +438,14 @@ public:
             nodes_[ai].ne[3],
             nodes_[bi].ne[3],
         };
-        return make_tensor(trace_op("conv_2d", {ai, bi}, {{Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp_}}, 4, out_ne));
+        return traced("conv_2d", {ai, bi}, {{Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp_}}, 4, out_ne, out);
     }
 
-    ggml_tensor* pool_2d(ggml_tensor* a, ggml_op_pool, int k0, int k1, int s0, int s1, float p0, float p1) override {
+    ggml_tensor* pool_2d(ggml_tensor* a, ggml_op_pool op, int k0, int k1, int s0, int s1, float p0, float p1) override {
         // GGML_OP_POOL_2D goes through the meta's handle_generic with
         // scalar_only = true: a sharded src would ABORT. Only the
         // replicated form is planned.
+        ggml_tensor* out = parent_.pool_2d(a, op, k0, k1, s0, s1, p0, p1);
         const int ai = get_id(a);
         const int64_t out_ne[4] = {
             pool_out_size(nodes_[ai].ne[0], k0, s0, p0),
@@ -413,26 +453,28 @@ public:
             nodes_[ai].ne[2],
             nodes_[ai].ne[3],
         };
-        return make_tensor(trace_op("pool_2d", {ai}, {{Dist::replicated(), {Dist::replicated()}, w_comp_}}, 4, out_ne));
+        return traced("pool_2d", {ai}, {{Dist::replicated(), {Dist::replicated()}, w_comp_}}, 4, out_ne, out);
     }
 
-    ggml_tensor* interpolate(ggml_tensor* a, int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3, uint32_t) override {
+    ggml_tensor* interpolate(ggml_tensor* a, int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3, uint32_t mode) override {
         // ggml_interpolate creates a GGML_OP_UPSCALE node, which goes
         // through the meta's handle_generic with scalar_only = true: a
         // sharded src would ABORT. Only the replicated form is planned.
+        ggml_tensor* out = parent_.interpolate(a, ne0, ne1, ne2, ne3, mode);
         const int ai = get_id(a);
         const int64_t out_ne[4] = {ne0, ne1, ne2, ne3};
-        return make_tensor(trace_op("interpolate", {ai}, {{Dist::replicated(), {Dist::replicated()}, w_comp_}}, out_rank_of(out_ne), out_ne));
+        return traced("interpolate", {ai}, {{Dist::replicated(), {Dist::replicated()}, w_comp_}}, out_rank_of(out_ne), out_ne, out);
     }
 
-    ggml_tensor* upscale(ggml_tensor* a, int scale_factor, ggml_scale_mode) override {
+    ggml_tensor* upscale(ggml_tensor* a, int scale_factor, ggml_scale_mode mode) override {
         // GGML_OP_UPSCALE goes through the meta's handle_generic with
         // scalar_only = true: a sharded src would ABORT. Only the
         // replicated form is planned. ne0/ne1 are multiplied by the scale
         // factor.
+        ggml_tensor* out = parent_.upscale(a, scale_factor, mode);
         const int ai = get_id(a);
         const int64_t out_ne[4] = {nodes_[ai].ne[0] * scale_factor, nodes_[ai].ne[1] * scale_factor, nodes_[ai].ne[2], nodes_[ai].ne[3]};
-        return make_tensor(trace_op("upscale", {ai}, {{Dist::replicated(), {Dist::replicated()}, w_comp_}}, out_rank_of(out_ne), out_ne));
+        return traced("upscale", {ai}, {{Dist::replicated(), {Dist::replicated()}, w_comp_}}, out_rank_of(out_ne), out_ne, out);
     }
 
     // ---------------------------------------------------------------------
@@ -444,6 +486,7 @@ public:
         // otherwise everything must be replicated (scalar_only fallback).
         // ggml asserts b = {n_rows, a->ne[2], a->ne[3], 1};
         // out ne = {a->ne[0], b->ne[0], b->ne[1], b->ne[2]}.
+        ggml_tensor* out = parent_.get_rows(a, b);
         const int ai = get_id(a);
         const int bi = get_id(b);
         const int64_t out_ne[4] = {nodes_[ai].ne[0], nodes_[bi].ne[0], nodes_[bi].ne[1], nodes_[bi].ne[2]};
@@ -451,19 +494,21 @@ public:
             {Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp_},
             {Dist::shard(0), {Dist::shard(0), Dist::replicated()}, sharded_comp()},
         };
-        return make_tensor(trace_op("get_rows", {ai, bi}, std::move(cands), out_rank_of(out_ne), out_ne));
+        return traced("get_rows", {ai, bi}, std::move(cands), out_rank_of(out_ne), out_ne, out);
     }
 
-    ggml_tensor* norm(ggml_tensor* a, float) override { return per_row_op("norm", a); }
-    ggml_tensor* rms_norm(ggml_tensor* a, float) override { return per_row_op("rms_norm", a); }
+    ggml_tensor* norm(ggml_tensor* a, float eps) override { return per_row_op("norm", parent_.norm(a, eps), a); }
+    ggml_tensor* rms_norm(ggml_tensor* a, float eps) override { return per_row_op("rms_norm", parent_.rms_norm(a, eps), a); }
 
     ggml_tensor* rope_ext(ggml_tensor* a, ggml_tensor* b, ggml_tensor* c,
-                          int, int, int, float, float, float, float, float, float) override {
+                          int n_dims, int mode, int n_ctx_orig, float freq_base, float freq_scale,
+                          float ext_factor, float attn_factor, float beta_fast, float beta_slow) override {
         // GGML_OP_ROPE (the meta's handle_rope): the position src b must be
         // MIRRORED (hard assert); a's state carries over unchanged, any
         // axis (even 0). c (cos/sin cache) is not state-checked by the
         // meta; a sharded one would fail its ratio asserts, so only a
         // replicated c is planned.
+        ggml_tensor* out = parent_.rope_ext(a, b, c, n_dims, mode, n_ctx_orig, freq_base, freq_scale, ext_factor, attn_factor, beta_fast, beta_slow);
         const int ai = get_id(a);
         const TraceNode& at = nodes_[ai];
         const bool has_c = c != nullptr;
@@ -483,15 +528,15 @@ public:
             if (has_c) ins.push_back(Dist::replicated());
             cands.push_back({Dist::shard(ax), std::move(ins), sharded_comp()});
         }
-        return make_tensor(trace_op("rope", inputs, std::move(cands), at.rank, at.ne));
+        return traced("rope", inputs, std::move(cands), at.rank, at.ne, out);
     }
 
 private:
     // ---------------------------------------------------------------------
     // Cost model
     // ---------------------------------------------------------------------
-    double sharded_comp() const { return w_comp_ / device_count_; }
-    double comm_factor() const { return (device_count_ - 1.0) / device_count_; }
+    double sharded_comp() const { return w_comp_ / (double)device_.count(); }
+    double comm_factor() const { return (device_.count() - 1.0) / (double)device_.count(); }
 
     struct Bridge {
         std::string name;
@@ -518,7 +563,7 @@ private:
     // ---------------------------------------------------------------------
     std::vector<Candidate> param_candidates(int rank) const {
         std::vector<Candidate> cands;
-        cands.push_back({Dist::replicated(), {}, device_count_ * w_mem_});   // full replica on every device
+        cands.push_back({Dist::replicated(), {}, device_.count() * w_mem_});   // full replica on every device
         for (int a = 0; a < rank; ++a)
             cands.push_back({Dist::shard(a), {}, w_mem_});            // the weight split across devices
         return cands;
@@ -529,7 +574,7 @@ private:
         std::vector<Candidate> cands;
         cands.push_back({Dist::replicated(), {Dist::replicated()}, cost});
         for (int a = 0; a < rank; ++a)
-            cands.push_back({Dist::shard(a), {Dist::shard(a)}, cost / device_count_});
+            cands.push_back({Dist::shard(a), {Dist::shard(a)}, cost / device_.count()});
         return cands;
     }
 
@@ -572,7 +617,7 @@ private:
     // `out_ne` produce? Returns std::nullopt when the meta would
     // GGML_ABORT("shape mismatch ...").
     // ---------------------------------------------------------------------
-    static int ggml_n_dims(const int64_t ne[4]) {
+    static int n_dims(const int64_t ne[4]) {
         int n = 4;
         while (n > 1 && ne[n - 1] == 1) --n;
         return n;
@@ -585,13 +630,11 @@ private:
             return false;   // a P source is visible as R (handled by the R candidate)
         if (!in.axis || *in.axis > 3)
             return false;
-
         const int axis = *in.axis;
-
         // The nr[0] == 1 fast path (the planner only produces single-segment
         // splits with nr == 1): a shard of the src's last meaningful dim
         // lands on the output's last meaningful dim.
-        if (axis == ggml_n_dims(src_ne) - 1)
+        if (axis == n_dims(src_ne) - 1)
             return true;
         int64_t base_ne_in = 1;
         for (int dim = 0; dim <= axis; ++dim)
@@ -608,20 +651,21 @@ private:
     }
 
     // reshape/cont/view: zero-cost memory reinterpretation.
-    ggml_tensor* reinterpret_op(const char* name, int id, const int64_t out_ne[4]) {
+    ggml_tensor* reinterpret_op(const char* name, ggml_tensor* out, ggml_tensor* t, const int64_t out_ne[4]) {
+        const int id = get_id(t);
         const TraceNode& src = nodes_[id];
         std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}, 0.0}};
         for (int a = 0; a < src.rank; ++a) {
             if (derive_reshape(src.ne, out_ne, Dist::shard(a)))
                 cands.push_back({Dist::shard(derive_reshape_axis(src.ne, out_ne, a)), {Dist::shard(a)}, 0.0});
         }
-        return make_tensor(trace_op(name, {id}, std::move(cands), out_rank_of(out_ne), out_ne));
+        return traced(name, {id}, std::move(cands), out_rank_of(out_ne), out_ne, out);
     }
 
     // Which output axis a shard of input axis `a` maps to (handle_reshape).
     static int derive_reshape_axis(const int64_t src_ne[4], const int64_t out_ne[4], int a) {
-        if (a == ggml_n_dims(src_ne) - 1)
-            return ggml_n_dims(out_ne) - 1;
+        if (a == n_dims(src_ne) - 1)
+            return n_dims(out_ne) - 1;
         int64_t base_ne_in = 1;
         for (int dim = 0; dim <= a; ++dim)
             base_ne_in *= src_ne[dim];
@@ -636,7 +680,7 @@ private:
         return a;   // unreachable for candidate axes (derive_reshape checked)
     }
 
-    static int out_rank_of(const int64_t ne[4]) { return ggml_n_dims(ne); }
+    static int out_rank_of(const int64_t ne[4]) { return n_dims(ne); }
 
     // ggml's output-size formulas (ggml.c), for conv_2d_direct and pool_2d.
     static int64_t conv_out_size(int64_t in, int64_t k, int s, int p, int d) {
@@ -646,28 +690,28 @@ private:
         return (in + 2 * p - k) / s + 1;
     }
 
-    ggml_tensor* carry_over_op(const char* name, ggml_tensor* t, double cost) {
+    ggml_tensor* carry_over_op(const char* name, ggml_tensor* out, ggml_tensor* t, double cost) {
         const int id = get_id(t);
-        return make_tensor(trace_op(name, {id}, carry_over_candidates(nodes_[id].rank, cost), nodes_[id].rank, nodes_[id].ne));
+        return traced(name, {id}, carry_over_candidates(nodes_[id].rank, cost), nodes_[id].rank, nodes_[id].ne, out);
     }
 
     // GGML_OP_NORM / GGML_OP_RMS_NORM (the meta's handle_per_row): the src
     // must not be sharded along the reduced axis 0; the state carries over
     // unchanged (axis preserved, ne preserved).
-    ggml_tensor* per_row_op(const char* name, ggml_tensor* t) {
+    ggml_tensor* per_row_op(const char* name, ggml_tensor* out, ggml_tensor* t) {
         const int id = get_id(t);
         const int rank = nodes_[id].rank;
         std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}, w_comp_}};
         for (int a = 1; a < rank; ++a)
             cands.push_back({Dist::shard(a), {Dist::shard(a)}, sharded_comp()});
-        return make_tensor(trace_op(name, {id}, std::move(cands), rank, nodes_[id].ne));
+        return traced(name, {id}, std::move(cands), rank, nodes_[id].ne, out);
     }
 
     // An op the meta backend does not handle: zero candidates, so the DP
     // can only report the graph infeasible (with this op named).
-    ggml_tensor* unsupported_op(const char* name, ggml_tensor* t) {
+    ggml_tensor* unsupported_op(const char* name, ggml_tensor* out, ggml_tensor* t) {
         const int id = get_id(t);
-        return make_tensor(trace_op(name, {id}, {}, nodes_[id].rank, nodes_[id].ne));
+        return traced(name, {id}, {}, nodes_[id].rank, nodes_[id].ne, out);
     }
 
     // ---------------------------------------------------------------------
@@ -675,8 +719,23 @@ private:
     // ---------------------------------------------------------------------
     int rank_of(ggml_tensor* t) const { return nodes_[get_id(t)].rank; }
 
+    // The trace node for a tensor the planner has not traced yet: it was
+    // created outside the plan phase (e.g. by a loader under a different
+    // engine), so its shape is read from the ggml tensor and it starts as
+    // a bare static-tensor candidate (set_param / set_input refine it).
+    int ensure_node(ggml_tensor* t) {
+        const auto it = raw_to_id_.find(t);
+        if (it != raw_to_id_.end())
+            return it->second;
+        const int rank = std::clamp(ggml_n_dims(t), 0, 4);
+        int64_t ne[4] = {1, 1, 1, 1};
+        for (int i = 0; i < rank; ++i)
+            ne[i] = t->ne[i];
+        return trace_op("new_tensor", {}, param_candidates(rank), rank, ne, t);
+    }
+
     int trace_op(const char* name, const std::vector<int>& inputs,
-                 std::vector<Candidate> candidates, int rank, const int64_t ne[4]) {
+                 std::vector<Candidate> candidates, int rank, const int64_t ne[4], ggml_tensor* out) {
         const int id = (int)nodes_.size();
         TraceNode n;
         n.id = id;
@@ -687,27 +746,28 @@ private:
         n.inputs = inputs;
         n.candidates = std::move(candidates);
         nodes_.push_back(std::move(n));
+        raw_of_.push_back(out);
+        raw_to_id_[out] = id;
         return id;
     }
 
-    ggml_tensor* make_tensor(int id) {
-        auto* raw = new ggml_tensor();
-        tensors_.emplace_back(raw);
-        raw_of_.push_back(raw);
-        raw_to_id_[raw] = id;
-        return raw;
+    // trace_op + return the parent-created tensor (the op methods above).
+    ggml_tensor* traced(const char* name, const std::vector<int>& inputs,
+                        std::vector<Candidate> candidates, int rank, const int64_t ne[4], ggml_tensor* out) {
+        trace_op(name, inputs, std::move(candidates), rank, ne, out);
+        return out;
     }
 
     int get_id(ggml_tensor* t) const { return raw_to_id_.at(t); }
 
-    ggml_tensor* binary_op(const char* name, ggml_tensor* l, ggml_tensor* r) {
+    ggml_tensor* binary_op(const char* name, ggml_tensor* out, ggml_tensor* l, ggml_tensor* r) {
         const int li = get_id(l);
         const int ri = get_id(r);
         const int rank = std::max(nodes_[li].rank, nodes_[ri].rank);
         int64_t out_ne[4];
         for (int i = 0; i < 4; ++i)
             out_ne[i] = std::max(nodes_[li].ne[i], nodes_[ri].ne[i]);
-        return make_tensor(trace_op(name, {li, ri}, binary_candidates(nodes_[li], nodes_[ri], rank), rank, out_ne));
+        return traced(name, {li, ri}, binary_candidates(nodes_[li], nodes_[ri], rank), rank, out_ne, out);
     }
 
     // ---------------------------------------------------------------------
@@ -726,30 +786,20 @@ private:
     ggml_backend_meta_split_state materialize(const Dist& d, const int64_t ne[4], ggml_type type) const {
         ggml_backend_meta_split_state st;
         std::memset(&st, 0, sizeof(st));
-
-        // The plan -> GGML mapping for the axis field of the split state.
-        switch (d.type) {
-            case Dist::Type::R: st.axis = GGML_BACKEND_SPLIT_AXIS_MIRRORED; break;
-            case Dist::Type::S: st.axis = static_cast<enum ggml_backend_meta_split_axis>(*d.axis); break;
-            case Dist::Type::P: st.axis = GGML_BACKEND_SPLIT_AXIS_PARTIAL; break;
-            default: st.axis = GGML_BACKEND_SPLIT_AXIS_NONE; break;
-        }
-
+        st.axis = d.to_split_axis();
         st.nr[0] = 1;
         st.n_segments = 1;
-
         if (d.type == Dist::Type::S) {
-            const int64_t gran = *d.axis == 0 ? ggml_blck_size(type) : 1;
+            const int64_t gran = d.axis == 0 ? ggml_blck_size(type) : 1;
             int64_t low = 0;
-            for (int j = 0; j < device_count_; ++j) {
-                int64_t high = ne[*d.axis] * (int64_t)(j + 1) / device_count_;
-                if (j + 1 < device_count_)
+            for (int j = 0; j < device_.count(); ++j) {
+                int64_t high = ne[*d.axis] * (int64_t)(j + 1) / device_.count();
+                if (j + 1 < device_.count())
                     high = (high / gran) * gran;
                 st.ne[j] = high - low;
                 low = high;
             }
         }
-
         return st;
     }
 
@@ -772,6 +822,13 @@ private:
         double cost = kInf;
         int cand = -1;
         std::vector<Dist> in_dists;
+    };
+
+    // G(node, d): node satisfies d (produces some d' and bridges d' -> d).
+    struct BestState {
+        bool done = false;
+        double cost = kInf;
+        Dist produced;
     };
 
     // F(node, d): node produces exactly d.
@@ -800,13 +857,6 @@ private:
         }
         return m;
     }
-
-    // G(node, d): node satisfies d (produces some d' and bridges d' -> d).
-    struct BestState {
-        bool done = false;
-        double cost = kInf;
-        Dist produced;
-    };
 
     // G(node, d): node satisfies d -- produce some producible d', then bridge.
     BestState& best(int node, const Dist& d) {
@@ -840,7 +890,7 @@ private:
         const BestState& b = best(node, required);
         const Bridge br = bridge(b.produced, required);
 
-        Plan::Node pn;
+        PlanNode pn;
         pn.id = node;
         pn.op_name = nodes_[node].op_name;
         pn.tensor_name = nodes_[node].is_param ? param_name(node) : "";
@@ -873,12 +923,12 @@ private:
     // ---------------------------------------------------------------------
     // State
     // ---------------------------------------------------------------------
-    int device_count_;
+    Engine& parent_;                     // creates the ggml tensors (context)
+    MetaDevice& device_;
     double w_comm_, w_comp_, w_mem_;
 
     std::vector<TraceNode> nodes_;
-    std::vector<std::unique_ptr<ggml_tensor>> tensors_;
-    std::vector<ggml_tensor*> raw_of_;                 // index = trace node id
+    std::vector<ggml_tensor*> raw_of_;                 // index = trace node id (owned by the parent)
     std::unordered_map<ggml_tensor*, int> raw_to_id_;
 
     std::map<int, std::map<Dist, ExactState>> exact_memo_;
@@ -893,7 +943,7 @@ PlannerEngine::Plan PlannerEngine::finalize(int root, Dist required) {
     if (nodes_.empty()) return plan;
     if (root < 0) root = (int)nodes_.size() - 1;   // the last traced op is the output
 
-    plan.device_count = device_count_;
+    plan.device_count = device_.count();
 
     const double total = best(root, required).cost;
     if (total >= kInf / 2) {
@@ -905,7 +955,7 @@ PlannerEngine::Plan PlannerEngine::finalize(int root, Dist required) {
     std::set<std::pair<int, Dist>> emitted;
     emit(root, required, plan, emitted);
 
-    for (const Plan::Node& pn : plan.nodes)
+    for (const PlanNode& pn : plan.nodes)
         if (nodes_[pn.id].is_param)
             plan.callback_dists[pn.id] = pn.produced;
 
@@ -913,7 +963,7 @@ PlannerEngine::Plan PlannerEngine::finalize(int root, Dist required) {
     // tensor consumed in two different distributions cannot be planned
     // (one static storage layout / one compute layout per tensor).
     std::map<int, Dist> single_state;
-    for (const Plan::Node& pn : plan.nodes) {
+    for (const PlanNode& pn : plan.nodes) {
         auto [it, inserted] = single_state.insert({pn.id, pn.produced});
         if (!inserted && it->second != pn.produced) {
             plan.infeasible = true;
@@ -930,7 +980,7 @@ PlannerEngine::Plan PlannerEngine::finalize(int root, Dist required) {
     // x * sigmoid(x) consume) once per consumer, so its total overcounts
     // such subtrees.
     double cost = 0.0;
-    for (const Plan::Node& pn : plan.nodes) {
+    for (const PlanNode& pn : plan.nodes) {
         const ExactState& e = exact(pn.id, pn.produced);
         if (e.cand >= 0)
             cost += nodes_[pn.id].candidates[e.cand].comp_cost;
@@ -938,9 +988,14 @@ PlannerEngine::Plan PlannerEngine::finalize(int root, Dist required) {
     }
     plan.total_cost = cost;
 
+    device_.splits().clear();
+
     // The plan -> GGML tensor split mapping.
-    for (const auto& [id, dist] : plan.callback_dists)
+    for (const auto& [id, dist] : plan.callback_dists) {
         plan.callback_states[param_name(id)] = materialize(dist, nodes_[id].ne, raw_of_[id]->type);
+        //device_.splits()[raw_of_[id]] = materialize(dist, nodes_[id].ne, raw_of_[id]->type);
+    }
+
     return plan;
 }
 
@@ -957,7 +1012,7 @@ bool PlannerEngine::verify(const Plan& plan, std::string& error) const {
     // node candidates, so a mismatch means the DP/emit drifted from what
     // the meta device will actually derive.
     std::map<int, Dist> planned;
-    for (const Plan::Node& pn : plan.nodes)
+    for (const PlanNode& pn : plan.nodes)
         planned[pn.id] = pn.produced;
 
     std::vector<Dist> visible(nodes_.size());

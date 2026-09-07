@@ -174,7 +174,7 @@
 //   w_mem   per-device storage of a unit tensor; a replicated param
 //           stores n copies -> n * w_mem, a sharded param one -> w_mem
 // ============================================================================
-
+#if 0
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -2295,6 +2295,19 @@ public:
         return Tensor(y, shape);
     }
 };
+#endif
+
+#include "ggml/PlannerEngine.hpp"
+#include "nn/Visitor.hpp"
+#include "nn/Module.hpp"
+#include "nn/Linear.hpp"
+#include "nn/SiLU.hpp"
+#include "ggml/Device.hpp"
+#include "ggml/MetaDevice.hpp"
+#include "ggml/Backend.hpp"
+#include "ggml/Context.hpp"
+#include "ggml/DeviceAllocator.hpp"
+#include "ggml/Scheduler.hpp"
 
 class ReLU : public Module {
 public:
@@ -2304,17 +2317,6 @@ public:
     // the engine's clamp() directly.
     Tensor forward(Scope scope, Tensor x) {
         return Tensor(scope.engine().clamp(*x, 0.0f, std::numeric_limits<float>::infinity()), x.shape());
-    }
-};
-
-class SiLU : public Module {
-public:
-    // Mirrors the project's nn/SiLU (src/nn/SiLU.hpp): SiLU(x) = x *
-    // sigmoid(x), composed of ops the meta backend supports (MUL +
-    // UNARY carry the state over) -- ggml_silu (GGML_OP_SILU) has no
-    // split-state rule there.
-    Tensor forward(Scope scope, Tensor x) {
-        return x * Tensor(scope.engine().sigmoid(*x), x.shape());
     }
 };
 
@@ -2385,10 +2387,10 @@ public:
         auto vp = e.permute(v4, 0, 2, 1, 3);
 
         // Attention mask: a compute leaf (fixed R), GGML {1, 1, 1, batch}.
-        auto mask = Tensor::empty(scope.context(), Tensor::Shape{1, 1, 1, batch}, kMockType);
+        auto mask = Tensor::empty<float>(Tensor::Shape{1, 1, 1, batch});
 
         // ggml: out ne = {v->ne[0], q->ne[2], q->ne[1], q->ne[3]} = {head_dim, heads, seq, batch}
-        auto attn = e.flash_attn_ext(qp, kp, vp, mask.t_, 0.5f, 0.0f, 0.0f);
+        auto attn = e.flash_attn_ext(qp, kp, vp, *mask, 0.5f, 0.0f, 0.0f);
 
         // Back to {hidden, seq, batch} for the output projection.
         auto attn2 = e.reshape_3d(attn, hidden_, seq, batch);   // (S(1) -> S(0))
@@ -2430,13 +2432,13 @@ public:
         auto y = e.mul_mat(*w1, *x);   // ggml_tensor*, {hidden, seq, batch}
 
         // Positions: a compute leaf (fixed R), GGML {1, seq, 1}.
-        auto pos = Tensor::empty(scope.context(), Tensor::Shape{1, x.shape()[1], 1}, kMockType);
-        auto r = e.rope_ext(y, pos.t_, nullptr, 0, 0, 0, 10000.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f);
+        auto pos = Tensor::empty<float>(Tensor::Shape{1, x.shape()[1], 1});
+        auto r = e.rope_ext(y, *pos, nullptr, 0, 0, 0, 10000.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f);
 
         // Row indices: ggml_get_rows requires b = {n_rows, a->ne[2], a->ne[3], 1};
         // for a = {hidden, seq, batch} that is {n_rows, batch, 1, 1}.
-        auto idx = Tensor::empty(scope.context(), Tensor::Shape{x.shape()[0], n_rows_}, kMockType);
-        auto g = e.get_rows(r, idx.t_);   // {hidden, n_rows, batch, 1}
+        auto idx = Tensor::empty<float>(Tensor::Shape{x.shape()[0], n_rows_});
+        auto g = e.get_rows(r, *idx);   // {hidden, n_rows, batch, 1}
 
         auto out = e.mul_mat(*w2, g);   // {n_rows, n_rows, batch, 1}
         return Tensor(out, Tensor::Shape{x.shape()[0], n_rows_, n_rows_});
@@ -2465,7 +2467,7 @@ public:
         const int64_t batch = x.shape()[0], h = x.shape()[2], wdt = x.shape()[3];
 
         // 3x3, pad 1: same spatial size.
-        auto c = e.conv_2d_direct(w.t_, x.t_, 1, 1, 1, 1, 1, 1);
+        auto c = e.conv_2d_direct(*w, *x, 1, 1, 1, 1, 1, 1);
         auto n = e.norm(c, 1e-6f);
         auto u = e.upscale(n, 2, GGML_SCALE_MODE_NEAREST);
         auto i = e.interpolate(u, 4 * wdt, 4 * h, out_channels_, batch, GGML_SCALE_MODE_BILINEAR);
@@ -2488,8 +2490,8 @@ public:
             name += (i ? "." : "") + path[i];
 
         Tensor::Shape shape = parameter.shape();
-        Tensor t = Tensor(Scope::engine().new_tensor(kMockType, (int)shape.rank(), shape.data()), shape);
-        ggml_set_name(t.t_, name.c_str());
+        Tensor t = Tensor(Scope::engine().new_tensor(GGML_TYPE_F32, (int)shape.rank(), shape.data()), shape);
+        t.name(name.c_str());
         parameter.set(std::move(t));
     }
 };
@@ -2498,7 +2500,7 @@ public:
 // Demo
 // ============================================================================
 
-void print_callback_table(const Plan& plan) {
+void print_callback_table(const PlannerEngine::Plan& plan) {
     std::cout << "meta device callback table (ggml_backend_meta_split_state per static tensor):\n";
     for (const auto& [name, st] : plan.callback_states) {
         std::cout << "  " << std::left << std::setw(18) << name << std::right;
@@ -2517,30 +2519,37 @@ void print_callback_table(const Plan& plan) {
 
 int main() {
     ggml_time_init();
+    ggml_log_set([](ggml_log_level, const char* text, void*) { std::cerr << text; }, nullptr);
+
     ggml_backend_load_all();
+
+    Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+    MetaDevice meta({*cpu, *cpu});
+    Backend meta_backend(meta);
+    Backend cpu_backend(cpu);
+    Scheduler scheduler({&meta_backend, &cpu_backend});
 
     {
         // Demo 1: an MLP that the meta backend can plan. The activation is
         // a ReLU (in-place clamp): the meta backend cannot DUP a sharded
         // tensor, so the sharding-friendly path skips Tensor::clamp's clone.
-        Context context;
-        ContextEngine parent;
-        PlannerEngine planner(parent, /*device_count=*/2, /*w_comm=*/0.5, /*w_comp=*/1.0, /*w_mem=*/0.1);
+        Context context; // TODO: this should own allocating and planning
+        PlannerEngine planner(ExecutionEngine::Default, meta, /*w_comm=*/0.5, /*w_comp=*/1.0, /*w_mem=*/0.1);
         Scope scope(context, planner);
-
-        // Graph input: rank-4 activation, PyTorch shape (2, 3, 4, 8)
-        // == GGML ne {8, 4, 3, 2}; created like a pipeline input (a
-        // compute leaf: fixed R).
-        Tensor x = Tensor::empty(context, Tensor::Shape{2, 3, 4, 8}, kMockType);
 
         MLP<ReLU> model;
         CreateRandomParametersVisitor visitor;
         model.accept(visitor);
 
+        // Graph input: rank-4 activation, PyTorch shape (2, 3, 4, 8)
+        // == GGML ne {8, 4, 3, 2}; created like a pipeline input (a
+        // compute leaf: fixed R).
+        Tensor x = Tensor::empty<float>(Tensor::Shape{2, 3, 4, 8}).input();
+
         (void)model.forward(scope, x);
 
         std::cout << "traced graph:\n" << planner.dump_trace() << "\n";
-        Plan plan = planner.finalize();
+        PlannerEngine::Plan plan = planner.finalize();
         std::cout << plan.to_string();
 
         std::string error;
@@ -2552,6 +2561,7 @@ int main() {
         print_callback_table(plan);
     }
 
+#if 0
     {
         // Demo 2: the same MLP with a SiLU activation, written as
         // x * sigmoid(x) (the project's nn/SiLU does the same): both ops
@@ -2561,7 +2571,7 @@ int main() {
         ContextEngine parent;
         PlannerEngine planner(parent, /*device_count=*/2, /*w_comm=*/0.5, /*w_comp=*/1.0, /*w_mem=*/0.1);
         Scope scope(context, planner);
-        Tensor x = Tensor::empty(context, Tensor::Shape{2, 3, 4, 8}, kMockType);
+        Tensor x = Tensor::empty<float>(Tensor::Shape{2, 3, 4, 8});
 
         MLP<SiLU> model;
         CreateRandomParametersVisitor visitor;
@@ -2595,7 +2605,7 @@ int main() {
         Scope scope(context, planner);
 
         // Block input: PyTorch (batch, seq, hidden) == GGML {hidden, seq, batch}.
-        Tensor x = Tensor::empty(context, Tensor::Shape{2, 4, 8}, kMockType);
+        Tensor x = Tensor::empty<float>(Tensor::Shape{2, 4, 8});
 
         AttentionBlock model(/*hidden=*/8, /*heads=*/4);
         CreateRandomParametersVisitor visitor;
@@ -2627,7 +2637,7 @@ int main() {
         ContextEngine parent;
         PlannerEngine planner(parent, /*device_count=*/2, /*w_comm=*/0.5, /*w_comp=*/1.0, /*w_mem=*/0.1);
         Scope scope(context, planner);
-        Tensor x = Tensor::empty(context, Tensor::Shape{2, 4, 8}, kMockType);
+        Tensor x = Tensor::empty<float>(Tensor::Shape{2, 4, 8});
 
         RopeGetRows model(/*hidden=*/8, /*n_rows=*/6);
         CreateRandomParametersVisitor visitor;
@@ -2660,7 +2670,7 @@ int main() {
         Scope scope(context, planner);
 
         // Block input: PyTorch (batch, channels, h, w) == GGML {w, h, c, n}.
-        Tensor x = Tensor::empty(context, Tensor::Shape{2, 4, 8, 8}, kMockType);
+        Tensor x = Tensor::empty<float>(Tensor::Shape{2, 4, 8, 8});
 
         Upsampler model(/*in_channels=*/4, /*out_channels=*/8);
         CreateRandomParametersVisitor visitor;
@@ -2699,7 +2709,7 @@ int main() {
 
         PlannerEngine planner(parent, /*device_count=*/2, /*w_comm=*/0.5, /*w_comp=*/1.0, /*w_mem=*/0.1);
         Scope scope(context, planner);
-        Tensor x = Tensor::empty(context, Tensor::Shape{2, 3, 4, 8}, kMockType);
+        Tensor x = Tensor::empty<float>(Tensor::Shape{2, 3, 4, 8});
 
         (void)model.forward(scope, x);
 
@@ -2716,6 +2726,7 @@ int main() {
 
         print_callback_table(plan);
     }
+    #endif
 
     return 0;
 }

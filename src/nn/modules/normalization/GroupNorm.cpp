@@ -70,7 +70,7 @@ Tensor GroupNorm::forward(Scope scope, Tensor input) {
         auto weight =
             std::static_pointer_cast<Parameter>(
                 modules["weight"])
-            ->forward();
+            ->forward(scope);
 
 
         weight = weight.reshape({
@@ -88,7 +88,7 @@ Tensor GroupNorm::forward(Scope scope, Tensor input) {
             auto bias =
                 std::static_pointer_cast<Parameter>(
                     modules["bias"])
-                ->forward();
+                ->forward(scope);
 
 
             bias = bias.reshape({

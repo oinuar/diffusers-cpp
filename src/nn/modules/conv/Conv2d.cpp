@@ -36,7 +36,7 @@ Tensor Conv2d::forward(Scope scope, Tensor x) {
     auto weight =
         std::static_pointer_cast<Parameter>(
             modules["weight"])
-        ->forward();
+        ->forward(scope);
 
 
     auto conv = scope.engine().conv_2d_direct(
@@ -74,7 +74,7 @@ Tensor Conv2d::forward(Scope scope, Tensor x) {
         auto bias =
             std::static_pointer_cast<Parameter>(
                 modules["bias"])
-            ->forward();
+            ->forward(scope);
 
 
         /*

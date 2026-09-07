@@ -12,9 +12,11 @@ public:
     {
     }
 
-    Tensor forward() {
+    Tensor forward(Scope scope) {
         if (!tensor_)
             throw std::runtime_error("Undefined tensor Parameter. Did you forget to set it?");
+
+        scope.engine().set_param(*tensor_);
 
         return tensor_;
     }

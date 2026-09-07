@@ -26,7 +26,7 @@ public:
     virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator, std::optional<Context>& local_context, std::optional<DeviceAllocator>& local_allocator) {
 
         if (args_.get(0) == "Flux2SwiGLU") {
-            auto x = args_.get_one<Tensor>("--x", {context});
+            auto x = args_.get_one<Tensor>("--x", {local_context ? *local_context : context});
 
             Flux2SwiGLU model;
 
@@ -50,7 +50,7 @@ public:
             auto mult = args_.get_optional<float>("--mult").value_or(3.0);
             auto inner_dim = args_.get_optional<int64_t>("--inner_dim");
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto x = args_.get_one<Tensor>("--x", {context});
+            auto x = args_.get_one<Tensor>("--x", {local_context ? *local_context : context});
 
             Flux2FeedForward model(dim, dim_out, mult, inner_dim, bias);
 
@@ -77,7 +77,7 @@ public:
             auto dim = args_.get_one<int64_t>("--dim");
             auto mod_param_sets = args_.get_optional<int64_t>("--mod_param_sets").value_or(2);
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto temb = args_.get_one<Tensor>("--temb", {context});
+            auto temb = args_.get_one<Tensor>("--temb", {local_context ? *local_context : context});
 
             Flux2Modulation model(dim, mod_param_sets, bias);
 
@@ -105,8 +105,8 @@ public:
             auto embedding_dim = args_.get_one<int64_t>("--embedding_dim");
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
             auto guidance_embeds = args_.get_optional<bool>("--guidance_embeds").value_or(true);
-            auto timestep = args_.get_one<Tensor>("--timestep", {context});
-            auto guidance = args_.get_optional<Tensor>("--guidance", {context});
+            auto timestep = args_.get_one<Tensor>("--timestep", {local_context ? *local_context : context});
+            auto guidance = args_.get_optional<Tensor>("--guidance", {local_context ? *local_context : context});
 
             Flux2TimestepGuidanceEmbeddings model(in_channels, embedding_dim, bias, guidance_embeds);
 
@@ -132,8 +132,8 @@ public:
         if (args_.get(0) == "Flux2PosEmbed") {
             auto theta = args_.get_one<int64_t>("--theta");
             auto axes_dim = args_.get_many<int64_t>("--axes_dim");
-            auto x = args_.get_one<Tensor>("--x", {context});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {context});
+            auto x = args_.get_one<Tensor>("--x", {local_context ? *local_context : context});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {local_context ? *local_context : context});
 
             Flux2PosEmbed model(theta, axes_dim);
 
@@ -168,12 +168,12 @@ public:
             auto eps = args_.get_optional<float>("--eps").value_or(1e-5);
             auto out_dim = args_.get_optional<int64_t>("--out_dim");
             auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {context});
-            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {context});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {context});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {local_context ? *local_context : context});
+            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {local_context ? *local_context : context});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {local_context ? *local_context : context});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {context});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {local_context ? *local_context : context});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -231,11 +231,11 @@ public:
             auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
             auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(4.0);
             auto mlp_mult_factor = args_.get_optional<int64_t>("--mlp_mult_factor").value_or(2);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {context});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {context});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {local_context ? *local_context : context});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {local_context ? *local_context : context});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {context});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {local_context ? *local_context : context});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -282,14 +282,14 @@ public:
             auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(3.0);
             auto eps = args_.get_optional<float>("--eps").value_or(1e-6);
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {context});
-            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {context});
-            auto temb_mod = args_.get_one<Tensor>("--temb_mod", {context});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {local_context ? *local_context : context});
+            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {local_context ? *local_context : context});
+            auto temb_mod = args_.get_one<Tensor>("--temb_mod", {local_context ? *local_context : context});
             auto split_hidden_states = args_.get_optional<bool>("--split_hidden_states").value_or(false);
             auto text_seq_len = args_.get_optional<int64_t>("--text_seq_len");
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {context});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {local_context ? *local_context : context});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -346,13 +346,13 @@ public:
             auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(3.0);
             auto eps = args_.get_optional<float>("--eps").value_or(1e-6);
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {context});
-            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {context});
-            auto temb_mod_img = args_.get_one<Tensor>("--temb_mod_img", {context});
-            auto temb_mod_txt = args_.get_one<Tensor>("--temb_mod_txt", {context});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {local_context ? *local_context : context});
+            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {local_context ? *local_context : context});
+            auto temb_mod_img = args_.get_one<Tensor>("--temb_mod_img", {local_context ? *local_context : context});
+            auto temb_mod_txt = args_.get_one<Tensor>("--temb_mod_txt", {local_context ? *local_context : context});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {context});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {local_context ? *local_context : context});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -412,12 +412,12 @@ public:
             config.eps = args_.get_optional<float>("--eps").value_or(config.eps);
             config.guidance_embeds = args_.get_optional<bool>("--guidance_embeds").value_or(config.guidance_embeds);
 
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {context});
-            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {context});
-            auto timestep = args_.get_one<Tensor>("--timestep", {context});
-            auto img_ids = args_.get_one<Tensor>("--img_ids", {context});
-            auto txt_ids = args_.get_one<Tensor>("--txt_ids", {context});
-            auto guidance = args_.get_optional<Tensor>("--guidance", {context});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {local_context ? *local_context : context});
+            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {local_context ? *local_context : context});
+            auto timestep = args_.get_one<Tensor>("--timestep", {local_context ? *local_context : context});
+            auto img_ids = args_.get_one<Tensor>("--img_ids", {local_context ? *local_context : context});
+            auto txt_ids = args_.get_one<Tensor>("--txt_ids", {local_context ? *local_context : context});
+            auto guidance = args_.get_optional<Tensor>("--guidance", {local_context ? *local_context : context});
             auto num_ref_tokens = args_.get_optional<int64_t>("--num_ref_tokens").value_or(0);
             auto ref_fixed_timestep = args_.get_optional<float>("--ref_fixed_timestep").value_or(0.0f);
 
@@ -461,7 +461,7 @@ public:
             args_.get(0) == "Flux2KleinPipeline_unpack_latents" ||
             args_.get(0) == "Flux2KleinPipeline_patchify_latents" ||
             args_.get(0) == "Flux2KleinPipeline_unpatchify_latents") {
-            auto latents = args_.get_one<Tensor>("--latents", {context});
+            auto latents = args_.get_one<Tensor>("--latents", {local_context ? *local_context : context});
 
             Tensor result;
 
@@ -616,7 +616,7 @@ public:
                     image_latent_ids_concat
                 ] = std::move(pipeline.make_embeddings_graph(
                     scheduler,
-                    context,
+                    local_context ? *local_context : context,
                     prompt,
                     max_sequence_length,
                     batch,
@@ -626,7 +626,7 @@ public:
                 ));
 
                 if (local_allocator)
-                local_allocator->allocate();
+                    local_allocator->allocate();
 
                 Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
                 
@@ -654,17 +654,17 @@ public:
                 auto num_ref_tokens = args_.get_one<int>("--num_ref_tokens");
                 auto timestep = args_.get_one<float>("--timestep");
                 auto dt = args_.get_one<float>("--dt");
-                auto init_latents = args_.get_one<Tensor>("--init_latents", {context});
-                auto prompt_embeds = args_.get_one<Tensor>("--prompt_embeds", {context});
-                auto img_ids = args_.get_one<Tensor>("--img_ids", {context});
-                auto txt_ids = args_.get_one<Tensor>("--txt_ids", {context});
+                auto init_latents = args_.get_one<Tensor>("--init_latents", {local_context ? *local_context : context});
+                auto prompt_embeds = args_.get_one<Tensor>("--prompt_embeds", {local_context ? *local_context : context});
+                auto img_ids = args_.get_one<Tensor>("--img_ids", {local_context ? *local_context : context});
+                auto txt_ids = args_.get_one<Tensor>("--txt_ids", {local_context ? *local_context : context});
 
-                auto image_latents = args_.get_optional<Tensor>("--image_latents", {context});
-                auto image_latent_ids = args_.get_optional<Tensor>("--image_latent_ids", {context});
+                auto image_latents = args_.get_optional<Tensor>("--image_latents", {local_context ? *local_context : context});
+                auto image_latent_ids = args_.get_optional<Tensor>("--image_latent_ids", {local_context ? *local_context : context});
 
                 auto graph = std::move(pipeline.make_denoise_graph(
                     scheduler,
-                    context,
+                    local_context ? *local_context : context,
                     batch,
                     packed_h,
                     packed_w,
@@ -680,7 +680,7 @@ public:
                 ));
 
                 if (local_allocator)
-                local_allocator->allocate();
+                    local_allocator->allocate();
 
                 Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
 
@@ -690,55 +690,23 @@ public:
             if (args_.get(0) == "Flux2KleinPipeline_decode") {
                 auto packed_h = args_.get_one<int>("--packed_h");
                 auto packed_w = args_.get_one<int>("--packed_w");
-                auto latents = args_.get_one<Tensor>("--latents", {context});
+                auto latents = args_.get_one<Tensor>("--latents", {local_context ? *local_context : context});
 
                 auto graph = std::move(pipeline.make_decode_graph(
                     scheduler,
-                    context,
+                    local_context ? *local_context : context,
                     packed_h,
                     packed_w,
                     latents
                 ));
 
                 if (local_allocator)
-                local_allocator->allocate();
+                    local_allocator->allocate();
 
                 Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
                 
                 return computation().results();
             }
-
-            /*if (args_.get(0) == "Flux2KleinPipeline_call") {
-                Flux2KleinPipeline::GenerationOptions options;
-
-                options.prompt = args_.get_one<std::string>("--prompt");
-                options.height = args_.get_one<int>("--height");
-                options.width = args_.get_one<int>("--width");
-                options.num_inference_steps = args_.get_one<int>("--num_inference_steps");
-                options.max_sequence_length = args_.get_one<int>("--max_sequence_length");
-
-                if (auto init_latents = args_.get_optional<std::string>("--init_latents"))
-                    options.init_latents = std::move(
-                        ArgumentParser::parser<Tensor>::TensorParser(*init_latents).parse().second);
-
-                auto images = pipeline(runtime.scheduler(), std::move(options));
-                std::vector<Tensor> results;
-
-                for (const auto& image : images) {
-                    std::vector<float> pixels(image.pixels().begin(), image.pixels().end());
-
-                    auto tensor = runtime.create<float>({(int64_t)image.height(), (int64_t)image.width(), (int64_t)image.channels()}, [pixels](std::mt19937&) {
-                        return std::move(pixels);
-                    });
-
-                    results.push_back(tensor);
-                }
-
-                Graph graph(scheduler, context, std::move(results));
-                Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
-
-                return computation().results();
-            }*/
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));

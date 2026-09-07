@@ -9,6 +9,7 @@
 #include "ggml/DeviceAllocator.hpp"
 #include "nn/Visitor.hpp"
 #include "nn/Parameter.hpp"
+#include "nn/ModulePath.hpp"
 #include "./ArgumentParser.hpp"
 #include <iostream>
 #include <fstream>
@@ -114,7 +115,8 @@ public:
         {}
 
         virtual void visit(Parameter& parameter, std::vector<std::string> path) {
-            auto joined_path = join_path(path, prefix_);
+            ModulePath module_path("-", "--param");
+            auto joined_path = module_path(path, prefix_);
 
             auto tensor_value = args_.get_one<std::string>(joined_path);
             ArgumentParser::parser<Tensor> parser(scope_);
@@ -145,19 +147,6 @@ public:
         Scope scope_;
         const ArgumentParser& args_;
         std::string prefix_;
-        
-        static std::string join_path(const std::vector<std::string>& path, const std::string& prefix = "") {
-            std::string seed("--param");
-
-            if (!prefix.empty()) {
-                seed += '-';
-                seed += prefix;
-            }
-
-            return std::accumulate(std::begin(path), std::end(path), seed, [](const std::string& acc, const std::string& x) {
-                return acc + "-" + x;
-            });
-        }
     };
 private:
     int main(Scheduler& scheduler, Context& context, Allocator& allocator, const Device& device) {

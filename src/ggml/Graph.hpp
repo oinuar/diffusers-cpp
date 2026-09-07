@@ -44,13 +44,13 @@ public:
 
         // Add Graph context bindings
         for (auto& [tensor, binding] : context_.bindings()) {
-            if ((*tensor)->buffer != nullptr)
+            if (!binding.unbound && (*tensor)->buffer != nullptr)
                 result.insert(std::make_pair(tensor, binding));
         }
 
         // Unbind one-time bound tensors from Graph's context
         for (auto& [tensor, binding] : result) {
-            if (binding.second)
+            if (binding.once)
                 context_.unbind(tensor);
         }
 
@@ -67,13 +67,13 @@ public:
 
             // Collect additional context bindings
             for (auto& [tensor, binding] : context->bindings()) {
-                if ((*tensor)->buffer != nullptr)
+                if (!binding.unbound && (*tensor)->buffer != nullptr)
                     bindings.insert(std::make_pair(tensor, binding));
             }
 
             // Unbind tensors that are bound only once
             for (auto& [tensor, binding] : bindings) {
-                if (binding.second)
+                if (binding.once)
                     context->unbind(tensor);
             }
 

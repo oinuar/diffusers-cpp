@@ -614,7 +614,14 @@ Graph Flux2KleinPipeline::make_decode_graph(
     return std::move(Graph(scheduler, scope.context(), {decoded}));
 }
 
-std::vector<Image> Flux2KleinPipeline::operator ()(Scheduler& scheduler, Context& vae_context, Context& text_encoder_context, Context& transformer_context, const Device& device, GenerationOptions&& options) {
+std::vector<Image> Flux2KleinPipeline::operator ()(
+    Scheduler& scheduler,
+    Context& vae_context,
+    Context& text_encoder_context,
+    Context& transformer_context,
+    const Device& device,
+    GenerationOptions&& options
+) {
     if (options.height % vae_.scale_factor() != 0 ||
         options.width % vae_.scale_factor() != 0)
         throw std::runtime_error("height/width must be divisible by VAE's scale factor");

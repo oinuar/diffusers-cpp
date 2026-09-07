@@ -29,6 +29,12 @@ void ExecutionEngine::set_input(
     ggml_set_input(tensor);
 }
 
+void ExecutionEngine::set_param(
+    ggml_tensor* tensor
+) {
+    // There is no GGML counterpart for this.
+}
+
 ggml_tensor* ExecutionEngine::fill(
     ggml_tensor* tensor,
     float value

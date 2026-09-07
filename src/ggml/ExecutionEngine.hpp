@@ -25,6 +25,10 @@ public:
         ggml_tensor* tensor
     ) override;
 
+    void set_param(
+        ggml_tensor* tensor
+    ) override;
+
     ggml_tensor* fill(
         ggml_tensor* tensor,
         float value

@@ -25,7 +25,7 @@ Embedding::Embedding(int64_t num_embeddings, int64_t embedding_dim, std::optiona
 }
 
 Tensor Embedding::forward(Scope scope, Tensor input) {
-    auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward();
+    auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward(scope);
 
     if (padding_idx_) {
         std::vector<Tensor> slices;

@@ -17,8 +17,8 @@ BatchNorm2d::BatchNorm2d(int64_t num_features, float eps, float momentum)
 }
 
 Tensor BatchNorm2d::forward(Scope scope, Tensor x) {
-    auto mean = std::static_pointer_cast<Parameter>(modules["running_mean"])->forward();
-    auto var = std::static_pointer_cast<Parameter>(modules["running_var"])->forward();
+    auto mean = std::static_pointer_cast<Parameter>(modules["running_mean"])->forward(scope);
+    auto var = std::static_pointer_cast<Parameter>(modules["running_var"])->forward(scope);
 
     mean = mean.reshape({1, mean.shape()[0], 1, 1});
     var = var.reshape({1, var.shape()[0], 1, 1});

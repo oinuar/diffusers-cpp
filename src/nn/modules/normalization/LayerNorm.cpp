@@ -19,12 +19,12 @@ Tensor LayerNorm::forward(Scope scope, Tensor x) {
     if (elementwise_affine_) {
         auto weight = std::static_pointer_cast<Parameter>(modules["weight"]);
 
-        x = x * weight->forward();
+        x = x * weight->forward(scope);
 
         if (bias_) {
             auto bias = std::static_pointer_cast<Parameter>(modules["bias"]);
 
-            x = x + bias->forward();
+            x = x + bias->forward(scope);
         }
     }
 

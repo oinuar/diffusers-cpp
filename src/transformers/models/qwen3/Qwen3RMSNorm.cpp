@@ -6,7 +6,7 @@ Qwen3RMSNorm::Qwen3RMSNorm(int64_t hidden_size, float eps) : eps(eps) {
 }
 
 Tensor Qwen3RMSNorm::forward(Scope scope, Tensor hidden_states) {
-    auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward();
+    auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward(scope);
     auto input_dtype = hidden_states.dtype();
     
     // Preserve exact Python execution order and type casting

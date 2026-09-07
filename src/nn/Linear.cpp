@@ -15,7 +15,7 @@ Linear::Linear(
 }
 
 Tensor Linear::forward(Scope scope, Tensor x) {
-    auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward();
+    auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward(scope);
 
     // Weight is logically shaped [out_features, in_features] (PyTorch),
     // but stored in GGML's native reversed layout {in_features, out_features}.
@@ -24,7 +24,7 @@ Tensor Linear::forward(Scope scope, Tensor x) {
     auto y = scope.engine().mul_mat(*weight, *x);
 
     if (bias_) {
-        auto bias = std::static_pointer_cast<Parameter>(modules["bias"])->forward();
+        auto bias = std::static_pointer_cast<Parameter>(modules["bias"])->forward(scope);
 
         y = scope.engine().add(y, *bias);
     }

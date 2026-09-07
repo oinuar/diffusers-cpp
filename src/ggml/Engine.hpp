@@ -27,6 +27,10 @@ public:
         ggml_tensor* tensor
     ) = 0;
 
+    virtual void set_param(
+        ggml_tensor* tensor
+    ) = 0;
+
     virtual ggml_tensor* fill(
         ggml_tensor* tensor,
         float value

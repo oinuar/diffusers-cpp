@@ -48,8 +48,30 @@ public:
         return n_devices_;
     }
 
-    Splits& splits() {
-        return splits_;
+    // The split-state callback table: what the (real)
+    // ggml_backend_meta_get_split_state_t callback would return, keyed by
+    // the tensor pointer. It is GLOBAL across contexts -- and across every
+    // allocator: the ShardedAllocator commits its plan by replacing the
+    // entries of the tensors it traced (erase, then insert the new states).
+    Splits& splits() { return splits_; }
+
+    // The EFFECTIVE split state of a statically allocated tensor: its
+    // planned state if the table has one, otherwise the canonical
+    // MIRRORED (nr[0] = 1, n_segments = 1) -- the same default the real
+    // callback returns. This is what the allocator queries when it sizes
+    // a per-device slice.
+    ggml_backend_meta_split_state split(const ggml_tensor* tensor) const {
+        const auto it = splits_.find(tensor);
+
+        if (it != splits_.end())
+            return it->second;
+
+        ggml_backend_meta_split_state st;
+        std::memset(&st, 0, sizeof(st));
+        st.axis = GGML_BACKEND_SPLIT_AXIS_MIRRORED;
+        st.nr[0] = 1;
+        st.n_segments = 1;
+        return st;
     }
 
     MetaDevice(const MetaDevice&) = delete;
@@ -62,20 +84,6 @@ private:
     size_t n_devices_;
 
     static ggml_backend_meta_split_state get_split_state(const ggml_tensor* tensor, void* ud) {
-        auto self = reinterpret_cast<MetaDevice*>(ud);
-        auto it = self->splits().find(tensor);
-
-        if (it == std::end(self->splits())) {
-            ggml_backend_meta_split_state st;
-            std::memset(&st, 0, sizeof(st));
-
-            st.axis = GGML_BACKEND_SPLIT_AXIS_MIRRORED;
-            st.nr[0] = 1;
-            st.n_segments = 1;
-
-            return st;
-        }
-
-        return it->second;
+        return reinterpret_cast<MetaDevice*>(ud)->split(tensor);
     }
 };

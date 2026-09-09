@@ -17,7 +17,7 @@ class TestNnCLI : public TestCLI {
 public:
     TestNnCLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator, std::optional<Context>& local_context, std::optional<DeviceAllocator>& local_allocator) {
+    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator, std::optional<Context>& local_context) {
         if (args_.get(0) == "Linear") {
             auto in_features = args_.get_one<int64_t>("--in_features");
             auto out_features = args_.get_one<int64_t>("--out_features");
@@ -25,27 +25,17 @@ public:
             auto x = args_.get_one<Tensor>("--x", {local_context ? *local_context : context});
 
             Linear model(in_features, out_features, bias);
+            Scope scope(allocator.engine());
 
-            // These are parameters, they are OK and should go to this context
             CreateParametersVisitor create_parameters(context, args_);
             RethrowVisitor visitor(create_parameters);
             model.accept(visitor);
             visitor.rethrow();
 
-            // TODO: allocation cannot happen here, since we need to Plan forward(). 
-            // Then we can allocate once we know the splits.
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-
-            // TODO: This should be called twice with two scopes: Plan and Execution
             auto output = model.forward(local_context ? *local_context : context, x);
 
             Graph graph(scheduler, local_context ? *local_context : context, {output});
-
-            if (local_allocator)
-                 local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Computation computation(allocator, graph, {&context, local_context ? &(*local_context) : nullptr});
             return computation().results();
         }
         

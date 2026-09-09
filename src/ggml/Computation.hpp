@@ -3,6 +3,7 @@
 #include "ggml/Context.hpp"
 #include "ggml/Scheduler.hpp"
 #include "ggml/Graph.hpp"
+#include "ggml/Allocator.hpp"
 #include "ProgressBar.hpp"
 #include <ggml.h>
 #include <cassert>
@@ -10,9 +11,11 @@
 
 class Computation {
 public:
-    explicit Computation(Graph& graph, std::initializer_list<Context*>&& contexts = {}, ProgressBar* progress = nullptr, uint64_t seed = std::random_device{}())
-        : graph_(graph), progress_(progress), bindings_(std::move(graph_.allocate(std::move(contexts)))), rng_(seed), computed_(false)
+    explicit Computation(Allocator& allocator, Graph& graph, std::initializer_list<Context*>&& contexts = {}, ProgressBar* progress = nullptr, uint64_t seed = std::random_device{}())
+        : graph_(graph), progress_(progress), bindings_(), rng_(seed), computed_(false)
     {
+        allocator.allocate(graph_.outputs());
+        bindings_ = std::move(graph_.allocate(std::move(contexts)));
     }
     
     ~Computation() {

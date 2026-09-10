@@ -6,7 +6,8 @@
 #include "ggml/Backend.hpp"
 #include "ggml/MetaDevice.hpp"
 #include "ggml/Scheduler.hpp"
-#include "ggml/DeviceAllocator.hpp"
+#include "ggml/Allocator.hpp"
+#include "ggml/ShardingAllocator.hpp"
 #include "nn/Visitor.hpp"
 #include "nn/Parameter.hpp"
 #include "nn/ModulePath.hpp"
@@ -44,8 +45,7 @@ public:
             Backend meta_backend(meta);
             Backend cpu_backend(cpu);
             Scheduler scheduler({&meta_backend, &cpu_backend}, get_graph_size());
-
-            DeviceAllocator allocator(context, meta);
+            ShardingAllocator allocator(ExecutionRuntime::Default, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
 
             return main(scheduler, context, allocator, meta);
         }
@@ -56,8 +56,7 @@ public:
             Backend cpu_backend(cpu);
             Backend gpu_backend(gpu);
             Scheduler scheduler({&gpu_backend, &cpu_backend}, get_graph_size());
-
-            DeviceAllocator allocator(context, gpu);
+            Allocator allocator;
 
             return main(scheduler, context, allocator, gpu);
         }
@@ -65,18 +64,12 @@ public:
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
         Backend cpu_backend(cpu);
         Scheduler scheduler({&cpu_backend}, get_graph_size());
-
-        // A real allocator for the global context: with a local context in
-        // use, weights/inputs must be allocated before the local context,
-        // because the local context may contain view tensors whose source
-        // lives in the global context. Without a local context the
-        // allocator is never asked to allocate and the scheduler does it.
-        DeviceAllocator allocator(context, cpu);
+        Allocator allocator;
 
         return main(scheduler, context, allocator, cpu);
     }
 
-    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator, std::optional<Context>& local_context, std::optional<DeviceAllocator>& local_allocator) = 0;
+    virtual std::vector<Tensor> compute(Allocator& allocator, Scheduler& scheduler, Context& context, Context& local_context) = 0;
 
     virtual size_t get_graph_size() const {
         return GGML_DEFAULT_GRAPH_SIZE;
@@ -110,8 +103,8 @@ protected:
 public:
     class CreateParametersVisitor : public Visitor {
     public:
-        CreateParametersVisitor(Scope scope, const ArgumentParser& args, const std::string& prefix = "")
-            : scope_(scope), args_(args), prefix_(prefix)
+        CreateParametersVisitor(Context& context, const ArgumentParser& args, const std::string& prefix = "")
+            : context_(context), args_(args), prefix_(prefix)
         {}
 
         virtual void visit(Parameter& parameter, std::vector<std::string> path) {
@@ -119,7 +112,7 @@ public:
             auto joined_path = module_path(path, prefix_);
 
             auto tensor_value = args_.get_one<std::string>(joined_path);
-            ArgumentParser::parser<Tensor> parser(scope_);
+            ArgumentParser::parser<Tensor> parser(context_);
             Tensor tensor;
 
             // Read tensor value from file
@@ -144,23 +137,17 @@ public:
         }
 
     private:
-        Scope scope_;
+        Context& context_;
         const ArgumentParser& args_;
         std::string prefix_;
     };
 private:
     int main(Scheduler& scheduler, Context& context, Allocator& allocator, const Device& device) {
-        auto use_local_context = args_.get_optional<bool>("--runner-use_local_context").value_or(false);
+        allocator.use(context, device, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
-        std::optional<Context> local_context;
-        std::optional<DeviceAllocator> local_allocator;
+        Context local_context(get_graph_size());
 
-        if (use_local_context) {
-            local_context.emplace(get_graph_size());
-            local_allocator.emplace(*local_context, device);
-        }
-
-        auto results = compute(scheduler, context, allocator, local_context, local_allocator);
+        auto results = compute(allocator, scheduler, context, local_context);
 
         for (auto& tensor : results) {
             switch (tensor.dtype()) {

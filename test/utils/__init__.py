@@ -7,14 +7,13 @@ import torch
 class TestCase(unittest.TestCase):
     def cli(self, *args: str) -> list:
         cli_bin = os.environ['CLI']
-        n_devices = os.environ.get('N_DEVICES', 1)
+        n_devices = os.environ.get('N_DEVICES', 2)
         use_gpu = os.environ.get('USE_GPU', 'false')
 
         command = [
             *args,
             '--runner-n_devices', str(n_devices),
-            '--runner-use_gpu', str(use_gpu),
-            '--runner-use_local_context', "true",
+            '--runner-use_gpu', str(use_gpu)
         ]
 
         #print(" ".join([cli_bin] + list(map(lambda x: x if x.startswith("--") else f'"{x}"', command))))
@@ -37,7 +36,7 @@ class TestCase(unittest.TestCase):
 
             outputs.append(value)
 
-        #print(result.stderr)
+        print(result.stderr)
 
         return outputs
 

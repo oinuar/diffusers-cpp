@@ -17,10 +17,12 @@ class TestQwen3CLI : public TestCLI {
 public:
     TestQwen3CLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator, std::optional<Context>& local_context, std::optional<DeviceAllocator>& local_allocator) {
+    virtual std::vector<Tensor> compute(Allocator& allocator, Scheduler& scheduler, Context& context, Context& local_context) {
         if (args_.get(0) == "Qwen3RMSNorm") {
+            Scope scope(local_context, allocator.runtime());
+
             auto hidden_size = args_.get_one<int64_t>("--hidden_size");
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {local_context ? *local_context : context});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {scope.context()});
 
             Qwen3RMSNorm model(hidden_size);
 
@@ -29,26 +31,21 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+            auto output = model.forward(scope.context(), hidden_states);
 
-            auto output = model.forward(local_context ? *local_context : context, hidden_states);
-
-            Graph graph(scheduler, local_context ? *local_context : context, {output});
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), {output});
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
         if (args_.get(0) == "Qwen3MLP") {
+            Scope scope(local_context, allocator.runtime());
+
             Qwen3Config config;
             config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
             config.intermediate_size = args_.get_optional<int64_t>("--intermediate_size").value_or(config.intermediate_size);
 
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {local_context ? *local_context : context});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {scope.context()});
 
             Qwen3MLP model(config);
 
@@ -57,52 +54,45 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+            auto output = model.forward(scope.context(), hidden_states);
 
-            auto output = model.forward(local_context ? *local_context : context, hidden_states);
-
-            Graph graph(scheduler, local_context ? *local_context : context, {output});
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), {output});
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
         if (args_.get(0) == "Qwen3RotaryEmbedding") {
+            Scope scope(local_context, allocator.runtime());
+
             Qwen3Config config;
             config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
             config.rope_theta = args_.get_optional<int64_t>("--rope_theta").value_or(config.rope_theta);
 
-            auto x = args_.get_one<Tensor>("--x", {local_context ? *local_context : context});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {local_context ? *local_context : context});
+            auto x = args_.get_one<Tensor>("--x", {scope.context()});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {scope.context()});
 
             Qwen3RotaryEmbedding model(config);
 
-            auto output = model.forward(local_context ? *local_context : context, x, position_ids);
+            auto output = model.forward(scope.context(), x, position_ids);
 
-            Graph graph(scheduler, local_context ? *local_context : context, {output});
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), {output});
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
         if (args_.get(0) == "Qwen3Attention") {
+            Scope scope(local_context, allocator.runtime());
+
             Qwen3Config config;
             config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
             config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
             config.num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.num_attention_heads);
             config.num_key_value_heads = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.num_key_value_heads);
 
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {local_context ? *local_context : context});
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {local_context ? *local_context : context});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {local_context ? *local_context : context});
-            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {local_context ? *local_context : context});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {scope.context()});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {scope.context()});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {scope.context()});
+            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {scope.context()});
             auto layer_idx = args_.get_one<int>("--layer_idx");
 
             Qwen3Attention<ScaledDotProductAttention<FlashAttentionOp>> model(config, layer_idx);
@@ -113,21 +103,16 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+            auto output = model.forward(scope.context(), rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
 
-            auto output = model.forward(local_context ? *local_context : context, rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
-
-            Graph graph(scheduler, local_context ? *local_context : context, {output});
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), {output});
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
         if (args_.get(0) == "Qwen3DecoderLayer") {
+            Scope scope(local_context, allocator.runtime());
+
             Qwen3Config config;
             config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
             config.intermediate_size = args_.get_optional<int64_t>("--intermediate_size").value_or(config.intermediate_size);
@@ -136,8 +121,8 @@ public:
             config.max_position_embeddings = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.max_position_embeddings);
 
             auto layer_idx = args_.get_one<int>("--layer_idx");
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {local_context ? *local_context : context});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {local_context ? *local_context : context});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {scope.context()});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {scope.context()});
 
             Qwen3DecoderLayer model(config, layer_idx);
             Qwen3RotaryEmbedding rotary_emb(config);
@@ -147,21 +132,16 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+            auto output = model.forward(scope.context(), rotary_emb, hidden_states, position_ids);
 
-            auto output = model.forward(local_context ? *local_context : context, rotary_emb, hidden_states, position_ids);
-
-            Graph graph(scheduler, local_context ? *local_context : context, {output});
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), {output});
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
         if (args_.get(0) == "Qwen3Model") {
+            Scope scope(local_context, allocator.runtime());
+
             Qwen3Config config;
             config.vocab_size = args_.get_optional<int64_t>("--vocab_size").value_or(config.vocab_size);
             config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
@@ -175,11 +155,11 @@ public:
             config.pad_token_id = args_.get_optional<int64_t>("--pad_token_id");
             config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
 
-            auto input_ids = args_.get_optional<Tensor>("--input_ids", {local_context ? *local_context : context});
-            auto input_embeds = args_.get_optional<Tensor>("--input_embeds", {local_context ? *local_context : context});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {local_context ? *local_context : context});
-            auto position_ids = args_.get_optional<Tensor>("--position_ids", {local_context ? *local_context : context});
-            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {local_context ? *local_context : context});
+            auto input_ids = args_.get_optional<Tensor>("--input_ids", {scope.context()});
+            auto input_embeds = args_.get_optional<Tensor>("--input_embeds", {scope.context()});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {scope.context()});
+            auto position_ids = args_.get_optional<Tensor>("--position_ids", {scope.context()});
+            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {scope.context()});
             auto use_cache = args_.get_optional<bool>("--past_key_values");
             auto output_hidden_states = args_.get_optional<bool>("--output_hidden_states").value_or(false);
 
@@ -190,13 +170,10 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-
             std::vector<Tensor> hidden_states;
 
             auto output = model.forward(
-                context,
+                scope.context(),
                 input_ids,
                 input_embeds,
                 attention_mask,
@@ -206,25 +183,19 @@ public:
                 output_hidden_states ? &hidden_states : nullptr);
 
             if (output_hidden_states) {
-                Graph graph(scheduler, context, std::move(hidden_states));
-
-                if (local_allocator)
-                    local_allocator->allocate();
-
-                Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+                Graph graph(scheduler, scope.context(), std::move(hidden_states));
+                Computation computation(allocator, graph, {&context, &scope.context()});
                 return computation().results();
             }
             
-            Graph graph(scheduler, local_context ? *local_context : context, {output});
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), {output});
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
         if (args_.get(0) == "Qwen3ForCausalLM") {
+            Scope scope(local_context, allocator.runtime());
+
             Qwen3Config config;
             config.vocab_size = args_.get_optional<int64_t>("--vocab_size").value_or(config.vocab_size);
             config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
@@ -234,12 +205,12 @@ public:
             config.num_key_value_heads = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.num_key_value_heads);
             config.max_position_embeddings = args_.get_optional<int64_t>("--max_position_embeddings").value_or(config.max_position_embeddings);
 
-            auto input_ids = args_.get_optional<Tensor>("--input_ids", {local_context ? *local_context : context});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {local_context ? *local_context : context});
-            auto position_ids = args_.get_optional<Tensor>("--position_ids", {local_context ? *local_context : context});
-            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {local_context ? *local_context : context});
-            auto inputs_embeds = args_.get_optional<Tensor>("--inputs_embeds", {local_context ? *local_context : context});
-            auto labels = args_.get_optional<Tensor>("--labels", {local_context ? *local_context : context});
+            auto input_ids = args_.get_optional<Tensor>("--input_ids", {scope.context()});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {scope.context()});
+            auto position_ids = args_.get_optional<Tensor>("--position_ids", {scope.context()});
+            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {scope.context()});
+            auto inputs_embeds = args_.get_optional<Tensor>("--inputs_embeds", {scope.context()});
+            auto labels = args_.get_optional<Tensor>("--labels", {scope.context()});
             auto use_cache = args_.get_optional<bool>("--use_cache");
             auto logits_to_keep = args_.get_optional<int>("--logits_to_keep").value_or(0);
             
@@ -250,12 +221,8 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-
-
             auto output = model.forward(
-                context,
+                scope.context(),
                 input_ids,
                 attention_mask,
                 position_ids,
@@ -266,12 +233,8 @@ public:
                 logits_to_keep
             );
 
-            Graph graph(scheduler, local_context ? *local_context : context, {output});
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), {output});
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 

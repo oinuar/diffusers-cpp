@@ -1,15 +1,15 @@
 #pragma once
 
-#include "ggml/Engine.hpp"
+#include "ggml/Runtime.hpp"
 #include "ggml/MetaDevice.hpp"
 #include <unordered_map>
 
 // ============================================================================
-// ShardingEngine -- the trace of everything
-// (drafted in src/ggml/ShardingEngine.hpp)
+// ShardingRuntime -- the trace of everything
+// (drafted in src/ggml/ShardingRuntime.hpp)
 //
-// Implements the project's Engine interface: while a module's forward()
-// runs through it, every tensor creation is delegated to a parent Engine
+// Implements the project's Runtime interface: while a module's forward()
+// runs through it, every tensor creation is delegated to a parent Runtime
 // (which creates the ggml tensors in a ggml_context, exactly as a real
 // engine would) and the graph built through it is recorded. ONE engine
 // traces everything: every context's forward() runs through the same
@@ -23,7 +23,7 @@
 // traced.
 // ============================================================================
 
-class ShardingEngine : public Engine {
+class ShardingRuntime : public Runtime {
 public:
     static constexpr int kNoAxis = -1;
     static constexpr double kInf = 1e30;
@@ -89,10 +89,10 @@ public:
     // device count that sizes the sharded candidates; `w_comp` and `w_mem`
     // are the cost weights the candidates are generated with (see the cost
     // model in the file header).
-    ShardingEngine(Engine& parent, const MetaDevice& device, double w_comp, double w_mem)
+    ShardingRuntime(Runtime& parent, const MetaDevice& device, double w_comp, double w_mem)
         : parent_(parent), n_devices_(device.count()), w_comp_(w_comp), w_mem_(w_mem) {}
 
-    virtual ~ShardingEngine() = default;
+    virtual ~ShardingRuntime() = default;
 
     const std::vector<TraceNode>& nodes() const { return nodes_; }
     const std::vector<ggml_tensor*>& raw_of() const { return raw_of_; }
@@ -112,7 +112,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: tensor creation / initialization
+    // Runtime: tensor creation / initialization
     // ---------------------------------------------------------------------
     ggml_tensor* new_tensor(ggml_type type, int n_dims, const int64_t* ne) override {
         ggml_tensor* t = parent_.new_tensor(type, n_dims, ne);
@@ -169,7 +169,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: copy / cast
+    // Runtime: copy / cast
     // ---------------------------------------------------------------------
     ggml_tensor* cont(ggml_tensor* t) override {
         // GGML_OP_CONT and GGML_OP_RESHAPE share the meta's handle_reshape rule.
@@ -213,7 +213,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: unary arithmetic
+    // Runtime: unary arithmetic
     // ---------------------------------------------------------------------
     ggml_tensor* sqrt(ggml_tensor* t) override { return carry_over_op("sqrt", parent_.sqrt(t), t, w_comp()); }
     ggml_tensor* exp(ggml_tensor* t) override { return unsupported_op("exp", parent_.exp(t), t); }
@@ -223,7 +223,7 @@ public:
     ggml_tensor* sigmoid(ggml_tensor* t) override { return carry_over_op("sigmoid", parent_.sigmoid(t), t, w_comp()); }
 
     // ---------------------------------------------------------------------
-    // Engine: binary arithmetic
+    // Runtime: binary arithmetic
     // ---------------------------------------------------------------------
     ggml_tensor* add(ggml_tensor* l, ggml_tensor* r) override { return binary_op("add", parent_.add(l, r), l, r); }
     ggml_tensor* sub(ggml_tensor* l, ggml_tensor* r) override { return binary_op("sub", parent_.sub(l, r), l, r); }
@@ -231,13 +231,13 @@ public:
     ggml_tensor* div(ggml_tensor* l, ggml_tensor* r) override { return binary_op("div", parent_.div(l, r), l, r); }
 
     // ---------------------------------------------------------------------
-    // Engine: scalar arithmetic
+    // Runtime: scalar arithmetic
     // ---------------------------------------------------------------------
     ggml_tensor* scale(ggml_tensor* t, float value) override { return carry_over_op("scale", parent_.scale(t, value), t, w_comp()); }
     ggml_tensor* clamp(ggml_tensor* t, float min, float max) override { return carry_over_op("clamp", parent_.clamp(t, min, max), t, w_comp()); }
 
     // ---------------------------------------------------------------------
-    // Engine: matrix operations
+    // Runtime: matrix operations
     // ---------------------------------------------------------------------
     ggml_tensor* mul_mat(ggml_tensor* l, ggml_tensor* r) override {
         // Convention (see nn/Linear): lhs = weight [in, out], rhs = activation.
@@ -253,7 +253,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: reshape / permute / views
+    // Runtime: reshape / permute / views
     // ---------------------------------------------------------------------
     ggml_tensor* reshape_1d(ggml_tensor* t, int64_t ne0) override {
         const int64_t out_ne[4] = {ne0, 1, 1, 1};
@@ -311,7 +311,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: repeat / broadcast, concatenation
+    // Runtime: repeat / broadcast, concatenation
     // ---------------------------------------------------------------------
     ggml_tensor* repeat(ggml_tensor* t, ggml_tensor* target) override {
         // The meta runs REPEAT through handle_generic: all srcs must be in
@@ -345,7 +345,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: reduction
+    // Runtime: reduction
     // ---------------------------------------------------------------------
     ggml_tensor* sum_rows(ggml_tensor* t) override {
         // GGML_OP_SUM_ROWS (the meta's handle_per_row): asserts the src is
@@ -362,7 +362,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: attention
+    // Runtime: attention
     // ---------------------------------------------------------------------
     ggml_tensor* flash_attn_ext(ggml_tensor* q, ggml_tensor* k, ggml_tensor* v, ggml_tensor* mask, float scale, float max_bias, float logit_softcap) override {
         // GGML_OP_FLASH_ATTN_EXT (the meta's handle_flash_attn_ext): q, k
@@ -387,7 +387,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: convolution / pooling / resampling (vision)
+    // Runtime: convolution / pooling / resampling (vision)
     // ---------------------------------------------------------------------
     ggml_tensor* conv_2d_direct(ggml_tensor* a, ggml_tensor* b, int s0, int s1, int p0, int p1, int d0, int d1) override {
         // GGML_OP_CONV_2D goes through the meta's handle_generic with
@@ -443,7 +443,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: embeddings / normalization / rotary embeddings
+    // Runtime: embeddings / normalization / rotary embeddings
     // ---------------------------------------------------------------------
     ggml_tensor* get_rows(ggml_tensor* a, ggml_tensor* b) override {
         // GGML_OP_GET_ROWS (the meta's handle_get_rows): the data may be
@@ -688,7 +688,7 @@ private:
     // ---------------------------------------------------------------------
     // State
     // ---------------------------------------------------------------------
-    Engine& parent_;                     // creates the ggml tensors (context)
+    Runtime& parent_;                     // creates the ggml tensors (context)
     size_t n_devices_;                   // from the meta device; sizes the sharded candidates
     double w_comp_;                      // compute of one full (replicated) op
     double w_mem_;                       // per-device storage of a unit tensor

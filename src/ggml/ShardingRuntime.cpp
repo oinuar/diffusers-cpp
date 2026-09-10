@@ -1,12 +1,12 @@
-#include "ggml/ShardingEngine.hpp"
+#include "ggml/ShardingRuntime.hpp"
 
-// ShardingEngine candidate generation: exactly the states the meta backend
+// ShardingRuntime candidate generation: exactly the states the meta backend
 // accepts (see the per-op rules in the file header), priced with the
 // weights the engine was constructed with.
-double ShardingEngine::w_comp() const { return w_comp_; }
-double ShardingEngine::sharded_comp() const { return w_comp_ / (double)n_devices_; }
+double ShardingRuntime::w_comp() const { return w_comp_; }
+double ShardingRuntime::sharded_comp() const { return w_comp_ / (double)n_devices_; }
 
-std::vector<ShardingEngine::Candidate> ShardingEngine::param_candidates(int rank) const {
+std::vector<ShardingRuntime::Candidate> ShardingRuntime::param_candidates(int rank) const {
     std::vector<Candidate> cands;
     cands.push_back({Dist::replicated(), {}, (double)n_devices_ * w_mem_});   // full replica on every device
     for (int a = 0; a < rank; ++a)
@@ -14,7 +14,7 @@ std::vector<ShardingEngine::Candidate> ShardingEngine::param_candidates(int rank
     return cands;
 }
 
-std::vector<ShardingEngine::Candidate> ShardingEngine::carry_over_candidates(int rank, double cost) const {
+std::vector<ShardingRuntime::Candidate> ShardingRuntime::carry_over_candidates(int rank, double cost) const {
     std::vector<Candidate> cands;
     cands.push_back({Dist::replicated(), {Dist::replicated()}, cost});
     for (int a = 0; a < rank; ++a)
@@ -22,7 +22,7 @@ std::vector<ShardingEngine::Candidate> ShardingEngine::carry_over_candidates(int
     return cands;
 }
 
-std::vector<ShardingEngine::Candidate> ShardingEngine::binary_candidates(const TraceNode& lhs, const TraceNode& rhs, int out_rank) const {
+std::vector<ShardingRuntime::Candidate> ShardingRuntime::binary_candidates(const TraceNode& lhs, const TraceNode& rhs, int out_rank) const {
     std::vector<Candidate> cands;
     cands.push_back({Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp_});
     for (int a = 0; a < out_rank && a < lhs.rank; ++a) {
@@ -36,7 +36,7 @@ std::vector<ShardingEngine::Candidate> ShardingEngine::binary_candidates(const T
     return cands;
 }
 
-std::vector<ShardingEngine::Candidate> ShardingEngine::mul_mat_candidates(const TraceNode& w, const TraceNode& a) const {
+std::vector<ShardingRuntime::Candidate> ShardingRuntime::mul_mat_candidates(const TraceNode& w, const TraceNode& a) const {
     std::vector<Candidate> cands;
     cands.push_back({Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp_});
     if (w.rank >= 2)

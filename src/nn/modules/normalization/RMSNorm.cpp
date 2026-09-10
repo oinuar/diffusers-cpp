@@ -10,7 +10,7 @@ RMSNorm::RMSNorm(int64_t dim, float eps, bool elementwise_affine)
 }
 
 Tensor RMSNorm::forward(Scope scope, Tensor x) {
-    x = Tensor(scope.engine().rms_norm(*x, eps_), x.shape());
+    x = Tensor(scope.runtime().rms_norm(*x, eps_), x.shape());
 
     if (elementwise_affine_) {
         auto weight = std::static_pointer_cast<Parameter>(modules["weight"]);

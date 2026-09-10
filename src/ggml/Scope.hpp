@@ -1,44 +1,44 @@
 #pragma once
 
-#include "ggml/ExecutionEngine.hpp"
+#include "ggml/ExecutionRuntime.hpp"
 #include <stdexcept>
 #include <memory>
 
 class Context;
-class Engine;
+class Runtime;
 
 class Scope {
 public:
 
-    explicit Scope(Context& context, Engine& engine)
+    explicit Scope(Context& context, Runtime& runtime)
         : frame_(std::make_shared<Frame>(
               current_context_,
-              current_engine_))
+              current_runtime_))
     {
         current_context_ = &context;
-        current_engine_ = &engine;
+        current_runtime_ = &runtime;
     }
 
-    // Set Context in the scope, but does not overwrite Engine.
+    // Set Context in the scope, but does not overwrite Runtime.
     Scope(Context& context)
         : frame_(std::make_shared<Frame>(
               current_context_,
-              current_engine_))
+              current_runtime_))
     {
         current_context_ = &context;
 
-        // Set Engine to default if it is not set.
-        if (!current_engine_)
-            current_engine_ = &ExecutionEngine::Default;
+        // Set Runtime to default if it is not set.
+        if (!current_runtime_)
+            current_runtime_ = &ExecutionRuntime::Default;
     }
 
-    // Set Engine in the scope, but does not change Context.
-    explicit Scope(Engine& engine)
+    // Set Runtime in the scope, but does not change Context.
+    explicit Scope(Runtime& runtime)
         : frame_(std::make_shared<Frame>(
               current_context_,
-              current_engine_))
+              current_runtime_))
     {
-        current_engine_ = &engine;
+        current_runtime_ = &runtime;
     }
 
     // Forks share the same scope frame.
@@ -51,7 +51,7 @@ public:
     ~Scope() {
         if (frame_.unique()) {
             current_context_ = frame_->previous_context;
-            current_engine_ = frame_->previous_engine;
+            current_runtime_ = frame_->previous_engine;
         }
     }
 
@@ -62,19 +62,19 @@ public:
         return *current_context_;
     }
 
-    static Engine& engine() {
-        if (!current_engine_)
+    static Runtime& runtime() {
+        if (!current_runtime_)
             throw std::runtime_error("engine(): No active Scope");
 
-        return *current_engine_;
+        return *current_runtime_;
     }
 
 private:
     struct Frame {
         Context* previous_context;
-        Engine* previous_engine;
+        Runtime* previous_engine;
 
-        Frame(Context* previous_context, Engine* previous_engine)
+        Frame(Context* previous_context, Runtime* previous_engine)
             : previous_context(previous_context)
             , previous_engine(previous_engine)
         {}
@@ -83,5 +83,5 @@ private:
     std::shared_ptr<Frame> frame_;
 
     inline static thread_local Context* current_context_ = nullptr;
-    inline static thread_local Engine* current_engine_ = nullptr;
+    inline static thread_local Runtime* current_runtime_ = nullptr;
 };

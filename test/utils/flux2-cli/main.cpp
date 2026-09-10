@@ -23,34 +23,31 @@ class TestFlux2CLI : public TestCLI {
 public:
     TestFlux2CLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Scheduler& scheduler, Context& context, Allocator& allocator, std::optional<Context>& local_context, std::optional<DeviceAllocator>& local_allocator) {
+    virtual std::vector<Tensor> compute(Allocator& allocator, Scheduler& scheduler, Context& context, Context& local_context) {
 
         if (args_.get(0) == "Flux2SwiGLU") {
-            auto x = args_.get_one<Tensor>("--x", {local_context ? *local_context : context});
+            Scope scope(local_context, allocator.runtime());
+
+            auto x = args_.get_one<Tensor>("--x", {scope.context()});
 
             Flux2SwiGLU model;
 
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+            auto output = model.forward(scope.context(), x);
 
-            auto output = model.forward(local_context ? *local_context : context, x);
-
-            Graph graph(scheduler, local_context ? *local_context : context, {output});
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), {output});
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
         if (args_.get(0) == "Flux2FeedForward") {
+            Scope scope(local_context, allocator.runtime());
+
             auto dim = args_.get_one<int64_t>("--dim");
             auto dim_out = args_.get_optional<int64_t>("--dim_out");
             auto mult = args_.get_optional<float>("--mult").value_or(3.0);
             auto inner_dim = args_.get_optional<int64_t>("--inner_dim");
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto x = args_.get_one<Tensor>("--x", {local_context ? *local_context : context});
+            auto x = args_.get_one<Tensor>("--x", {scope.context()});
 
             Flux2FeedForward model(dim, dim_out, mult, inner_dim, bias);
 
@@ -59,25 +56,20 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+            auto output = model.forward(scope.context(), x);
 
-            auto output = model.forward(local_context ? *local_context : context, x);
-
-            Graph graph(scheduler, local_context ? *local_context : context, {output});
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), {output});
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
         if (args_.get(0) == "Flux2Modulation") {
+            Scope scope(local_context, allocator.runtime());
+
             auto dim = args_.get_one<int64_t>("--dim");
             auto mod_param_sets = args_.get_optional<int64_t>("--mod_param_sets").value_or(2);
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto temb = args_.get_one<Tensor>("--temb", {local_context ? *local_context : context});
+            auto temb = args_.get_one<Tensor>("--temb", {scope.context()});
 
             Flux2Modulation model(dim, mod_param_sets, bias);
 
@@ -86,27 +78,22 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+            auto output = model.forward(scope.context(), temb);
 
-            auto output = model.forward(local_context ? *local_context : context, temb);
-
-            Graph graph(scheduler, local_context ? *local_context : context, {output});
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), {output});
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
         if (args_.get(0) == "Flux2TimestepGuidanceEmbeddings") {
+            Scope scope(local_context, allocator.runtime());
+
             auto in_channels = args_.get_one<int64_t>("--in_channels");
             auto embedding_dim = args_.get_one<int64_t>("--embedding_dim");
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
             auto guidance_embeds = args_.get_optional<bool>("--guidance_embeds").value_or(true);
-            auto timestep = args_.get_one<Tensor>("--timestep", {local_context ? *local_context : context});
-            auto guidance = args_.get_optional<Tensor>("--guidance", {local_context ? *local_context : context});
+            auto timestep = args_.get_one<Tensor>("--timestep", {scope.context()});
+            auto guidance = args_.get_optional<Tensor>("--guidance", {scope.context()});
 
             Flux2TimestepGuidanceEmbeddings model(in_channels, embedding_dim, bias, guidance_embeds);
 
@@ -115,25 +102,20 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+            auto output = model.forward(scope.context(), timestep, guidance);
 
-            auto output = model.forward(local_context ? *local_context : context, timestep, guidance);
-
-            Graph graph(scheduler, local_context ? *local_context : context, {output});
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), {output});
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
         if (args_.get(0) == "Flux2PosEmbed") {
+            Scope scope(local_context, allocator.runtime());
+
             auto theta = args_.get_one<int64_t>("--theta");
             auto axes_dim = args_.get_many<int64_t>("--axes_dim");
-            auto x = args_.get_one<Tensor>("--x", {local_context ? *local_context : context});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {local_context ? *local_context : context});
+            auto x = args_.get_one<Tensor>("--x", {scope.context()});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {scope.context()});
 
             Flux2PosEmbed model(theta, axes_dim);
 
@@ -142,21 +124,16 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+            auto output = model.forward(scope.context(), x, position_ids);
 
-            auto output = model.forward(local_context ? *local_context : context, x, position_ids);
-
-            Graph graph(scheduler, local_context ? *local_context : context, {output});
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), {output});
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
         if (args_.get(0) == "Flux2Attention") {
+            Scope scope(local_context, allocator.runtime());
+
             auto query_dim = args_.get_one<int64_t>("--query_dim");
             auto heads = args_.get_optional<int64_t>("--heads").value_or(8);
             auto dim_head = args_.get_optional<int64_t>("--dim_head").value_or(64);
@@ -168,12 +145,12 @@ public:
             auto eps = args_.get_optional<float>("--eps").value_or(1e-5);
             auto out_dim = args_.get_optional<int64_t>("--out_dim");
             auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {local_context ? *local_context : context});
-            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {local_context ? *local_context : context});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {local_context ? *local_context : context});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {scope.context()});
+            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {scope.context()});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {scope.context()});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {local_context ? *local_context : context});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {scope.context()});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -199,10 +176,7 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-
-            auto [y1, y2] = model.forward(local_context ? *local_context : context, hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb);
+            auto [y1, y2] = model.forward(scope.context(), hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb);
             std::vector<Tensor> results;
 
             results.push_back(y1);
@@ -210,16 +184,14 @@ public:
             if (y2)
                 results.push_back(*y2);
 
-            Graph graph(scheduler, context, std::move(results));
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), std::move(results));
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
         if (args_.get(0) == "Flux2ParallelSelfAttention") {
+            Scope scope(local_context, allocator.runtime());
+
             auto query_dim = args_.get_one<int64_t>("--query_dim");
             auto heads = args_.get_optional<int64_t>("--heads").value_or(8);
             auto dim_head = args_.get_optional<int64_t>("--dim_head").value_or(64);
@@ -231,11 +203,11 @@ public:
             auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
             auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(4.0);
             auto mlp_mult_factor = args_.get_optional<int64_t>("--mlp_mult_factor").value_or(2);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {local_context ? *local_context : context});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {local_context ? *local_context : context});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {scope.context()});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {scope.context()});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {local_context ? *local_context : context});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {scope.context()});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -261,35 +233,30 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+            auto output = model.forward(scope.context(), hidden_states, attention_mask, image_rotary_emb);
 
-            auto output = model.forward(local_context ? *local_context : context, hidden_states, attention_mask, image_rotary_emb);
-
-            Graph graph(scheduler, local_context ? *local_context : context, {output});
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), {output});
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
         if (args_.get(0) == "Flux2SingleTransformerBlock") {
+            Scope scope(local_context, allocator.runtime());
+
             auto dim = args_.get_one<int64_t>("--dim");
             auto num_attention_heads = args_.get_one<int64_t>("--num_attention_heads");
             auto attention_head_dim = args_.get_one<int64_t>("--attention_head_dim");
             auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(3.0);
             auto eps = args_.get_optional<float>("--eps").value_or(1e-6);
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {local_context ? *local_context : context});
-            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {local_context ? *local_context : context});
-            auto temb_mod = args_.get_one<Tensor>("--temb_mod", {local_context ? *local_context : context});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {scope.context()});
+            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {scope.context()});
+            auto temb_mod = args_.get_one<Tensor>("--temb_mod", {scope.context()});
             auto split_hidden_states = args_.get_optional<bool>("--split_hidden_states").value_or(false);
             auto text_seq_len = args_.get_optional<int64_t>("--text_seq_len");
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {local_context ? *local_context : context});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {scope.context()});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -310,11 +277,8 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-
             auto [y1, y2] = model.forward(
-                local_context ? *local_context : context,
+                scope.context(),
                 hidden_states,
                 encoder_hidden_states,
                 temb_mod,
@@ -330,29 +294,27 @@ public:
             if (y2)
                 results.push_back(*y2);
 
-            Graph graph(scheduler, context, std::move(results));
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), std::move(results));
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
         if (args_.get(0) == "Flux2TransformerBlock") {
+            Scope scope(local_context, allocator.runtime());
+
             auto dim = args_.get_one<int64_t>("--dim");
             auto num_attention_heads = args_.get_one<int64_t>("--num_attention_heads");
             auto attention_head_dim = args_.get_one<int64_t>("--attention_head_dim");
             auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(3.0);
             auto eps = args_.get_optional<float>("--eps").value_or(1e-6);
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {local_context ? *local_context : context});
-            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {local_context ? *local_context : context});
-            auto temb_mod_img = args_.get_one<Tensor>("--temb_mod_img", {local_context ? *local_context : context});
-            auto temb_mod_txt = args_.get_one<Tensor>("--temb_mod_txt", {local_context ? *local_context : context});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {scope.context()});
+            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {scope.context()});
+            auto temb_mod_img = args_.get_one<Tensor>("--temb_mod_img", {scope.context()});
+            auto temb_mod_txt = args_.get_one<Tensor>("--temb_mod_txt", {scope.context()});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {local_context ? *local_context : context});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {scope.context()});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -373,11 +335,8 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-
             auto [y1, y2] = model.forward(
-                local_context ? *local_context : context,
+                scope.context(),
                 hidden_states,
                 encoder_hidden_states,
                 temb_mod_img,
@@ -385,16 +344,14 @@ public:
                 image_rotary_emb
             );
 
-            Graph graph(scheduler, context, {y1, y2});
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), {y1, y2});
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
         if (args_.get(0) == "Flux2Transformer2DModel") {
+            Scope scope(local_context, allocator.runtime());
+
             Flux2Transformer2DModel::Config config;
 
             config.patch_size = args_.get_optional<int64_t>("--patch_size").value_or(config.patch_size);
@@ -412,12 +369,12 @@ public:
             config.eps = args_.get_optional<float>("--eps").value_or(config.eps);
             config.guidance_embeds = args_.get_optional<bool>("--guidance_embeds").value_or(config.guidance_embeds);
 
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {local_context ? *local_context : context});
-            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {local_context ? *local_context : context});
-            auto timestep = args_.get_one<Tensor>("--timestep", {local_context ? *local_context : context});
-            auto img_ids = args_.get_one<Tensor>("--img_ids", {local_context ? *local_context : context});
-            auto txt_ids = args_.get_one<Tensor>("--txt_ids", {local_context ? *local_context : context});
-            auto guidance = args_.get_optional<Tensor>("--guidance", {local_context ? *local_context : context});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {scope.context()});
+            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {scope.context()});
+            auto timestep = args_.get_one<Tensor>("--timestep", {scope.context()});
+            auto img_ids = args_.get_one<Tensor>("--img_ids", {scope.context()});
+            auto txt_ids = args_.get_one<Tensor>("--txt_ids", {scope.context()});
+            auto guidance = args_.get_optional<Tensor>("--guidance", {scope.context()});
             auto num_ref_tokens = args_.get_optional<int64_t>("--num_ref_tokens").value_or(0);
             auto ref_fixed_timestep = args_.get_optional<float>("--ref_fixed_timestep").value_or(0.0f);
 
@@ -431,11 +388,8 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-
             auto output = model.forward(
-                local_context ? *local_context : context,
+                scope.context(),
                 hidden_states,
                 encoder_hidden_states,
                 timestep,
@@ -448,12 +402,8 @@ public:
                 ref_fixed_timestep
             );
 
-            Graph graph(scheduler, local_context ? *local_context : context, {output});
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), {output});
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
@@ -461,19 +411,26 @@ public:
             args_.get(0) == "Flux2KleinPipeline_unpack_latents" ||
             args_.get(0) == "Flux2KleinPipeline_patchify_latents" ||
             args_.get(0) == "Flux2KleinPipeline_unpatchify_latents") {
-            auto latents = args_.get_one<Tensor>("--latents", {local_context ? *local_context : context});
+            Scope scope(local_context, allocator.runtime());
+            auto latents = args_.get_one<Tensor>("--latents", {scope.context()});
 
             Tensor result;
 
             if (args_.get(0) == "Flux2KleinPipeline_pack_latents") {
+            Scope scope(local_context, allocator.runtime());
+
                 result = Flux2KleinPipeline::pack_latents(latents);
             } else if (args_.get(0) == "Flux2KleinPipeline_unpack_latents") {
+            Scope scope(local_context, allocator.runtime());
+
                 result = Flux2KleinPipeline::unpack_latents(
                     latents,
                     args_.get_one<int>("--packed_h"),
                     args_.get_one<int>("--packed_w")
                 );
             } else if (args_.get(0) == "Flux2KleinPipeline_patchify_latents") {
+            Scope scope(local_context, allocator.runtime());
+
                 result = Flux2KleinPipeline::patchify_latents(
                     latents,
                     args_.get_one<int>("--channels"),
@@ -489,12 +446,8 @@ public:
                 );
             }
 
-            Graph graph(scheduler, context, {result});
-
-            if (local_allocator)
-                local_allocator->allocate();
-
-            Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+            Graph graph(scheduler, scope.context(), {result});
+            Computation computation(allocator, graph, {&context, &scope.context()});
             return computation().results();
         }
 
@@ -563,9 +516,6 @@ public:
                 RethrowVisitor visitor(create_parameters);
                 transformer.accept(visitor);
                 visitor.rethrow();
-
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
             }
             
             AutoencoderKLFlux2 vae(vae_config);
@@ -574,9 +524,6 @@ public:
                 RethrowVisitor visitor(create_parameters);
                 vae.accept(visitor);
                 visitor.rethrow();
-
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
             }
 
             Qwen3ForCausalLM text_encoder(qwen_config);
@@ -585,9 +532,6 @@ public:
                 RethrowVisitor visitor(create_parameters);
                 text_encoder.accept(visitor);
                 visitor.rethrow();
-
-            if (local_allocator)
-                allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
             }
 
             auto tokenizer = Qwen2TokenizerFast::from_pretrained(tokenizer_dir);
@@ -600,6 +544,8 @@ public:
             );
 
             if (args_.get(0) == "Flux2KleinPipeline_embeddings") {
+            Scope scope(local_context, allocator.runtime());
+
                 auto batch = args_.get_one<int>("--batch");
                 auto prompt = args_.get_one<std::string>("--prompt");
                 auto max_sequence_length = args_.get_one<int>("--max_sequence_length");
@@ -607,6 +553,7 @@ public:
                 auto packed_w = args_.get_one<int>("--packed_w");
                 auto images = args_.get_many<Image>("--images");
 
+    
                 auto [
                     graph,
                     prompt_embeds,
@@ -616,7 +563,7 @@ public:
                     image_latent_ids_concat
                 ] = std::move(pipeline.make_embeddings_graph(
                     scheduler,
-                    local_context ? *local_context : context,
+                    scope.context(),
                     prompt,
                     max_sequence_length,
                     batch,
@@ -625,46 +572,32 @@ public:
                     images
                 ));
 
-                if (local_allocator)
-                    local_allocator->allocate();
+                Computation computation(allocator, graph, {&context, &scope.context()});
 
-                Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
-                
-                std::vector<Tensor> results = {
-                    prompt_embeds,
-                    txt_ids,
-                    img_ids
-                };
-
-                if (image_latents_concat)
-                    results.push_back(*image_latents_concat);
-                
-                if (image_latent_ids_concat)
-                    results.push_back(*image_latent_ids_concat);
-
-                computation();
-
-                return std::move(results);
+                return computation().results();
             }
 
             if (args_.get(0) == "Flux2KleinPipeline_denoise") {
+            Scope scope(local_context, allocator.runtime());
+
                 auto batch = args_.get_one<int>("--batch");
                 auto packed_h = args_.get_one<int>("--packed_h");
                 auto packed_w = args_.get_one<int>("--packed_w");
                 auto num_ref_tokens = args_.get_one<int>("--num_ref_tokens");
                 auto timestep = args_.get_one<float>("--timestep");
                 auto dt = args_.get_one<float>("--dt");
-                auto init_latents = args_.get_one<Tensor>("--init_latents", {local_context ? *local_context : context});
-                auto prompt_embeds = args_.get_one<Tensor>("--prompt_embeds", {local_context ? *local_context : context});
-                auto img_ids = args_.get_one<Tensor>("--img_ids", {local_context ? *local_context : context});
-                auto txt_ids = args_.get_one<Tensor>("--txt_ids", {local_context ? *local_context : context});
+                auto init_latents = args_.get_one<Tensor>("--init_latents", {scope.context()});
+                auto prompt_embeds = args_.get_one<Tensor>("--prompt_embeds", {scope.context()});
+                auto img_ids = args_.get_one<Tensor>("--img_ids", {scope.context()});
+                auto txt_ids = args_.get_one<Tensor>("--txt_ids", {scope.context()});
 
-                auto image_latents = args_.get_optional<Tensor>("--image_latents", {local_context ? *local_context : context});
-                auto image_latent_ids = args_.get_optional<Tensor>("--image_latent_ids", {local_context ? *local_context : context});
+                auto image_latents = args_.get_optional<Tensor>("--image_latents", {scope.context()});
+                auto image_latent_ids = args_.get_optional<Tensor>("--image_latent_ids", {scope.context()});
 
+    
                 auto graph = std::move(pipeline.make_denoise_graph(
                     scheduler,
-                    local_context ? *local_context : context,
+                    scope.context(),
                     batch,
                     packed_h,
                     packed_w,
@@ -679,31 +612,28 @@ public:
                     &dt
                 ));
 
-                if (local_allocator)
-                    local_allocator->allocate();
-
-                Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+                Computation computation(allocator, graph, {&context, &scope.context()});
 
                 return computation().results();
             }
 
             if (args_.get(0) == "Flux2KleinPipeline_decode") {
+            Scope scope(local_context, allocator.runtime());
+
                 auto packed_h = args_.get_one<int>("--packed_h");
                 auto packed_w = args_.get_one<int>("--packed_w");
-                auto latents = args_.get_one<Tensor>("--latents", {local_context ? *local_context : context});
+                auto latents = args_.get_one<Tensor>("--latents", {scope.context()});
 
+    
                 auto graph = std::move(pipeline.make_decode_graph(
                     scheduler,
-                    local_context ? *local_context : context,
+                    scope.context(),
                     packed_h,
                     packed_w,
                     latents
                 ));
 
-                if (local_allocator)
-                    local_allocator->allocate();
-
-                Computation computation(graph, {&context, local_context ? &(*local_context) : nullptr});
+                Computation computation(allocator, graph, {&context, &scope.context()});
                 
                 return computation().results();
             }
@@ -720,7 +650,11 @@ public:
         return TestCLI::get_graph_size();
     }
 
-    int run_pipeline(Scheduler& scheduler, Context& context, Allocator& allocator, const Device& device) {
+    int run_pipeline(Allocator& allocator, Scheduler& scheduler, Context& context, const Device& device) {
+        Context local_context(836464);
+
+        allocator.use(context, device, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+
         Flux2Transformer2DModel::Config transformer_config;
         {
             transformer_config.patch_size = args_.get_optional<int64_t>("--transformer-patch_size").value_or(transformer_config.patch_size);
@@ -803,8 +737,6 @@ public:
             visitor.rethrow();
         }
 
-        allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-
         auto tokenizer = Qwen2TokenizerFast::from_pretrained(tokenizer_dir);
 
         Flux2KleinPipeline pipeline(
@@ -814,8 +746,6 @@ public:
             std::move(tokenizer)
         );
 
-        allocator.allocate(GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-
         Flux2KleinPipeline::GenerationOptions options;
 
         options.prompt = args_.get_one<std::string>("--prompt");
@@ -824,11 +754,13 @@ public:
         options.num_inference_steps = args_.get_one<int>("--num_inference_steps");
         options.max_sequence_length = args_.get_one<int>("--max_sequence_length");
 
+        Scope scope(local_context, allocator.runtime());
+
         if (auto init_latents = args_.get_optional<std::string>("--init_latents"))
             options.init_latents = std::move(
                 ArgumentParser::parser<Tensor>::TensorParser(*init_latents).parse().second);
 
-        auto images = pipeline(scheduler, context, context, context, device, std::move(options));
+        auto images = pipeline(allocator, scheduler, local_context, context, context, context, std::move(options));
         std::vector<Tensor> results;
 
         for (const auto& image : images) {
@@ -850,9 +782,6 @@ int main(int argc, char** argv) {
 
         ggml_backend_load_all();
 
-        // TEMP: debug
-        setenv("GGML_SCHED_DEBUG", "2", 1);
-    
         // This controls how many fake devices are used to run the tests.
         auto n_devices = args_.get_optional<size_t>("--runner-n_devices").value_or(1);
         auto use_gpu = args_.get_optional<bool>("--runner-use_gpu").value_or(false);
@@ -875,9 +804,9 @@ int main(int argc, char** argv) {
             Backend cpu_backend(cpu);
             Scheduler scheduler({&meta_backend, &cpu_backend}, cli.get_graph_size());
 
-            DeviceAllocator allocator(context, meta);
+            ShardingAllocator allocator(ExecutionRuntime::Default, meta, 2.0, 1.0, 0.5);
 
-            return cli.run_pipeline(scheduler, context, allocator, meta);
+            return cli.run_pipeline(allocator, scheduler, context, meta);
         }
 
         if (use_gpu) {
@@ -887,18 +816,18 @@ int main(int argc, char** argv) {
             Backend gpu_backend(gpu);
             Scheduler scheduler({&gpu_backend, &cpu_backend}, cli.get_graph_size());
 
-            DeviceAllocator allocator(context, gpu);
+            Allocator allocator;
 
-            return cli.run_pipeline(scheduler, context, allocator, gpu);
+            return cli.run_pipeline(allocator, scheduler, context, gpu);
         }
 
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
         Backend cpu_backend(cpu);
         Scheduler scheduler({&cpu_backend}, cli.get_graph_size());
 
-        DeviceAllocator allocator(context, cpu);
+        Allocator allocator;
 
-        return cli.run_pipeline(scheduler, context, allocator, cpu);
+        return cli.run_pipeline(allocator, scheduler, context, cpu);
     }
 
     return cli.main();

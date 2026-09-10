@@ -74,7 +74,7 @@ public:
             //
             //   (x0,x1), (x2,x3), ...
             //
-            auto rope = scope.engine().rope_ext(
+            auto rope = scope.runtime().rope_ext(
                 *x_axis,
                 *pos_axis,
                 nullptr,                // no YaRN frequency tensor

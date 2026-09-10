@@ -1,13 +1,13 @@
 #include "ggml/Allocator.hpp"
 #include "ggml/Context.hpp"
 #include "ggml/Device.hpp"
-#include "ggml/ExecutionEngine.hpp"
+#include "ggml/ExecutionRuntime.hpp"
 
 Allocator::Allocator() : usages_(), buffers_() {
 
 }
 
-void Allocator::use(Context& context, const Device& device, ggml_backend_buffer_usage usage) {
+void Allocator::use(Context& context, const Device& device, const std::optional<ggml_backend_buffer_usage>& usage) {
     usages_.push_back({&context, &device, usage});
 }
 
@@ -39,6 +39,6 @@ void Allocator::reset() {
     buffers_.clear();
 }
 
-Engine& Allocator::engine() {
-    return ExecutionEngine::Default;
+Runtime& Allocator::runtime() {
+    return ExecutionRuntime::Default;
 }

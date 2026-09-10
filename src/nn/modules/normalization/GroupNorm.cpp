@@ -49,7 +49,7 @@ Tensor GroupNorm::forward(Scope scope, Tensor input) {
 
 
     input = Tensor(
-        scope.engine().norm(
+        scope.runtime().norm(
             *input,
             eps_
         ),

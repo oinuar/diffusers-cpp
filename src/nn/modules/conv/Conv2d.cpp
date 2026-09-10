@@ -39,7 +39,7 @@ Tensor Conv2d::forward(Scope scope, Tensor x) {
         ->forward(scope);
 
 
-    auto conv = scope.engine().conv_2d_direct(
+    auto conv = scope.runtime().conv_2d_direct(
         *weight,
         *x,
         stride_,

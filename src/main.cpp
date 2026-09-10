@@ -9,10 +9,10 @@
 //
 // The pieces that will be migrated into the project:
 //
-//   * ShardingEngine (drafted in src/ggml/ShardingEngine.hpp): it
-//     implements the exact Engine interface from src/ggml/Engine.hpp. While
+//   * ShardingRuntime (drafted in src/ggml/ShardingRuntime.hpp): it
+//     implements the exact Runtime interface from src/ggml/Runtime.hpp. While
 //     a module's forward() runs through it, it delegates every tensor
-//     creation to a parent Engine (which creates the ggml tensors in a
+//     creation to a parent Runtime (which creates the ggml tensors in a
 //     ggml_context, exactly as a real engine would) and records the graph
 //     built through it. ONE engine traces everything: every context's
 //     forward() runs through the same engine (the scope switches
@@ -22,13 +22,13 @@
 //     shape the candidates (w_comp for op compute, w_mem for static
 //     storage) and the MetaDevice, whose device count sizes the sharded
 //     candidates.
-//   * ShardedAllocator (drafted in src/ggml/ShardedAllocator.hpp): the
+//   * ShardingAllocator (drafted in src/ggml/ShardingAllocator.hpp): the
 //     sharded version of the project's Allocator (src/ggml/Allocator.hpp).
 //     ONE allocator is aware of ALL the contexts: the persistent weights
 //     context and every compute context are registered on it with
 //     use(context, device). The allocator OWNS the trace: it constructs
-//     the ONE ShardingEngine every context's forward() runs through
-//     (allocator.engine()), so every context's graph is one subgraph of
+//     the ONE ShardingRuntime every context's forward() runs through
+//     (allocator.runtime()), so every context's graph is one subgraph of
 //     that single trace. The allocator IS the planning state: the
 //     allocation is WHY we plan -- we plan to allocate the tensors
 //     optimally across the devices -- and the plan covers the whole
@@ -61,7 +61,7 @@
 //     reallocation of whatever the old splits allocated.
 //
 // Everything else (mock ggml types, Context / Tensor / Scope / Module
-// framework, the ContextEngine parent stand-in, main()) is throwaway
+// framework, the ContextRuntime parent stand-in, main()) is throwaway
 // scaffolding that only exists to exercise the planner without pulling in
 // a real backend.
 //
@@ -69,8 +69,8 @@
 // ----------------------
 //   1. Load the model: the loader creates the weight tensors in a
 //      persistent weights context (unallocated), and every compute context
-//      has its own. Create ONE ShardedAllocator over the parent Engine
-//      (it constructs the ShardingEngine that traces everything) -- the
+//      has its own. Create ONE ShardingAllocator over the parent Runtime
+//      (it constructs the ShardingRuntime that traces everything) -- the
 //      planning boundary, because the allocation is why we plan -- and
 //      register every context on it: use(weights_context, meta),
 //      use(compute_context, meta), ... Allocate nothing yet.
@@ -111,7 +111,7 @@
 //      contexts keep their buffers.
 //      An infeasible plan leaves the table in place, so the allocation
 //      stays valid for the last good plan.
-//   5. Run the real forward() on the ExecutionEngine: the meta device
+//   5. Run the real forward() on the ExecutionRuntime: the meta device
 //      derives every compute tensor's split state from the callback
 //      states and its per-op rules; the planner guarantees that
 //      derivation stays in a state the meta backend can execute and that
@@ -222,7 +222,7 @@
 //
 // While tracing, every op records its "candidates": the distributions it
 // can produce natively, the distribution its inputs must be in for that,
-// and the compute cost. The ShardedAllocator's plan round (allocate())
+// and the compute cost. The ShardingAllocator's plan round (allocate())
 // then runs a dynamic program over the trace, per
 // (node, required distribution):
 //
@@ -256,9 +256,9 @@
 //           stores n copies -> n * w_mem, a sharded param one -> w_mem
 //
 // The weights live where they act: w_comp and w_mem shape the candidates
-// (the ShardedAllocator constructs the ShardingEngine with them); w_comm
+// (the ShardingAllocator constructs the ShardingRuntime with them); w_comm
 // prices the P -> R bridge. All three are arguments of the
-// ShardedAllocator constructor.
+// ShardingAllocator constructor.
 // ============================================================================
 
 #include <algorithm>
@@ -319,7 +319,7 @@ struct ggml_context {
 constexpr ggml_type kMockType = 0;   // the mock graph is dtype-uniform (f32-like, blck size 1)
 
 int ggml_blck_size(ggml_type) { return 1; }   // mock dtypes are f32-like
-// Mirror of ggml.h's op enums (the Engine interface takes them by value).
+// Mirror of ggml.h's op enums (the Runtime interface takes them by value).
 enum ggml_op_pool {
     GGML_OP_POOL_MAX,
     GGML_OP_POOL_AVG,
@@ -407,7 +407,7 @@ public:
     // The split-state callback table: what the (real)
     // ggml_backend_meta_get_split_state_t callback would return, keyed by
     // the tensor pointer. It is GLOBAL across contexts -- and across every
-    // allocator: the ShardedAllocator commits its plan by replacing the
+    // allocator: the ShardingAllocator commits its plan by replacing the
     // entries of the tensors it traced (erase, then insert the new states).
     Splits& splits() { return splits_; }
 
@@ -450,12 +450,12 @@ bool split_state_equal(const ggml_backend_meta_split_state& a, const ggml_backen
     return true;
 }
 // ============================================================================
-// Engine interface (verbatim copy of src/ggml/Engine.hpp)
+// Runtime interface (verbatim copy of src/ggml/Runtime.hpp)
 // ============================================================================
 
-class Engine {
+class Runtime {
 public:
-    virtual ~Engine() = default;
+    virtual ~Runtime() = default;
 
     // -------------------------------------------------------------------------
     // Tensor creation / initialization
@@ -762,11 +762,11 @@ public:
 };
 
 // ============================================================================
-// ShardingEngine -- the trace of everything
-// (drafted in src/ggml/ShardingEngine.hpp)
+// ShardingRuntime -- the trace of everything
+// (drafted in src/ggml/ShardingRuntime.hpp)
 //
-// Implements the project's Engine interface: while a module's forward()
-// runs through it, every tensor creation is delegated to a parent Engine
+// Implements the project's Runtime interface: while a module's forward()
+// runs through it, every tensor creation is delegated to a parent Runtime
 // (which creates the ggml tensors in a ggml_context, exactly as a real
 // engine would) and the graph built through it is recorded. ONE engine
 // traces everything: every context's forward() runs through the same
@@ -776,11 +776,11 @@ public:
 // the candidates (w_comp for op compute, w_mem for static storage) and
 // the MetaDevice, whose device count sizes the sharded candidates. The
 // planning itself -- the DP, the committed splits -- lives in the
-// ShardedAllocator that owns it: the allocation is WHY this graph is
+// ShardingAllocator that owns it: the allocation is WHY this graph is
 // traced.
 // ============================================================================
 
-class ShardingEngine : public Engine {
+class ShardingRuntime : public Runtime {
 public:
     static constexpr int kNoAxis = -1;
     static constexpr double kInf = 1e30;
@@ -846,7 +846,7 @@ public:
     // device count that sizes the sharded candidates; `w_comp` and `w_mem`
     // are the cost weights the candidates are generated with (see the cost
     // model in the file header).
-    ShardingEngine(Engine& parent, const MetaDevice& device, double w_comp, double w_mem)
+    ShardingRuntime(Runtime& parent, const MetaDevice& device, double w_comp, double w_mem)
         : parent_(parent), n_devices_(device.count()), w_comp_(w_comp), w_mem_(w_mem) {}
 
     const std::vector<TraceNode>& nodes() const { return nodes_; }
@@ -867,7 +867,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: tensor creation / initialization
+    // Runtime: tensor creation / initialization
     // ---------------------------------------------------------------------
     ggml_tensor* new_tensor(ggml_type type, int n_dims, const int64_t* ne) override {
         ggml_tensor* t = parent_.new_tensor(type, n_dims, ne);
@@ -924,7 +924,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: copy / cast
+    // Runtime: copy / cast
     // ---------------------------------------------------------------------
     ggml_tensor* cont(ggml_tensor* t) override {
         // GGML_OP_CONT and GGML_OP_RESHAPE share the meta's handle_reshape rule.
@@ -968,7 +968,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: unary arithmetic
+    // Runtime: unary arithmetic
     // ---------------------------------------------------------------------
     ggml_tensor* sqrt(ggml_tensor* t) override { return carry_over_op("sqrt", parent_.sqrt(t), t, w_comp()); }
     ggml_tensor* exp(ggml_tensor* t) override { return unsupported_op("exp", parent_.exp(t), t); }
@@ -978,7 +978,7 @@ public:
     ggml_tensor* sigmoid(ggml_tensor* t) override { return carry_over_op("sigmoid", parent_.sigmoid(t), t, w_comp()); }
 
     // ---------------------------------------------------------------------
-    // Engine: binary arithmetic
+    // Runtime: binary arithmetic
     // ---------------------------------------------------------------------
     ggml_tensor* add(ggml_tensor* l, ggml_tensor* r) override { return binary_op("add", parent_.add(l, r), l, r); }
     ggml_tensor* sub(ggml_tensor* l, ggml_tensor* r) override { return binary_op("sub", parent_.sub(l, r), l, r); }
@@ -986,13 +986,13 @@ public:
     ggml_tensor* div(ggml_tensor* l, ggml_tensor* r) override { return binary_op("div", parent_.div(l, r), l, r); }
 
     // ---------------------------------------------------------------------
-    // Engine: scalar arithmetic
+    // Runtime: scalar arithmetic
     // ---------------------------------------------------------------------
     ggml_tensor* scale(ggml_tensor* t, float value) override { return carry_over_op("scale", parent_.scale(t, value), t, w_comp()); }
     ggml_tensor* clamp(ggml_tensor* t, float min, float max) override { return carry_over_op("clamp", parent_.clamp(t, min, max), t, w_comp()); }
 
     // ---------------------------------------------------------------------
-    // Engine: matrix operations
+    // Runtime: matrix operations
     // ---------------------------------------------------------------------
     ggml_tensor* mul_mat(ggml_tensor* l, ggml_tensor* r) override {
         // Convention (see nn/Linear): lhs = weight [in, out], rhs = activation.
@@ -1008,7 +1008,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: reshape / permute / views
+    // Runtime: reshape / permute / views
     // ---------------------------------------------------------------------
     ggml_tensor* reshape_1d(ggml_tensor* t, int64_t ne0) override {
         const int64_t out_ne[4] = {ne0, 1, 1, 1};
@@ -1066,7 +1066,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: repeat / broadcast, concatenation
+    // Runtime: repeat / broadcast, concatenation
     // ---------------------------------------------------------------------
     ggml_tensor* repeat(ggml_tensor* t, ggml_tensor* target) override {
         // The meta runs REPEAT through handle_generic: all srcs must be in
@@ -1100,7 +1100,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: reduction
+    // Runtime: reduction
     // ---------------------------------------------------------------------
     ggml_tensor* sum_rows(ggml_tensor* t) override {
         // GGML_OP_SUM_ROWS (the meta's handle_per_row): asserts the src is
@@ -1117,7 +1117,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: attention
+    // Runtime: attention
     // ---------------------------------------------------------------------
     ggml_tensor* flash_attn_ext(ggml_tensor* q, ggml_tensor* k, ggml_tensor* v, ggml_tensor* mask, float scale, float max_bias, float logit_softcap) override {
         // GGML_OP_FLASH_ATTN_EXT (the meta's handle_flash_attn_ext): q, k
@@ -1142,7 +1142,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: convolution / pooling / resampling (vision)
+    // Runtime: convolution / pooling / resampling (vision)
     // ---------------------------------------------------------------------
     ggml_tensor* conv_2d_direct(ggml_tensor* a, ggml_tensor* b, int s0, int s1, int p0, int p1, int d0, int d1) override {
         // GGML_OP_CONV_2D goes through the meta's handle_generic with
@@ -1198,7 +1198,7 @@ public:
     }
 
     // ---------------------------------------------------------------------
-    // Engine: embeddings / normalization / rotary embeddings
+    // Runtime: embeddings / normalization / rotary embeddings
     // ---------------------------------------------------------------------
     ggml_tensor* get_rows(ggml_tensor* a, ggml_tensor* b) override {
         // GGML_OP_GET_ROWS (the meta's handle_get_rows): the data may be
@@ -1256,7 +1256,7 @@ private:
     // Candidate generation -- exactly the states the meta backend accepts
     // (see the per-op rules in the file header), priced with the cost
     // weights the engine was constructed with. The DP that prices the
-    // P -> R bridge with w_comm lives in the ShardedAllocator.
+    // P -> R bridge with w_comm lives in the ShardingAllocator.
     // ---------------------------------------------------------------------
     std::vector<Candidate> param_candidates(int rank) const;
 
@@ -1435,7 +1435,7 @@ private:
 
     // ---------------------------------------------------------------------
     // Cost model (the weights shape the candidates generated above; the
-    // DP that prices the bridges with w_comm lives in the ShardedAllocator)
+    // DP that prices the bridges with w_comm lives in the ShardingAllocator)
     // ---------------------------------------------------------------------
     double w_comp() const;
     double sharded_comp() const;
@@ -1443,7 +1443,7 @@ private:
     // ---------------------------------------------------------------------
     // State
     // ---------------------------------------------------------------------
-    Engine& parent_;                     // creates the ggml tensors (context)
+    Runtime& parent_;                     // creates the ggml tensors (context)
     size_t n_devices_;                   // from the meta device; sizes the sharded candidates
     double w_comp_;                      // compute of one full (replicated) op
     double w_mem_;                       // per-device storage of a unit tensor
@@ -1490,7 +1490,7 @@ private:
 //
 // The allocation is DEFERRED: a context is registered with nothing
 // allocated until allocate() runs -- which Computation does only after the
-// ShardedAllocator's plan round has committed the split states. That is
+// ShardingAllocator's plan round has committed the split states. That is
 // how the weights get their own buffer (allocated separately from every
 // compute context) while the plan can still choose their split.
 //
@@ -1684,13 +1684,13 @@ private:
 };
 
 // ============================================================================
-// ShardedAllocator -- the sharded version of the Allocator: the planning
+// ShardingAllocator -- the sharded version of the Allocator: the planning
 // state
-// (drafted in src/ggml/ShardedAllocator.hpp)
+// (drafted in src/ggml/ShardingAllocator.hpp)
 //
 // The allocation is WHY we plan: we plan to allocate the tensors optimally
 // across the devices. The allocator OWNS the trace: it constructs the ONE
-// ShardingEngine every context's forward() runs through, so every
+// ShardingRuntime every context's forward() runs through, so every
 // context's graph is one subgraph of the single trace.
 //
 // allocate(outputs) is one allocation round over the graph the outputs
@@ -1725,15 +1725,15 @@ private:
 // replans from scratch.
 // ============================================================================
 
-class ShardedAllocator : public Allocator {
+class ShardingAllocator : public Allocator {
 public:
 
     struct PlanNode {
         int id = 0;
         std::string op_name;
         std::string tensor_name;        // non-empty for params (the callback key)
-        ShardingEngine::Dist produced;
-        ShardingEngine::Dist required;
+        ShardingRuntime::Dist produced;
+        ShardingRuntime::Dist required;
         std::string bridge;                 // collective between produced and required
         double bridge_cost = 0.0;
     };
@@ -1744,7 +1744,7 @@ public:
         bool infeasible = false;
         std::string infeasible_reason;
         std::vector<PlanNode> nodes;        // DFS preorder; printed in reverse = execution order
-        std::map<int, ShardingEngine::Dist> callback_dists; // param node id -> storage distribution
+        std::map<int, ShardingRuntime::Dist> callback_dists; // param node id -> storage distribution
         // The plan -> GGML tensor split mapping: for every statically allocated
         // tensor, the split state a ggml_backend_meta_get_split_state_t callback
         // must return, keyed by tensor name. Compute tensors need no entry: the
@@ -1775,17 +1775,17 @@ public:
     };
 
     // `parent` creates every ggml tensor in the contexts; the allocator
-    // constructs the ONE ShardingEngine over it -- the trace every forward
-    // runs through (Scope over allocator.engine()). `device` is the shared
+    // constructs the ONE ShardingRuntime over it -- the trace every forward
+    // runs through (Scope over allocator.runtime()). `device` is the shared
     // resource this allocator commits its plans to: the global split table
     // (plus the device count). `w_comp`/`w_mem` shape the candidates the
     // engine generates; `w_comm` prices the P -> R bridge (see the cost
     // model in the file header).
-    ShardedAllocator(Engine& parent, MetaDevice& device, double w_comp, double w_mem, double w_comm)
-        : device_(device), w_comm_(w_comm), engine_(parent, device, w_comp, w_mem) {}
+    ShardingAllocator(Runtime& parent, MetaDevice& device, double w_comp, double w_mem, double w_comm)
+        : device_(device), w_comm_(w_comm), runtime_(parent, device, w_comp, w_mem) {}
 
     // The engine every forward runs through: the trace the allocator plans.
-    ShardingEngine& engine() { return engine_; }
+    ShardingRuntime& runtime() { return runtime_; }
 
     // The communication cost of the next plan round (a re-plan with a
     // changed cost model).
@@ -1823,14 +1823,14 @@ public:
 
     // The committed parameter splits of the last plan round: one entry per
     // shared parameter, spanning every output that consumes it.
-    const std::map<const ggml_tensor*, ShardingEngine::Dist>& decisions() const { return decisions_; }
+    const std::map<const ggml_tensor*, ShardingRuntime::Dist>& decisions() const { return decisions_; }
 
     const MetaDevice& device() const { return device_; }
 
 private:
     struct Goal {
         int root;
-        ShardingEngine::Dist required;
+        ShardingRuntime::Dist required;
     };
 
     struct Bridge {
@@ -1841,16 +1841,16 @@ private:
     // F(node, d): node produces exactly d.
     struct ExactState {
         bool done = false;
-        double cost = ShardingEngine::kInf;
+        double cost = ShardingRuntime::kInf;
         int cand = -1;
-        std::vector<ShardingEngine::Dist> in_dists;
+        std::vector<ShardingRuntime::Dist> in_dists;
     };
 
     // G(node, d): node satisfies d (produces some d' and bridges d' -> d).
     struct BestState {
         bool done = false;
-        double cost = ShardingEngine::kInf;
-        ShardingEngine::Dist produced;
+        double cost = ShardingRuntime::kInf;
+        ShardingRuntime::Dist produced;
     };
 
     // The collective needed to turn a tensor in `from` into the distribution
@@ -1860,11 +1860,11 @@ private:
     // infeasible. A sharded tensor is consumed sharded through the per-op
     // rules; a full tensor is (re-)produced by a row-parallel mul_mat +
     // the implicit AllReduce.
-    Bridge bridge(const ShardingEngine::Dist& from, const ShardingEngine::Dist& to) const {
+    Bridge bridge(const ShardingRuntime::Dist& from, const ShardingRuntime::Dist& to) const {
         if (from == to) return {"None", 0.0};
-        if (from.type == ShardingEngine::Dist::Type::P && to.type == ShardingEngine::Dist::Type::R)
+        if (from.type == ShardingRuntime::Dist::Type::P && to.type == ShardingRuntime::Dist::Type::R)
             return {"AllReduce", 0.5 * w_comm_ * comm_factor()};
-        return {"Infeasible", ShardingEngine::kInf};
+        return {"Infeasible", ShardingRuntime::kInf};
     }
 
     double comm_factor() const { return (device_.count() - 1.0) / (double)device_.count(); }
@@ -1883,13 +1883,13 @@ private:
     //         multiples of ggml_blck_size (the meta GGML_ASSERTs it)
     // P is never materialized: the callback is only called for static
     // tensors, and a static tensor is never PARTIAL.
-    ggml_backend_meta_split_state materialize(const ShardingEngine::Dist& d, const int64_t ne[4], ggml_type type) const {
+    ggml_backend_meta_split_state materialize(const ShardingRuntime::Dist& d, const int64_t ne[4], ggml_type type) const {
         ggml_backend_meta_split_state st;
         std::memset(&st, 0, sizeof(st));
         st.axis = d.to_split_axis();
         st.nr[0] = 1;
         st.n_segments = 1;
-        if (d.type == ShardingEngine::Dist::Type::S) {
+        if (d.type == ShardingRuntime::Dist::Type::S) {
             const int64_t gran = d.axis == 0 ? ggml_blck_size(type) : 1;
             int64_t low = 0;
             const int n = (int)device_.count();
@@ -1905,7 +1905,7 @@ private:
     }
 
     std::string param_name(int id) const {
-        const char* n = engine_.raw_of()[id]->name;
+        const char* n = runtime_.raw_of()[id]->name;
         return n[0] ? n : ("node" + std::to_string(id));
     }
 
@@ -1924,32 +1924,32 @@ private:
     // the first output to plan it.
     //
     // F(node, d): node produces exactly d.
-    ExactState& exact(int node, const ShardingEngine::Dist& d) {
+    ExactState& exact(int node, const ShardingRuntime::Dist& d) {
         auto& m = exact_memo_[node][d];
         if (m.done) return m;
         m.done = true;
 
-        const ShardingEngine::TraceNode& n = engine_.nodes()[node];
+        const ShardingRuntime::TraceNode& n = runtime_.nodes()[node];
         // A parameter whose split is already committed (planned by an
         // earlier output in this plan round) must keep it: the meta
         // backend derives one state per tensor, shared by every output
         // that consumes it.
         if (n.is_param) {
-            const auto c = decisions_.find(engine_.raw_of()[node]);
+            const auto c = decisions_.find(runtime_.raw_of()[node]);
             if (c != decisions_.end() && c->second != d)
                 return m;   // infeasible state (cost stays kInf)
         }
         for (int c = 0; c < (int)n.candidates.size(); ++c) {
-            const ShardingEngine::Candidate& cand = n.candidates[c];
+            const ShardingRuntime::Candidate& cand = n.candidates[c];
             if (cand.output != d) continue;
 
             double cost = cand.comp_cost;
             bool ok = true;
-            std::vector<ShardingEngine::Dist> ins;
+            std::vector<ShardingRuntime::Dist> ins;
             ins.reserve(cand.inputs.size());
             for (size_t i = 0; i < cand.inputs.size(); ++i) {
                 const double in_cost = best(n.inputs[i], cand.inputs[i]).cost;
-                if (in_cost >= ShardingEngine::kInf / 2) { ok = false; break; }
+                if (in_cost >= ShardingRuntime::kInf / 2) { ok = false; break; }
                 cost += in_cost;
                 ins.push_back(cand.inputs[i]);
             }
@@ -1960,20 +1960,20 @@ private:
     }
 
     // G(node, d): node satisfies d -- produce some producible d', then bridge.
-    BestState& best(int node, const ShardingEngine::Dist& d) {
+    BestState& best(int node, const ShardingRuntime::Dist& d) {
         auto& m = best_memo_[node][d];
         if (m.done) return m;
         m.done = true;
 
-        std::set<ShardingEngine::Dist> producible;
-        for (const ShardingEngine::Candidate& cand : engine_.nodes()[node].candidates)
+        std::set<ShardingRuntime::Dist> producible;
+        for (const ShardingRuntime::Candidate& cand : runtime_.nodes()[node].candidates)
             producible.insert(cand.output);
 
-        for (const ShardingEngine::Dist& p : producible) {
+        for (const ShardingRuntime::Dist& p : producible) {
             const double exact_cost = exact(node, p).cost;
-            if (exact_cost >= ShardingEngine::kInf / 2) continue;
+            if (exact_cost >= ShardingRuntime::kInf / 2) continue;
             const Bridge b = bridge(p, d);
-            if (b.cost >= ShardingEngine::kInf / 2) continue;
+            if (b.cost >= ShardingRuntime::kInf / 2) continue;
             const double total = exact_cost + b.cost;
             if (total < m.cost)
                 m = {true, total, p};
@@ -1981,7 +1981,7 @@ private:
         return m;
     }
 
-    void emit(int node, const ShardingEngine::Dist& required, Plan& plan, std::set<std::pair<int, ShardingEngine::Dist>>& emitted) {
+    void emit(int node, const ShardingRuntime::Dist& required, Plan& plan, std::set<std::pair<int, ShardingRuntime::Dist>>& emitted) {
         // A tensor consumed several times (even by different outputs) in
         // the same distribution is planned once. A parameter can never be
         // emitted in two distributions (the earlier outputs' commits
@@ -1995,8 +1995,8 @@ private:
 
         PlanNode pn;
         pn.id = node;
-        pn.op_name = engine_.nodes()[node].op_name;
-        pn.tensor_name = engine_.nodes()[node].is_param ? param_name(node) : "";
+        pn.op_name = runtime_.nodes()[node].op_name;
+        pn.tensor_name = runtime_.nodes()[node].is_param ? param_name(node) : "";
         pn.produced = b.produced;
         pn.required = required;
         pn.bridge = std::move(br.name);
@@ -2005,15 +2005,15 @@ private:
 
         const ExactState& e = exact(node, b.produced);
         if (e.cand < 0) return;
-        const ShardingEngine::Candidate& cand = engine_.nodes()[node].candidates[e.cand];
-        const ShardingEngine::TraceNode& n = engine_.nodes()[node];
+        const ShardingRuntime::Candidate& cand = runtime_.nodes()[node].candidates[e.cand];
+        const ShardingRuntime::TraceNode& n = runtime_.nodes()[node];
         for (size_t i = 0; i < cand.inputs.size(); ++i)
             emit(n.inputs[i], cand.inputs[i], plan, emitted);
     }
 
-    std::string infeasibility_reason(const ShardingEngine::Dist& required) const {
+    std::string infeasibility_reason(const ShardingRuntime::Dist& required) const {
         std::string r;
-        for (const ShardingEngine::TraceNode& n : engine_.nodes()) {
+        for (const ShardingRuntime::TraceNode& n : runtime_.nodes()) {
             if (n.is_fixed || !n.candidates.empty()) continue;
             if (!r.empty()) r += "; ";
             r += n.op_name + " (node " + std::to_string(n.id) + ") is not supported by the meta backend (no split-state rule)";
@@ -2035,9 +2035,9 @@ private:
     MetaDevice& device_;                 // the shared split-state table + device count
     double w_comm_;
 
-    // The single trace of everything: one ShardingEngine traced every
+    // The single trace of everything: one ShardingRuntime traced every
     // context's forward (topological order), owned by the allocator.
-    ShardingEngine engine_;
+    ShardingRuntime runtime_;
 
     // The roots of the last committed plan: allocate() plans only when
     // the outputs differ from these -- a new graph, or a fresh trace
@@ -2045,28 +2045,28 @@ private:
     // skip the DP.
     std::vector<ggml_tensor*> planned_outputs_;
 
-    std::map<const ggml_tensor*, ShardingEngine::Dist> decisions_;   // committed param splits, accumulated as the round plans the outputs
+    std::map<const ggml_tensor*, ShardingRuntime::Dist> decisions_;   // committed param splits, accumulated as the round plans the outputs
 
-    std::map<int, std::map<ShardingEngine::Dist, ExactState>> exact_memo_;
-    std::map<int, std::map<ShardingEngine::Dist, BestState>> best_memo_;
+    std::map<int, std::map<ShardingRuntime::Dist, ExactState>> exact_memo_;
+    std::map<int, std::map<ShardingRuntime::Dist, BestState>> best_memo_;
 
     Plan last_plan_;
 };
 
-void ShardedAllocator::forget(const Context& context) {
+void ShardingAllocator::forget(const Context& context) {
     unuse(context);         // free the context's buffers
-    engine_.reset();        // the trace spanned the context; its tensors go away
+    runtime_.reset();        // the trace spanned the context; its tensors go away
     planned_outputs_.clear();   // the plan is invalid (a re-plan re-traces the live contexts)
     decisions_.clear();
 }
 
-void ShardedAllocator::allocate(const std::vector<ggml_tensor*>& outputs) {
+void ShardingAllocator::allocate(const std::vector<ggml_tensor*>& outputs) {
     // Plan the output-tensor graph exactly once: the first round for this
     // output set runs the DP and commits the splits; a changed output set
     // (a different graph) replans; the same outputs (the same graph
     // computed again) skip the DP -- the committed plan already covers
     // them.
-    if (!outputs.empty() && !engine_.nodes().empty() && outputs != planned_outputs_) {
+    if (!outputs.empty() && !runtime_.nodes().empty() && outputs != planned_outputs_) {
         planned_outputs_ = outputs;
         last_plan_ = plan_round(outputs);
     }
@@ -2077,16 +2077,16 @@ void ShardedAllocator::allocate(const std::vector<ggml_tensor*>& outputs) {
     Allocator::allocate(outputs);
 }
 
-ShardedAllocator::Plan ShardedAllocator::plan_round(const std::vector<ggml_tensor*>& outputs) {
+ShardingAllocator::Plan ShardingAllocator::plan_round(const std::vector<ggml_tensor*>& outputs) {
     decisions_.clear();
 
     Plan plan;
-    if (engine_.nodes().empty() || outputs.empty())
+    if (runtime_.nodes().empty() || outputs.empty())
         return plan;
 
     plan.device_count = device_.count();
-    const std::vector<ShardingEngine::TraceNode>& nodes = engine_.nodes();
-    const std::vector<ggml_tensor*>& raw = engine_.raw_of();
+    const std::vector<ShardingRuntime::TraceNode>& nodes = runtime_.nodes();
+    const std::vector<ggml_tensor*>& raw = runtime_.raw_of();
 
     // One goal per output, in graph order: the output's trace node must
     // end in R (the final result is usable on every device). Each
@@ -2096,13 +2096,13 @@ ShardedAllocator::Plan ShardedAllocator::plan_round(const std::vector<ggml_tenso
     // parameter decides its split for all of them, and the later outputs
     // adapt to it. The DP is strictly acyclic (topological order), so the
     // memoized recursion terminates.
-    std::set<std::pair<int, ShardingEngine::Dist>> emitted;
+    std::set<std::pair<int, ShardingRuntime::Dist>> emitted;
     for (ggml_tensor* root : outputs) {
-        const Goal g = {engine_.id_of(root), ShardingEngine::Dist::replicated()};
+        const Goal g = {runtime_.id_of(root), ShardingRuntime::Dist::replicated()};
         exact_memo_.clear();
         best_memo_.clear();
         const double total = best(g.root, g.required).cost;
-        if (total >= ShardingEngine::kInf / 2) {
+        if (total >= ShardingRuntime::kInf / 2) {
             plan.infeasible = true;
             plan.infeasible_reason = infeasibility_reason(g.required);
             return plan;
@@ -2125,7 +2125,7 @@ ShardedAllocator::Plan ShardedAllocator::plan_round(const std::vector<ggml_tenso
     // tensor consumed in two different distributions cannot be planned
     // (one static storage layout / one compute layout per tensor) --
     // across outputs as well as within one.
-    std::map<int, ShardingEngine::Dist> single_state;
+    std::map<int, ShardingRuntime::Dist> single_state;
     for (const PlanNode& pn : plan.nodes) {
         auto [it, inserted] = single_state.insert({pn.id, pn.produced});
         if (!inserted && it->second != pn.produced) {
@@ -2157,7 +2157,7 @@ ShardedAllocator::Plan ShardedAllocator::plan_round(const std::vector<ggml_tenso
     // insert the new states. An infeasible plan (early return above)
     // leaves the previous entries in place, so the allocation stays valid
     // for the last good plan.
-    for (const ShardingEngine::TraceNode& n : nodes)
+    for (const ShardingRuntime::TraceNode& n : nodes)
         if (n.is_param)
             device_.splits().erase(raw[n.id]);
 
@@ -2170,7 +2170,7 @@ ShardedAllocator::Plan ShardedAllocator::plan_round(const std::vector<ggml_tenso
     return plan;
 }
 
-bool ShardedAllocator::verify(const Plan& plan, std::string& error) const {
+bool ShardingAllocator::verify(const Plan& plan, std::string& error) const {
     if (plan.infeasible) {
         error = plan.infeasible_reason;
         return false;
@@ -2182,17 +2182,17 @@ bool ShardedAllocator::verify(const Plan& plan, std::string& error) const {
     // then compare against the planned states. The rules are exactly the
     // node candidates, so a mismatch means the DP/emit drifted from what
     // the meta device will actually derive.
-    std::map<int, ShardingEngine::Dist> planned;
+    std::map<int, ShardingRuntime::Dist> planned;
     for (const PlanNode& pn : plan.nodes)
         planned[pn.id] = pn.produced;
 
-    const std::vector<ShardingEngine::TraceNode>& nodes = engine_.nodes();
-    std::vector<ShardingEngine::Dist> visible(nodes.size());
+    const std::vector<ShardingRuntime::TraceNode>& nodes = runtime_.nodes();
+    std::vector<ShardingRuntime::Dist> visible(nodes.size());
     for (int id = 0; id < (int)nodes.size(); ++id) {
-        const ShardingEngine::TraceNode& n = nodes[id];
-        ShardingEngine::Dist d;
+        const ShardingRuntime::TraceNode& n = nodes[id];
+        ShardingRuntime::Dist d;
         if (n.is_fixed) {
-            d = ShardingEngine::Dist::replicated();   // compute buffer, GGML_OP_NONE
+            d = ShardingRuntime::Dist::replicated();   // compute buffer, GGML_OP_NONE
         } else if (n.is_param) {
             const auto it = plan.callback_dists.find(id);
             if (it == plan.callback_dists.end()) {
@@ -2202,14 +2202,14 @@ bool ShardedAllocator::verify(const Plan& plan, std::string& error) const {
             }
             d = it->second;
         } else {
-            std::vector<ShardingEngine::Dist> in_states;
+            std::vector<ShardingRuntime::Dist> in_states;
             in_states.reserve(n.inputs.size());
             for (const int in : n.inputs)
                 in_states.push_back(visible[in]);
 
-            const ShardingEngine::Candidate* match = nullptr;
+            const ShardingRuntime::Candidate* match = nullptr;
             int count = 0;
-            for (const ShardingEngine::Candidate& c : n.candidates) {
+            for (const ShardingRuntime::Candidate& c : n.candidates) {
                 if (c.inputs == in_states) {
                     match = &c;
                     ++count;
@@ -2243,24 +2243,24 @@ bool ShardedAllocator::verify(const Plan& plan, std::string& error) const {
         // source states with assume_sync = true, and the row-parallel
         // mul_mat returns MIRRORED in that mode (the AllReduce happens at
         // the subgraph boundary, before the consumer).
-        visible[id] = (d.type == ShardingEngine::Dist::Type::P) ? ShardingEngine::Dist::replicated() : d;
+        visible[id] = (d.type == ShardingRuntime::Dist::Type::P) ? ShardingRuntime::Dist::replicated() : d;
     }
     return true;
 }
 
-std::string ShardedAllocator::dump_trace() const {
+std::string ShardingAllocator::dump_trace() const {
     std::ostringstream ss;
-    for (const ShardingEngine::TraceNode& n : engine_.nodes()) {
+    for (const ShardingRuntime::TraceNode& n : runtime_.nodes()) {
         ss << "  [" << n.id << "] " << n.op_name;
         if (n.is_fixed) ss << " (fixed R)";
-        if (n.is_param) ss << " " << (engine_.raw_of()[n.id]->name[0] ? engine_.raw_of()[n.id]->name : "?");
+        if (n.is_param) ss << " " << (runtime_.raw_of()[n.id]->name[0] ? runtime_.raw_of()[n.id]->name : "?");
         ss << " ne={" << n.ne[0];
         for (int i = 1; i < n.rank; ++i) ss << ", " << n.ne[i];
         ss << "} in={";
         for (size_t i = 0; i < n.inputs.size(); ++i)
             ss << (i ? ", " : "") << n.inputs[i];
         ss << "} candidates:";
-        for (const ShardingEngine::Candidate& c : n.candidates)
+        for (const ShardingRuntime::Candidate& c : n.candidates)
             ss << " " << c.output.to_string();
         if (n.candidates.empty())
             ss << " (none -- unsupported by the meta backend)";
@@ -2269,13 +2269,13 @@ std::string ShardedAllocator::dump_trace() const {
     return ss.str();
 }
 
-// ShardingEngine candidate generation: exactly the states the meta backend
+// ShardingRuntime candidate generation: exactly the states the meta backend
 // accepts (see the per-op rules in the file header), priced with the
 // weights the engine was constructed with.
-double ShardingEngine::w_comp() const { return w_comp_; }
-double ShardingEngine::sharded_comp() const { return w_comp_ / (double)n_devices_; }
+double ShardingRuntime::w_comp() const { return w_comp_; }
+double ShardingRuntime::sharded_comp() const { return w_comp_ / (double)n_devices_; }
 
-std::vector<ShardingEngine::Candidate> ShardingEngine::param_candidates(int rank) const {
+std::vector<ShardingRuntime::Candidate> ShardingRuntime::param_candidates(int rank) const {
     std::vector<Candidate> cands;
     cands.push_back({Dist::replicated(), {}, (double)n_devices_ * w_mem_});   // full replica on every device
     for (int a = 0; a < rank; ++a)
@@ -2283,7 +2283,7 @@ std::vector<ShardingEngine::Candidate> ShardingEngine::param_candidates(int rank
     return cands;
 }
 
-std::vector<ShardingEngine::Candidate> ShardingEngine::carry_over_candidates(int rank, double cost) const {
+std::vector<ShardingRuntime::Candidate> ShardingRuntime::carry_over_candidates(int rank, double cost) const {
     std::vector<Candidate> cands;
     cands.push_back({Dist::replicated(), {Dist::replicated()}, cost});
     for (int a = 0; a < rank; ++a)
@@ -2291,7 +2291,7 @@ std::vector<ShardingEngine::Candidate> ShardingEngine::carry_over_candidates(int
     return cands;
 }
 
-std::vector<ShardingEngine::Candidate> ShardingEngine::binary_candidates(const TraceNode& lhs, const TraceNode& rhs, int out_rank) const {
+std::vector<ShardingRuntime::Candidate> ShardingRuntime::binary_candidates(const TraceNode& lhs, const TraceNode& rhs, int out_rank) const {
     std::vector<Candidate> cands;
     cands.push_back({Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp_});
     for (int a = 0; a < out_rank && a < lhs.rank; ++a) {
@@ -2305,7 +2305,7 @@ std::vector<ShardingEngine::Candidate> ShardingEngine::binary_candidates(const T
     return cands;
 }
 
-std::vector<ShardingEngine::Candidate> ShardingEngine::mul_mat_candidates(const TraceNode& w, const TraceNode& a) const {
+std::vector<ShardingRuntime::Candidate> ShardingRuntime::mul_mat_candidates(const TraceNode& w, const TraceNode& a) const {
     std::vector<Candidate> cands;
     cands.push_back({Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp_});
     if (w.rank >= 2)
@@ -2320,38 +2320,38 @@ std::vector<ShardingEngine::Candidate> ShardingEngine::mul_mat_candidates(const 
 // Same RAII / static-access pattern as src/ggml/Scope.hpp.
 class Scope {
 public:
-    Scope(Context& context, Engine& engine)
-        : previous_context_(current_context_), previous_engine_(current_engine_)
+    Scope(Context& context, Runtime& runtime)
+        : previous_context_(current_context_), previous_runtime_(current_runtime_)
     {
         current_context_ = &context;
-        current_engine_ = &engine;
+        current_runtime_ = &runtime;
     }
     Scope(const Scope& other)
-        : previous_context_(current_context_), previous_engine_(current_engine_)
+        : previous_context_(current_context_), previous_runtime_(current_runtime_)
     {
         current_context_ = other.current_context_;
-        current_engine_ = other.current_engine_;
+        current_runtime_ = other.current_runtime_;
     }
     ~Scope() {
         current_context_ = previous_context_;
-        current_engine_ = previous_engine_;
+        current_runtime_ = previous_runtime_;
     }
 
     static Context& context() { return *current_context_; }
-    static Engine& engine() { return *current_engine_; }
+    static Runtime& runtime() { return *current_runtime_; }
 
 private:
     inline static thread_local Context* current_context_ = nullptr;
-    inline static thread_local Engine* current_engine_ = nullptr;
+    inline static thread_local Runtime* current_runtime_ = nullptr;
     Context* previous_context_ = nullptr;
-    Engine* previous_engine_ = nullptr;
+    Runtime* previous_runtime_ = nullptr;
 };
 
-// Stand-in for src/ggml/ExecutionEngine: creates every tensor in the
+// Stand-in for src/ggml/ExecutionRuntime: creates every tensor in the
 // scoped context (the real one calls the ggml_* constructors there). The
-// planner -- and, at runtime, the real ExecutionEngine -- is driven through
-// the Engine interface; the parent engine owns the ggml tensors.
-class ContextEngine : public Engine {
+// planner -- and, at runtime, the real ExecutionRuntime -- is driven through
+// the Runtime interface; the parent engine owns the ggml tensors.
+class ContextRuntime : public Runtime {
 public:
     ggml_tensor* new_tensor(ggml_type type, int n_dims, const int64_t* ne) override {
         ggml_tensor* t = (*Scope::context())->create();
@@ -2604,9 +2604,9 @@ public:
     // the compute buffer as MIRRORED / GGML_OP_NONE).
     static Tensor empty(Context& context, const Shape& shape, ggml_type type) {
         auto tensor = shape.rank() == 0
-            ? Tensor(Scope::engine().new_tensor_1d(type, 1), shape, type)
-            : Tensor(Scope::engine().new_tensor(type, (int)shape.rank(), shape.data()), shape, type);
-        Scope::engine().set_input(tensor.t_);
+            ? Tensor(Scope::runtime().new_tensor_1d(type, 1), shape, type)
+            : Tensor(Scope::runtime().new_tensor(type, (int)shape.rank(), shape.data()), shape, type);
+        Scope::runtime().set_input(tensor.t_);
         return tensor;
     }
 
@@ -2619,13 +2619,13 @@ public:
     Tensor to(ggml_type) const { return *this; }
 
     Tensor contiguous() const {
-        return Tensor(Scope::engine().cont(t_), shape_, dtype_, true);
+        return Tensor(Scope::runtime().cont(t_), shape_, dtype_, true);
     }
     Tensor clone() const {
-        return Tensor(Scope::engine().dup(t_), shape_, dtype_, true);
+        return Tensor(Scope::runtime().dup(t_), shape_, dtype_, true);
     }
     Tensor scale(float value) const {
-        return Tensor(Scope::engine().scale(t_, value), shape_, dtype_, true);
+        return Tensor(Scope::runtime().scale(t_, value), shape_, dtype_, true);
     }
 
     // Mirrors the project: ggml_clamp is in-place, so the project clones
@@ -2634,7 +2634,7 @@ public:
     // the engine's clamp() directly (see the ReLU demo below).
     Tensor clamp(float a, float b) const {
         auto cloned = clone();
-        return Tensor(Scope::engine().clamp(cloned.t_, a, b), cloned.shape_, dtype_, true);
+        return Tensor(Scope::runtime().clamp(cloned.t_, a, b), cloned.shape_, dtype_, true);
     }
 
     Tensor operator+(Tensor rhs) const {
@@ -2645,16 +2645,16 @@ public:
         // first (the first must already be a broadcast superset). Addition
         // is commutative, so use the argument order that lets ggml broadcast.
         if (Shape::broadcasts(lhs.shape_, rhs.shape_))
-            return Tensor(Scope::engine().add(lhs.t_, rhs.t_), target, dtype_, true);
+            return Tensor(Scope::runtime().add(lhs.t_, rhs.t_), target, dtype_, true);
 
         if (Shape::broadcasts(rhs.shape_, lhs.shape_))
-            return Tensor(Scope::engine().add(rhs.t_, lhs.t_), target, dtype_, true);
+            return Tensor(Scope::runtime().add(rhs.t_, lhs.t_), target, dtype_, true);
 
         // Neither shape is a superset of the other: fall back to explicit
         // expansion (the project does the same).
         lhs = lhs.expand(target);
         rhs = rhs.expand(target);
-        return Tensor(Scope::engine().add(lhs.t_, rhs.t_), target, dtype_, true);
+        return Tensor(Scope::runtime().add(lhs.t_, rhs.t_), target, dtype_, true);
     }
 
     Tensor operator*(Tensor rhs) const {
@@ -2662,14 +2662,14 @@ public:
         auto target = Shape::broadcast(lhs.shape_, rhs.shape_);
 
         if (Shape::broadcasts(lhs.shape_, rhs.shape_))
-            return Tensor(Scope::engine().mul(lhs.t_, rhs.t_), target, dtype_, true);
+            return Tensor(Scope::runtime().mul(lhs.t_, rhs.t_), target, dtype_, true);
 
         if (Shape::broadcasts(rhs.shape_, lhs.shape_))
-            return Tensor(Scope::engine().mul(rhs.t_, lhs.t_), target, dtype_, true);
+            return Tensor(Scope::runtime().mul(rhs.t_, lhs.t_), target, dtype_, true);
 
         lhs = lhs.expand(target);
         rhs = rhs.expand(target);
-        return Tensor(Scope::engine().mul(lhs.t_, rhs.t_), target, dtype_, true);
+        return Tensor(Scope::runtime().mul(lhs.t_, rhs.t_), target, dtype_, true);
     }
 
     // Mirrors the project's reshape: infer -1, materialize non-contiguous
@@ -2702,11 +2702,11 @@ public:
             src = src.contiguous();
 
         switch (out.rank()) {
-            case 0: return Tensor(Scope::engine().reshape_1d(src.t_, 1), out, dtype_, true);
-            case 1: return Tensor(Scope::engine().reshape_1d(src.t_, out.data()[0]), out, dtype_, true);
-            case 2: return Tensor(Scope::engine().reshape_2d(src.t_, out.data()[0], out.data()[1]), out, dtype_, true);
-            case 3: return Tensor(Scope::engine().reshape_3d(src.t_, out.data()[0], out.data()[1], out.data()[2]), out, dtype_, true);
-            case 4: return Tensor(Scope::engine().reshape_4d(src.t_, out.data()[0], out.data()[1], out.data()[2], out.data()[3]), out, dtype_, true);
+            case 0: return Tensor(Scope::runtime().reshape_1d(src.t_, 1), out, dtype_, true);
+            case 1: return Tensor(Scope::runtime().reshape_1d(src.t_, out.data()[0]), out, dtype_, true);
+            case 2: return Tensor(Scope::runtime().reshape_2d(src.t_, out.data()[0], out.data()[1]), out, dtype_, true);
+            case 3: return Tensor(Scope::runtime().reshape_3d(src.t_, out.data()[0], out.data()[1], out.data()[2]), out, dtype_, true);
+            case 4: return Tensor(Scope::runtime().reshape_4d(src.t_, out.data()[0], out.data()[1], out.data()[2], out.data()[3]), out, dtype_, true);
         }
         throw std::invalid_argument("reshape(): unsupported rank");
     }
@@ -2762,7 +2762,7 @@ public:
             out[i] = shape_[i] * repeats[i];
 
         auto target = empty(Scope::context(), out, dtype());
-        return Tensor(Scope::engine().repeat(t_, *target), out, dtype_, true);
+        return Tensor(Scope::runtime().repeat(t_, *target), out, dtype_, true);
     }
 
     ggml_tensor* t_ = nullptr;
@@ -2822,7 +2822,7 @@ std::string Tensor::Shape::to_string() const {
 // Mirrors src/ggml/Graph.hpp: the output tensors of the forward(s) the
 // computation runs -- a vector of outputs, exposed by outputs(). The real
 // Graph also owns the ggml graph and the scheduler; in the PoC the trace
-// lives in the ShardingEngine the forwards ran under (the allocator owns
+// lives in the ShardingRuntime the forwards ran under (the allocator owns
 // it), so the Graph carries just the outputs -- what Computation passes
 // to allocate() as the planner's goals (one DP goal per output).
 class Graph {
@@ -2918,7 +2918,7 @@ public:
     // tensor is created by a loader (visitor) and marked as a param when it
     // enters the graph.
     Tensor forward(Scope scope) {
-        scope.engine().set_param(*tensor_);
+        scope.runtime().set_param(*tensor_);
         return tensor_;
     }
 
@@ -2944,11 +2944,11 @@ public:
         // Mirrors the project's nn/Linear::forward (src/nn/Linear.cpp).
         auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward(scope);
 
-        auto y = scope.engine().mul_mat(*weight, *x);
+        auto y = scope.runtime().mul_mat(*weight, *x);
 
         if (modules.count("bias")) {
             auto bias = std::static_pointer_cast<Parameter>(modules["bias"])->forward(scope);
-            y = scope.engine().add(y, *bias);
+            y = scope.runtime().add(y, *bias);
         }
 
         Tensor::Shape shape = x.shape();
@@ -2965,7 +2965,7 @@ public:
     // Tensor::clamp() clones first, so the sharding-friendly path calls
     // the engine's clamp() directly.
     Tensor forward(Scope scope, Tensor x) {
-        return Tensor(scope.engine().clamp(*x, 0.0f, std::numeric_limits<float>::infinity()), x.shape());
+        return Tensor(scope.runtime().clamp(*x, 0.0f, std::numeric_limits<float>::infinity()), x.shape());
     }
 };
 
@@ -2976,7 +2976,7 @@ public:
     // UNARY carry the state over) -- ggml_silu (GGML_OP_SILU) has no
     // split-state rule there.
     Tensor forward(Scope scope, Tensor x) {
-        return x * Tensor(scope.engine().sigmoid(*x), x.shape());
+        return x * Tensor(scope.runtime().sigmoid(*x), x.shape());
     }
 };
 
@@ -3022,7 +3022,7 @@ public:
     }
 
     Tensor forward(Scope scope, Tensor x) {
-        auto& e = scope.engine();
+        auto& e = scope.runtime();
         const int64_t seq = x.shape()[1];
         const int64_t batch = x.shape()[2];
         const int64_t head_dim = head_dim_;
@@ -3085,7 +3085,7 @@ public:
     }
 
     Tensor forward(Scope scope, Tensor x) {
-        auto& e = scope.engine();
+        auto& e = scope.runtime();
         auto w1 = std::static_pointer_cast<Parameter>(modules["w1"])->forward(scope);
         auto w2 = std::static_pointer_cast<Parameter>(modules["w2"])->forward(scope);
 
@@ -3122,7 +3122,7 @@ public:
 
     Tensor forward(Scope scope, Tensor x) {
         // x: PyTorch (batch, channels, height, width) == GGML {w, h, c, n}
-        auto& e = scope.engine();
+        auto& e = scope.runtime();
         auto w = std::static_pointer_cast<Parameter>(modules["w_conv"])->forward(scope);
         const int64_t batch = x.shape()[0], h = x.shape()[2], wdt = x.shape()[3];
 
@@ -3143,7 +3143,7 @@ private:
 // weights live in a persistent weights context and are consumed by TWO
 // separate compute contexts (one per head) -- the scenario where two
 // separately traced contexts refer to the same parameter. The ONE
-// ShardingEngine that traces both contexts keeps the trunk's weights as
+// ShardingRuntime that traces both contexts keeps the trunk's weights as
 // ONE trace node, and the allocator plans them exactly once, for both
 // outputs.
 class SharedTrunk : public Module {
@@ -3184,7 +3184,7 @@ public:
             name += (i ? "." : "") + path[i];
 
         Tensor::Shape shape = parameter.shape();
-        Tensor t = Tensor(Scope::engine().new_tensor(kMockType, (int)shape.rank(), shape.data()), shape);
+        Tensor t = Tensor(Scope::runtime().new_tensor(kMockType, (int)shape.rank(), shape.data()), shape);
         ggml_set_name(t.t_, name.c_str());
         parameter.set(std::move(t));
     }
@@ -3194,8 +3194,8 @@ public:
 // Demo
 // ============================================================================
 
-void print_callback_table(const ShardedAllocator& allocator) {
-    const ShardedAllocator::Plan& plan = allocator.plan();
+void print_callback_table(const ShardingAllocator& allocator) {
+    const ShardingAllocator::Plan& plan = allocator.plan();
     std::cout << "meta device callback table (ggml_backend_meta_split_state per static tensor):\n";
     for (const auto& [name, st] : plan.callback_states) {
         std::cout << "  " << std::left << std::setw(18) << name << std::right;
@@ -3268,10 +3268,10 @@ int main() {
         // tensor, so the sharding-friendly path skips Tensor::clamp's clone.
         MetaDevice meta(2);
         Context context;
-        ContextEngine parent;
-        ShardedAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
+        ContextRuntime parent;
+        ShardingAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
         allocator.use(context, meta);
-        Scope scope(context, allocator.engine());
+        Scope scope(context, allocator.runtime());
 
         // Graph input: rank-4 activation, PyTorch shape (2, 3, 4, 8)
         // == GGML ne {8, 4, 3, 2}; created like a pipeline input (a
@@ -3284,6 +3284,7 @@ int main() {
 
         Tensor out = model.forward(scope, x);
 
+        std::cout << "\nDemo 1:\n";
         std::cout << "traced graph:\n" << allocator.dump_trace() << "\n";
 
         // One plan round: the graph's outputs are the DP goals; the
@@ -3293,7 +3294,7 @@ int main() {
         Graph graph({out});
         Computation computation(allocator, graph);
         computation();
-        const ShardedAllocator::Plan& p = allocator.plan();
+        const ShardingAllocator::Plan& p = allocator.plan();
         std::cout << p.to_string();
 
         std::string error;
@@ -3314,10 +3315,10 @@ int main() {
         // clamp version -- and stays sharding-compatible.
         MetaDevice meta(2);
         Context context;
-        ContextEngine parent;
-        ShardedAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
+        ContextRuntime parent;
+        ShardingAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
         allocator.use(context, meta);
-        Scope scope(context, allocator.engine());
+        Scope scope(context, allocator.runtime());
         Tensor x = Tensor::empty(context, Tensor::Shape{2, 3, 4, 8}, kMockType);
 
         MLP<SiLU> model;
@@ -3326,11 +3327,12 @@ int main() {
 
         Tensor out = model.forward(scope, x);
 
-        std::cout << "\n";
+        std::cout << "\nDemo 2:\n";
+        std::cout << "traced graph:\n" << allocator.dump_trace() << "\n";
         Graph graph({out});
         Computation computation(allocator, graph);
         computation();
-        const ShardedAllocator::Plan& p = allocator.plan();
+        const ShardingAllocator::Plan& p = allocator.plan();
         std::cout << p.to_string();
 
         std::string error;
@@ -3353,10 +3355,10 @@ int main() {
         // row-parallel projection: P -> AllReduce -> R.
         MetaDevice meta(2);
         Context context;
-        ContextEngine parent;
-        ShardedAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
+        ContextRuntime parent;
+        ShardingAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
         allocator.use(context, meta);
-        Scope scope(context, allocator.engine());
+        Scope scope(context, allocator.runtime());
 
         // Block input: PyTorch (batch, seq, hidden) == GGML {hidden, seq, batch}.
         Tensor x = Tensor::empty(context, Tensor::Shape{2, 4, 8}, kMockType);
@@ -3372,7 +3374,7 @@ int main() {
         Graph graph({out});
         Computation computation(allocator, graph);
         computation();
-        const ShardedAllocator::Plan& p = allocator.plan();
+        const ShardingAllocator::Plan& p = allocator.plan();
         std::cout << p.to_string();
 
         std::string error;
@@ -3394,10 +3396,10 @@ int main() {
         // (P -> AllReduce -> R).
         MetaDevice meta(2);
         Context context;
-        ContextEngine parent;
-        ShardedAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
+        ContextRuntime parent;
+        ShardingAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
         allocator.use(context, meta);
-        Scope scope(context, allocator.engine());
+        Scope scope(context, allocator.runtime());
         Tensor x = Tensor::empty(context, Tensor::Shape{2, 4, 8}, kMockType);
 
         RopeGetRows model(/*hidden=*/8, /*n_rows=*/6);
@@ -3410,7 +3412,7 @@ int main() {
         Graph graph({out});
         Computation computation(allocator, graph);
         computation();
-        const ShardedAllocator::Plan& p = allocator.plan();
+        const ShardingAllocator::Plan& p = allocator.plan();
         std::cout << p.to_string();
 
         std::string error;
@@ -3432,10 +3434,10 @@ int main() {
         // (and only) outcome.
         MetaDevice meta(2);
         Context context;
-        ContextEngine parent;
-        ShardedAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
+        ContextRuntime parent;
+        ShardingAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
         allocator.use(context, meta);
-        Scope scope(context, allocator.engine());
+        Scope scope(context, allocator.runtime());
 
         // Block input: PyTorch (batch, channels, h, w) == GGML {w, h, c, n}.
         Tensor x = Tensor::empty(context, Tensor::Shape{2, 4, 8, 8}, kMockType);
@@ -3450,7 +3452,7 @@ int main() {
         Graph graph({out});
         Computation computation(allocator, graph);
         computation();
-        const ShardedAllocator::Plan& p = allocator.plan();
+        const ShardingAllocator::Plan& p = allocator.plan();
         std::cout << p.to_string();
 
         std::string error;
@@ -3473,8 +3475,8 @@ int main() {
         // The plan must come out identical to demo 1.
         MetaDevice meta(2);
         Context context;
-        ContextEngine parent;
-        ShardedAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
+        ContextRuntime parent;
+        ShardingAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
         allocator.use(context, meta);
         MLP<ReLU> model;
         {
@@ -3483,7 +3485,7 @@ int main() {
             model.accept(visitor);
         }
 
-        Scope scope(context, allocator.engine());
+        Scope scope(context, allocator.runtime());
         Tensor x = Tensor::empty(context, Tensor::Shape{2, 3, 4, 8}, kMockType);
 
         Tensor out = model.forward(scope, x);
@@ -3493,7 +3495,7 @@ int main() {
         Graph graph({out});
         Computation computation(allocator, graph);
         computation();
-        const ShardedAllocator::Plan& p = allocator.plan();
+        const ShardingAllocator::Plan& p = allocator.plan();
         std::cout << p.to_string();
 
         std::string error;
@@ -3520,16 +3522,16 @@ int main() {
 
         Context context_a;
         Context context_b;
-        ContextEngine parent;   // stateless: the scope picks the context
+        ContextRuntime parent;   // stateless: the scope picks the context
 
-        ShardedAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
+        ShardingAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
         allocator.use(context_a, meta);
         allocator.use(context_b, meta);
 
         // Context A: an MLP (the same graph as demo 1).
         Tensor out_a;
         {
-            Scope scope(context_a, allocator.engine());
+            Scope scope(context_a, allocator.runtime());
             Tensor x = Tensor::empty(context_a, Tensor::Shape{2, 3, 4, 8}, kMockType);
             MLP<ReLU> model_a;
             CreateRandomParametersVisitor visitor;
@@ -3540,7 +3542,7 @@ int main() {
         // Context B: the attention block (the same graph as demo 3).
         Tensor out_b;
         {
-            Scope scope(context_b, allocator.engine());
+            Scope scope(context_b, allocator.runtime());
             Tensor x = Tensor::empty(context_b, Tensor::Shape{2, 4, 8}, kMockType);
             AttentionBlock model_b(/*hidden=*/8, /*heads=*/4);
             CreateRandomParametersVisitor visitor;
@@ -3554,7 +3556,7 @@ int main() {
         std::cout << "\nDemo 7: two contexts, one allocator (one trace, one plan + per-context allocation)\n";
         Computation computation(allocator, graph);
         computation();
-        const ShardedAllocator::Plan& p = allocator.plan();
+        const ShardingAllocator::Plan& p = allocator.plan();
         std::cout << "plan (one trace, two outputs):\n" << p.to_string();
 
         std::string error;
@@ -3589,14 +3591,14 @@ int main() {
         MetaDevice meta(2);
 
         Context weights;
-        ContextEngine parent;
+        ContextRuntime parent;
         MLP<ReLU> model;
         {
             Scope loader_scope(weights, parent);
             CreateRandomParametersVisitor visitor;
             model.accept(visitor);
         }
-        ShardedAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
+        ShardingAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
         allocator.use(weights, meta);
 
         auto run_phase = [&](double w_comm, const char* label) {
@@ -3605,7 +3607,7 @@ int main() {
             allocator.use(compute, meta);
             allocator.set_w_comm(w_comm);
             {
-                Scope scope(compute, allocator.engine());
+                Scope scope(compute, allocator.runtime());
                 Tensor x = Tensor::empty(compute, Tensor::Shape{2, 3, 4, 8}, kMockType);
                 out = model.forward(scope, x);
             }
@@ -3641,7 +3643,7 @@ int main() {
         MetaDevice meta(2);
 
         Context weights;
-        ContextEngine parent;
+        ContextRuntime parent;
         SharedTrunk trunk;
         Head<ReLU> head_a("fc2a");
         Head<SiLU> head_b("fc2b");
@@ -3652,7 +3654,7 @@ int main() {
             head_a.accept(visitor);
             head_b.accept(visitor);
         }
-        ShardedAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
+        ShardingAllocator allocator(parent, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
         allocator.use(weights, meta);
 
         auto run_round = [&](double w_comm, const char* label) {
@@ -3667,13 +3669,13 @@ int main() {
             // trunk is one node in the trace, shared by both outputs.
             Tensor out_a;
             {
-                Scope scope_a(ctx_a, allocator.engine());
+                Scope scope_a(ctx_a, allocator.runtime());
                 Tensor x = Tensor::empty(ctx_a, Tensor::Shape{2, 3, 4, 8}, kMockType);
                 out_a = head_a.forward(scope_a, trunk.forward(scope_a, x));
             }
             Tensor out_b;
             {
-                Scope scope_b(ctx_b, allocator.engine());
+                Scope scope_b(ctx_b, allocator.runtime());
                 Tensor x = Tensor::empty(ctx_b, Tensor::Shape{2, 3, 4, 8}, kMockType);
                 out_b = head_b.forward(scope_b, trunk.forward(scope_b, x));
             }
@@ -3682,7 +3684,7 @@ int main() {
             std::cout << "\nDemo 9 " << label << " (w_comm=" << w_comm << "):\n";
             Computation computation(allocator, graph);
             computation();
-            const ShardedAllocator::Plan& p = allocator.plan();
+            const ShardingAllocator::Plan& p = allocator.plan();
             std::cout << "plan (one trace, two contexts, shared trunk):\n" << p.to_string();
 
             std::string error;

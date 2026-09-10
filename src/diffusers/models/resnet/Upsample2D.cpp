@@ -48,7 +48,7 @@ Tensor Upsample2D::forward(
     // ne3 = batch
     // Result: [B,C,H,W] -> [B,C,2H,2W]
     hidden_states = Tensor(
-        scope.engine().upscale(
+        scope.runtime().upscale(
             *hidden_states,
             2,
             GGML_SCALE_MODE_NEAREST

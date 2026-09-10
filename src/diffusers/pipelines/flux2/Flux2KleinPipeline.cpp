@@ -3,7 +3,6 @@
 #include "nn/Parameter.hpp"
 #include "nn/modules/BatchNorm2d.hpp"
 #include "ggml/GGUFLoaderVisitor.hpp"
-#include "ggml/DeviceAllocator.hpp"
 #include "ggml/Context.hpp"
 #include "ggml/Scheduler.hpp"
 #include "ggml/Computation.hpp"
@@ -615,11 +614,12 @@ Graph Flux2KleinPipeline::make_decode_graph(
 }
 
 std::vector<Image> Flux2KleinPipeline::operator ()(
+    Allocator& allocator,
     Scheduler& scheduler,
+    Context& context,
     Context& vae_context,
     Context& text_encoder_context,
     Context& transformer_context,
-    const Device& device,
     GenerationOptions&& options
 ) {
     if (options.height % vae_.scale_factor() != 0 ||
@@ -644,9 +644,6 @@ std::vector<Image> Flux2KleinPipeline::operator ()(
     auto image_seq_len = static_cast<int64_t>(packed_h) * packed_w;
 
     ProgressBar progress("Generating", 1);
-
-    Context context(836464);
-    DeviceAllocator allocator(context, device);
 
     float timestep, dt;
     size_t num_ref_tokens = 0;
@@ -710,13 +707,11 @@ std::vector<Image> Flux2KleinPipeline::operator ()(
         latents
     ));
 
-    allocator.allocate();
-
     // 3. Generate text embeddings and reference-image embeddings
     {
         progress.push("Preparing", 1 + options.images.size());
 
-        Computation computation(embeddings_graph, {&vae_context, &text_encoder_context}, &progress);
+        Computation computation(allocator, embeddings_graph, {&vae_context, &text_encoder_context}, &progress);
 
         computation();
 
@@ -745,7 +740,7 @@ std::vector<Image> Flux2KleinPipeline::operator ()(
 
         progress.push("Denoising", schedule.size());
 
-        Computation computation(denoise_graph, {&transformer_context}, &progress);
+        Computation computation(allocator, denoise_graph, {&transformer_context}, &progress);
 
         for (const auto& step : schedule) {
             timestep = step.timestep;
@@ -765,7 +760,7 @@ std::vector<Image> Flux2KleinPipeline::operator ()(
     {
         progress.push("Decoding", 1);
 
-        Computation computation(decode_graph, {&vae_context}, &progress);
+        Computation computation(allocator, decode_graph, {&vae_context}, &progress);
 
         auto decoded = computation().results().at(0);
         auto data = context.read<float>(decoded);

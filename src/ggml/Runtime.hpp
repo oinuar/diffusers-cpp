@@ -4,9 +4,9 @@
 #include <cstdint>
 #include <ggml.h>
 
-class Engine {
+class Runtime {
 public:
-    virtual ~Engine() = default;
+    virtual ~Runtime() = default;
 
     // -------------------------------------------------------------------------
     // Tensor creation / initialization

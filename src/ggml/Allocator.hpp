@@ -3,10 +3,11 @@
 #include "ggml/Tensor.hpp"
 #include "ggml/Buffer.hpp"
 #include <ggml-backend.h>
+#include <optional>
 
 class Context;
 class Device;
-class Engine;
+class Runtime;
 
 class Allocator {
 public:
@@ -14,7 +15,7 @@ public:
 
     virtual ~Allocator() = default;
 
-    void use(Context& context, const Device& device, ggml_backend_buffer_usage usage);
+    void use(Context& context, const Device& device, const std::optional<ggml_backend_buffer_usage>& usage = std::nullopt);
 
     void unuse(const Context& context);
 
@@ -22,13 +23,13 @@ public:
 
     virtual void reset();
 
-    virtual Engine& engine();
+    virtual Runtime& runtime();
 
 private:
     struct Usage {
         Context* context;
         const Device* device;
-        ggml_backend_buffer_usage usage;
+        std::optional<ggml_backend_buffer_usage> usage;
     };
 
     std::vector<Usage> usages_;

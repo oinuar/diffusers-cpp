@@ -91,11 +91,12 @@ public:
                        Qwen2TokenizerFast&& tokenizer);
 
     std::vector<Image> operator ()(
+        Allocator& allocator,
         Scheduler& scheduler,
+        Context& context,
         Context& vae_context,
         Context& text_encoder_context,
         Context& transformer_context,
-        const Device& device,
         GenerationOptions&& options);
 
     struct Embeddings {

@@ -67,7 +67,7 @@ Tensor Downsample2D::forward(Scope scope, Tensor hidden_states) {
     
     // TODO: implement AvgPool2D
     else {
-        auto y = scope.engine().pool_2d(
+        auto y = scope.runtime().pool_2d(
             *hidden_states,
             GGML_OP_POOL_AVG,
             2, 2,

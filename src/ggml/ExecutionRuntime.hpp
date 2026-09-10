@@ -1,10 +1,10 @@
 #pragma once
 
-#include "ggml/Engine.hpp"
+#include "ggml/Runtime.hpp"
 
-class ExecutionEngine : public Engine {
+class ExecutionRuntime : public Runtime {
 public:
-    static ExecutionEngine Default;
+    static ExecutionRuntime Default;
 
     // -------------------------------------------------------------------------
     // Tensor creation / initialization

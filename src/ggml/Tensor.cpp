@@ -2,7 +2,7 @@
 #include "ggml/Allocator.hpp"
 #include "ggml/Scope.hpp"
 #include "ggml/Context.hpp"
-#include "ggml/Engine.hpp"
+#include "ggml/Runtime.hpp"
 #include <limits>
 #include <sstream>
 #include <algorithm>
@@ -51,36 +51,36 @@ std::string Tensor::Shape::to_string() const {
 
 Tensor Tensor::contiguous() const {
     throw_if_not_valid();
-    return Tensor(Scope::engine().cont(t_), shape_);
+    return Tensor(Scope::runtime().cont(t_), shape_);
 }
 
 Tensor Tensor::clone() const {
-    return Tensor(Scope::engine().dup(t_), shape_);
+    return Tensor(Scope::runtime().dup(t_), shape_);
 }
 
 Tensor Tensor::input() {
-    Scope::engine().set_input(t_);
+    Scope::runtime().set_input(t_);
     return *this;
 }
 
 Tensor Tensor::scale(float value) const {
-    return Tensor(Scope::engine().scale(t_, value), shape_);
+    return Tensor(Scope::runtime().scale(t_, value), shape_);
 }
 
 Tensor Tensor::full(const Shape& shape, float value) {
     // GGML supports filling only float tensors.
     auto tensor = empty<float>(shape);
-    tensor.t_ = Scope::engine().fill(tensor.t_, value);
+    tensor.t_ = Scope::runtime().fill(tensor.t_, value);
     
     return tensor;
 }
 
 Tensor Tensor::astype(ggml_type type) const {
-    return Tensor(Scope::engine().cast(t_, type), shape_);
+    return Tensor(Scope::runtime().cast(t_, type), shape_);
 }
 
 Tensor Tensor::copy_to(Tensor dest) const {
-    return Tensor(Scope::engine().cpy(t_, *dest), dest.shape_);
+    return Tensor(Scope::runtime().cpy(t_, *dest), dest.shape_);
 }
 
 Tensor Tensor::operator+(Tensor rhs) const {
@@ -96,10 +96,10 @@ Tensor Tensor::operator+(Tensor rhs) const {
     // commutative, so use the argument order that lets ggml broadcast: no
     // expand/repeat nodes needed.
     if (ggml_broadcasts(lhs.shape_, rhs.shape_))
-        return Tensor(Scope::engine().add(lhs.t_, rhs.t_), target);
+        return Tensor(Scope::runtime().add(lhs.t_, rhs.t_), target);
 
     if (ggml_broadcasts(rhs.shape_, lhs.shape_))
-        return Tensor(Scope::engine().add(rhs.t_, lhs.t_), target);
+        return Tensor(Scope::runtime().add(rhs.t_, lhs.t_), target);
 
     // Neither shape is a superset of the other (both operands have
     // singleton dims the other lacks): ggml broadcasts one operand at a
@@ -107,7 +107,7 @@ Tensor Tensor::operator+(Tensor rhs) const {
     lhs = lhs.expand(target);
     rhs = rhs.expand(target);
 
-    return Tensor(Scope::engine().add(lhs.t_, rhs.t_), target);
+    return Tensor(Scope::runtime().add(lhs.t_, rhs.t_), target);
 }
 
 Tensor Tensor::operator-(Tensor rhs) const {
@@ -119,12 +119,12 @@ Tensor Tensor::operator-(Tensor rhs) const {
     rhs = rhs.to(dtype);
 
     if (ggml_broadcasts(lhs.shape_, rhs.shape_))
-        return Tensor(Scope::engine().sub(lhs.t_, rhs.t_), target);
+        return Tensor(Scope::runtime().sub(lhs.t_, rhs.t_), target);
 
     if (ggml_broadcasts(rhs.shape_, lhs.shape_)) {
         // lhs - rhs = -(rhs - lhs) keeps both operands in an order ggml can
         // broadcast natively, without expand/repeat nodes.
-        auto diff = Tensor(Scope::engine().sub(rhs.t_, lhs.t_), target);
+        auto diff = Tensor(Scope::runtime().sub(rhs.t_, lhs.t_), target);
 
         return -diff;
     }
@@ -132,7 +132,7 @@ Tensor Tensor::operator-(Tensor rhs) const {
     lhs = lhs.expand(target);
     rhs = rhs.expand(target);
 
-    return Tensor(Scope::engine().sub(lhs.t_, rhs.t_), target);
+    return Tensor(Scope::runtime().sub(lhs.t_, rhs.t_), target);
 }
 
 Tensor Tensor::operator*(Tensor rhs) const {
@@ -148,10 +148,10 @@ Tensor Tensor::operator*(Tensor rhs) const {
     // commutative, so use the argument order that lets ggml broadcast: no
     // expand/repeat nodes needed.
     if (ggml_broadcasts(lhs.shape_, rhs.shape_))
-        return Tensor(Scope::engine().mul(lhs.t_, rhs.t_), target);
+        return Tensor(Scope::runtime().mul(lhs.t_, rhs.t_), target);
 
     if (ggml_broadcasts(rhs.shape_, lhs.shape_))
-        return Tensor(Scope::engine().mul(rhs.t_, lhs.t_), target);
+        return Tensor(Scope::runtime().mul(rhs.t_, lhs.t_), target);
 
     // Neither shape is a superset of the other (both operands have
     // singleton dims the other lacks): ggml broadcasts one operand at a
@@ -159,7 +159,7 @@ Tensor Tensor::operator*(Tensor rhs) const {
     lhs = lhs.expand(target);
     rhs = rhs.expand(target);
 
-    return Tensor(Scope::engine().mul(lhs.t_, rhs.t_), target);
+    return Tensor(Scope::runtime().mul(lhs.t_, rhs.t_), target);
 }
 
 Tensor Tensor::operator/(Tensor rhs) const {
@@ -171,7 +171,7 @@ Tensor Tensor::operator/(Tensor rhs) const {
     rhs = rhs.to(dtype);
 
     if (ggml_broadcasts(lhs.shape_, rhs.shape_))
-        return Tensor(Scope::engine().div(lhs.t_, rhs.t_), target);
+        return Tensor(Scope::runtime().div(lhs.t_, rhs.t_), target);
 
     // ggml_div() only natively broadcasts the second argument; any other
     // argument order falls back to explicit expansion. Note that the
@@ -181,12 +181,12 @@ Tensor Tensor::operator/(Tensor rhs) const {
     lhs = lhs.expand(target);
     rhs = rhs.expand(target);
 
-    return Tensor(Scope::engine().div(lhs.t_, rhs.t_), target);
+    return Tensor(Scope::runtime().div(lhs.t_, rhs.t_), target);
 }
 
 Tensor Tensor::clamp(float a, float b) const {
     auto cloned = clone(); // ggml_clamp is really an in-place operator, so use cloned source tensor
-    return Tensor(Scope::engine().clamp(cloned.t_, a, b), cloned.shape_);
+    return Tensor(Scope::runtime().clamp(cloned.t_, a, b), cloned.shape_);
 }
 
 Tensor::Shape Tensor::Shape::broadcast(const Tensor::Shape& lhs, const Tensor::Shape& rhs) {
@@ -226,8 +226,8 @@ Tensor::Shape Tensor::Shape::broadcast(const Tensor::Shape& lhs, const Tensor::S
 Tensor Tensor::empty(const Tensor::Shape& shape, ggml_type type) {
     // GGML does not support scalar tensors, let's fake it with 1D tensor
     return shape.rank() == 0
-        ? Tensor(Scope::engine().new_tensor_1d(type, 1), shape)
-        : Tensor(Scope::engine().new_tensor(type, shape.rank(), shape.data()), shape);
+        ? Tensor(Scope::runtime().new_tensor_1d(type, 1), shape)
+        : Tensor(Scope::runtime().new_tensor(type, shape.rank(), shape.data()), shape);
 }
 
 Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
@@ -262,7 +262,7 @@ Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {
     // Perform concatenation
     auto tensor = *first;
     for (auto i = 1; i < tensors.size(); ++i)
-        tensor = Scope::engine().concat(tensor, tensors[i].t_, rank - 1 - dim);
+        tensor = Scope::runtime().concat(tensor, tensors[i].t_, rank - 1 - dim);
 
     // Calculate the correct output shape using PyTorch indexing
     Shape shape(rank);
@@ -355,19 +355,19 @@ Tensor Tensor::reshape(const Shape& shape) const {
     switch (out.rank()) {
     case 0:
         // GGML scalar == 1D tensor with one element.
-        return Tensor(Scope::engine().reshape_1d(*src, 1), out);
+        return Tensor(Scope::runtime().reshape_1d(*src, 1), out);
 
     case 1:
-        return Tensor(Scope::engine().reshape_1d(*src, out.ne_[0]), out);
+        return Tensor(Scope::runtime().reshape_1d(*src, out.ne_[0]), out);
 
     case 2:
-        return Tensor(Scope::engine().reshape_2d(*src, out.ne_[0], out.ne_[1]), out);
+        return Tensor(Scope::runtime().reshape_2d(*src, out.ne_[0], out.ne_[1]), out);
 
     case 3:
-        return Tensor(Scope::engine().reshape_3d(*src, out.ne_[0], out.ne_[1], out.ne_[2]), out);
+        return Tensor(Scope::runtime().reshape_3d(*src, out.ne_[0], out.ne_[1], out.ne_[2]), out);
 
     case 4:
-        return Tensor(Scope::engine().reshape_4d(*src, out.ne_[0], out.ne_[1], out.ne_[2], out.ne_[3]), out);
+        return Tensor(Scope::runtime().reshape_4d(*src, out.ne_[0], out.ne_[1], out.ne_[2], out.ne_[3]), out);
     }
 
     throw std::invalid_argument("Unsupported shape: " + shape.to_string());
@@ -416,7 +416,7 @@ Tensor Tensor::permute(const Shape& order) const {
         ggml_permute_args[old_ggml_axis] = new_ggml_pos;
     }
 
-    return Tensor(Scope::engine().permute(t_, 
+    return Tensor(Scope::runtime().permute(t_, 
                   ggml_permute_args[0], ggml_permute_args[1], 
                   ggml_permute_args[2], ggml_permute_args[3]), out);
 }
@@ -606,16 +606,16 @@ Tensor Tensor::narrow(int64_t dim, int64_t start, int64_t length) const {
 
     switch (rank) {
     case 1:
-        return Tensor(Scope::engine().view_1d(t_, out.ne_[0], offset), out);
+        return Tensor(Scope::runtime().view_1d(t_, out.ne_[0], offset), out);
 
     case 2:
-        return Tensor(Scope::engine().view_2d(t_, out.ne_[0], out.ne_[1], t_->nb[1], offset), out);
+        return Tensor(Scope::runtime().view_2d(t_, out.ne_[0], out.ne_[1], t_->nb[1], offset), out);
 
     case 3:
-        return Tensor(Scope::engine().view_3d(t_, out.ne_[0], out.ne_[1], out.ne_[2], t_->nb[1], t_->nb[2], offset), out);
+        return Tensor(Scope::runtime().view_3d(t_, out.ne_[0], out.ne_[1], out.ne_[2], t_->nb[1], t_->nb[2], offset), out);
 
     case 4:
-        return Tensor(Scope::engine().view_4d(t_, out.ne_[0], out.ne_[1], out.ne_[2], out.ne_[3], t_->nb[1], t_->nb[2], t_->nb[3], offset), out);
+        return Tensor(Scope::runtime().view_4d(t_, out.ne_[0], out.ne_[1], out.ne_[2], out.ne_[3], t_->nb[1], t_->nb[2], t_->nb[3], offset), out);
     }
 
     throw std::runtime_error("narrow(): invalid rank");
@@ -833,7 +833,7 @@ Tensor Tensor::repeat(const Shape& repeats) const {
     // desired output shape.
     auto target = empty(out, dtype());
 
-    return Tensor(Scope::engine().repeat(t_, *target), out);
+    return Tensor(Scope::runtime().repeat(t_, *target), out);
 }
 
 #endif
@@ -873,7 +873,7 @@ Tensor Tensor::sum(int64_t dim, bool keepdim) const {
         x = x.contiguous();
 
     // GGML sum_rows reduces ne0 (fastest dimension).
-    auto y = Tensor(Scope::engine().sum_rows(*x), out);
+    auto y = Tensor(Scope::runtime().sum_rows(*x), out);
 
     if (keepdim)
         y = y.unsqueeze(dim);
@@ -1034,23 +1034,23 @@ void Tensor::throw_if_not_valid() const {
 }
 
 Tensor sqrt(const Tensor& tensor) {
-    return Tensor(Scope::engine().sqrt(tensor.t_), tensor.shape_);
+    return Tensor(Scope::runtime().sqrt(tensor.t_), tensor.shape_);
 }
 
 Tensor exp(const Tensor& tensor) {
-    return Tensor(Scope::engine().exp(tensor.t_), tensor.shape_);
+    return Tensor(Scope::runtime().exp(tensor.t_), tensor.shape_);
 }
 
 Tensor log(const Tensor& tensor) {
-    return Tensor(Scope::engine().log(tensor.t_), tensor.shape_);
+    return Tensor(Scope::runtime().log(tensor.t_), tensor.shape_);
 }
 
 Tensor sin(const Tensor& tensor) {
-    return Tensor(Scope::engine().sin(tensor.t_), tensor.shape_);
+    return Tensor(Scope::runtime().sin(tensor.t_), tensor.shape_);
 }
 
 Tensor cos(const Tensor& tensor) {
-    return Tensor(Scope::engine().cos(tensor.t_), tensor.shape_);
+    return Tensor(Scope::runtime().cos(tensor.t_), tensor.shape_);
 }
 
 ggml_type Tensor::DType<void>::unify(ggml_type a, ggml_type b) {

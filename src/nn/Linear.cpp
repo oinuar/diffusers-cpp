@@ -21,12 +21,12 @@ Tensor Linear::forward(Scope scope, Tensor x) {
     // but stored in GGML's native reversed layout {in_features, out_features}.
     // Since ggml_mul_mat() already performs Aᵀ * B on its first operand,
     // explicitly transposing the weight would transpose it twice.
-    auto y = scope.engine().mul_mat(*weight, *x);
+    auto y = scope.runtime().mul_mat(*weight, *x);
 
     if (bias_) {
         auto bias = std::static_pointer_cast<Parameter>(modules["bias"])->forward(scope);
 
-        y = scope.engine().add(y, *bias);
+        y = scope.runtime().add(y, *bias);
     }
 
     Tensor::Shape shape = x.shape();

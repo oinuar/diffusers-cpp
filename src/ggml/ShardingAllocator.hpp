@@ -305,16 +305,24 @@ private:
     }
 
     // G(node, d): node satisfies d -- produce some producible d', then bridge.
+    // A goal root (a graph output, see goal_roots_) must be produced
+    // exactly in d: the only bridge (P -> R, the AllReduce) is
+    // materialized by the meta backend only at a subgraph boundary before
+    // a consumer, and its ggml_backend_meta_buffer_get_tensor (assume_sync
+    // = false) has no PARTIAL case, so a PARTIAL output can never be read.
     BestState& best(int node, const ShardingRuntime::Dist& d) {
         auto& m = best_memo_[node][d];
         if (m.done) return m;
         m.done = true;
+
+        const bool exact_only = goal_roots_.count(node) != 0;
 
         std::set<ShardingRuntime::Dist> producible;
         for (const ShardingRuntime::Candidate& cand : runtime_.nodes()[node].candidates)
             producible.insert(cand.output);
 
         for (const ShardingRuntime::Dist& p : producible) {
+            if (exact_only && p != d) continue;
             const double exact_cost = exact(node, p).cost;
             if (exact_cost >= ShardingRuntime::kInf / 2) continue;
             const Bridge b = bridge(p, d);
@@ -391,6 +399,11 @@ private:
     std::vector<Tensor> planned_outputs_;
 
     std::map<const ggml_tensor*, ShardingRuntime::Dist> decisions_;   // committed param splits, accumulated as the round plans the outputs
+
+    // The trace ids of this round's goal roots (the graph outputs): they
+    // must be produced exactly in the required state, never bridged
+    // (see best()).
+    std::set<int> goal_roots_;
 
     std::map<int, std::map<ShardingRuntime::Dist, ExactState>> exact_memo_;
     std::map<int, std::map<ShardingRuntime::Dist, BestState>> best_memo_;

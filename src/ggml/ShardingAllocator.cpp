@@ -19,10 +19,13 @@ void ShardingAllocator::allocate(const std::vector<Tensor>& outputs, bool reallo
     if (replan) {
         last_plan_ = plan_round(outputs);
 
-        if (last_plan_.infeasible)
-            throw std::runtime_error(last_plan_.infeasible_reason);
-
         std::cerr << last_plan_.to_string();
+
+        if (last_plan_.infeasible) {
+            // The trace shows every node and the output distributions its
+            // candidates can produce -- the way in to see why the DP gave up.
+            throw std::runtime_error(dump_trace() + "\n" + last_plan_.infeasible_reason);
+        }
 
         planned_outputs_ = outputs;
         splits_ = device_.splits();
@@ -71,19 +74,27 @@ ShardingAllocator::Plan ShardingAllocator::plan_round(const std::vector<Tensor>&
     const std::vector<ggml_tensor*>& raw = runtime_.raw_of();
 
     // One goal per output, in graph order: the output's trace node must
-    // end in R (the final result is usable on every device). Each
-    // output's DP sees the splits committed by the earlier outputs' plans
-    // as fixed (the meta backend derives one state per tensor, shared by
-    // every output that consumes it), so the first output to plan a
-    // parameter decides its split for all of them, and the later outputs
-    // adapt to it. The DP is strictly acyclic (topological order), so the
-    // memoized recursion terminates.
+    // end in R (the final result is usable on every device) -- and it
+    // must end in R produced directly, with no bridge: the meta backend
+    // materializes the P -> R AllReduce only at a subgraph boundary
+    // before a consumer, and it cannot read a PARTIAL output at all
+    // (best() enforces this through goal_roots_).
+    // Each output's DP sees the splits committed by the earlier outputs'
+    // plans as fixed (the meta backend derives one state per tensor,
+    // shared by every output that consumes it), so the first output to
+    // plan a parameter decides its split for all of them, and the later
+    // outputs adapt to it. The DP is strictly acyclic (topological
+    // order), so the memoized recursion terminates.
+    goal_roots_.clear();
+    for (const auto& root : outputs)
+        goal_roots_.insert(runtime_.id_of(*root));
+
     std::set<std::pair<int, ShardingRuntime::Dist>> emitted;
     for (auto root : outputs) {
         const Goal g = {runtime_.id_of(*root), ShardingRuntime::Dist::replicated()};
         exact_memo_.clear();
         best_memo_.clear();
-        const double total = best(g.root, g.required).cost;
+        const double total = best(g.root, g.required).cost;   // roots are exact-only (no bridge)
         if (total >= ShardingRuntime::kInf / 2) {
             plan.infeasible = true;
             plan.infeasible_reason = infeasibility_reason(g.required);

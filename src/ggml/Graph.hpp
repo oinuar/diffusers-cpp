@@ -13,16 +13,28 @@
 class Graph {
 public:
     Graph(Scheduler& scheduler, Context& context, std::vector<Tensor>&& outputs, size_t capacity = GGML_DEFAULT_GRAPH_SIZE)
-        : scheduler_(scheduler), context_(context), gf_(ggml_new_graph_custom(*context_, context_.capacity(), false)), outputs_(std::move(outputs)), views_()
+        : scheduler_(scheduler), context_(context), gf_(ggml_new_graph_custom(*context_, context_.capacity(), false)), outputs_(std::move(outputs))
     {
         Scope scope(context_);
 
         for (auto& tensor : outputs_) {
-            // Materialize tensor if needed.
-            if (!tensor.is_contiguous()) {
-                tensor = tensor.contiguous();
-            }
+            // The meta backend skips a node whose view_src is a static
+            // tensor (a GGML_OP_NONE in a host buffer) and asserts that the
+            // graph's last node is not such a skip (ggml_backend_meta
+            // _graph_compute: i_start == n_nodes). ggml flattens view chains
+            // in ggml_set_view_op, so view_src is always the base tensor. A graph
+            // that ends in a view of a static tensor has no computable last node,
+            // so materialize it with a copy: the dup is a compute node the meta 
+            // can place, and it keeps the output in the same (replicated) distribution
+            // the plan committed.
+            if ((*tensor)->view_src != nullptr && (*tensor)->view_src->op == GGML_OP_NONE)
+                tensor = tensor.clone();
 
+            // Materialize output tensor by making it contiguous if needed.
+            else if (!tensor.is_contiguous())
+                tensor = tensor.contiguous();
+
+            // Set output & build the graph.
             ggml_set_output(*tensor);
             ggml_build_forward_expand(gf_, *tensor);
         }
@@ -36,10 +48,29 @@ public:
 
     Context::Bindings allocate(std::initializer_list<Context*>&& contexts = {}) {
         ggml_backend_sched_reset(*scheduler_);
-        
+
+        // In a sharding setup (a meta backend in the scheduler), run the whole graph through
+        // the meta backend (no-op otherwise). See Scheduler::meta_backend for why the meta
+        // backend must be the runtime of the entire graph. Pinning is a user assignment,
+        // which the scheduler honors in split_graph; it must happen after the reset above
+        // (a reset wipes user assignments) and before ggml_backend_sched_alloc_graph below.
+        // The graph's tensors live in the Graph context (inputs and compute nodes) and the
+        // additional contexts (e.g. weights), so pin every tensor of those contexts.
+        if (ggml_backend_t meta = scheduler_.meta_backend()) {
+            auto pin_context = [&](Context& context) {
+                for (ggml_tensor* tensor = ggml_get_first_tensor(*context); tensor != nullptr; tensor = ggml_get_next_tensor(*context, tensor))
+                    ggml_backend_sched_set_tensor_backend(*scheduler_, tensor, meta);
+            };
+
+            pin_context(context_);
+
+            for (auto& context : contexts)
+                if (context != nullptr && context != &context_)
+                    pin_context(*context);
+        }
+
         if (!ggml_backend_sched_alloc_graph(*scheduler_, gf_))
             throw std::runtime_error("Graph allocation failed");
-
         Context::Bindings result;
 
         // Add Graph context bindings
@@ -105,20 +136,8 @@ public:
     Graph& operator =(Graph&&) = delete;
 
 private:
-
-    // Ops that only change shape/stride (a view) without computing
-    // data. A graph made up solely of these over a leaf has no compute
-    // node, which the meta backend cannot place (it asserts in
-    // split_graph when the last node is a skippable view). This matches
-    // the no-compute set in ggml's backend supports_op.
-    static bool is_noop_view(enum ggml_op op) {
-        return op == GGML_OP_NONE || op == GGML_OP_RESHAPE || op == GGML_OP_VIEW ||
-                op == GGML_OP_PERMUTE || op == GGML_OP_TRANSPOSE;
-    };
-
     Scheduler& scheduler_;
     Context& context_;
     ggml_cgraph* gf_;
     std::vector<Tensor> outputs_;
-    std::vector<ggml_tensor*> views_;
 };

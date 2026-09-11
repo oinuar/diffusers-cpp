@@ -20,8 +20,7 @@ Tensor Qwen3RotaryEmbedding::forward(
     if (!ggml_is_vector(*position_ids))
         position_ids = position_ids.flatten();
 
-    auto rope = ggml_rope_ext(
-        *scope.context(),
+    auto rope = scope.runtime().rope_ext(
         *x,
         *position_ids,
         nullptr,             // freq_factors
@@ -30,7 +29,10 @@ Tensor Qwen3RotaryEmbedding::forward(
         0,                   // n_ctx_orig
         rope_theta,          // freq_base
         1.0f,                // freq_scale
-        0.0f, 1.0f, 0.0f, 0.0f // ext_factor, attn_factor=1.0, beta_fast, beta_slow
+        0.0f,                // ext_factor
+        1.0f,                // attn_factor
+        0.0f,                // beta_fast
+        0.0f                 // beta_slow
     );
 
     return Tensor(rope, x.shape());

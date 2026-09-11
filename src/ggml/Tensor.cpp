@@ -185,7 +185,8 @@ Tensor Tensor::operator/(Tensor rhs) const {
 }
 
 Tensor Tensor::clamp(float a, float b) const {
-    auto cloned = clone(); // ggml_clamp is really an in-place operator, so use cloned source tensor
+    // ggml_clamp is really an in-place operator, so use cloned source tensor
+    auto cloned = clone();
     return Tensor(Scope::runtime().clamp(cloned.t_, a, b), cloned.shape_);
 }
 

@@ -85,7 +85,10 @@ ggml_tensor* ExecutionRuntime::sqrt(
 ggml_tensor* ExecutionRuntime::exp(
     ggml_tensor* tensor
 ) {
-    return ggml_exp(*Scope::context(), tensor);
+    // GGML_OP_EXP has no split-state rule in the meta backend; the
+    // elementwise GGML_UNARY(EXP) does (handle_generic carries the src
+    // state over). Same computation, meta-planable.
+    return ggml_unary(*Scope::context(), tensor, GGML_UNARY_OP_EXP);
 }
 
 ggml_tensor* ExecutionRuntime::log(

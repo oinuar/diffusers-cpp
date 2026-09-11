@@ -148,12 +148,18 @@ public:
     // Marks a tensor as a model param (the project's Parameter::forward()
     // calls this when a weight enters the graph): a static tensor whose
     // storage split (R or S(a)) the plan materializes in the callback
-    // table, keyed by the tensor name.
+    // table, keyed by the tensor name. The param state is re-established
+    // here unconditionally: the tensor may have been created through this
+    // engine earlier and pinned to R by set_input() (Context::create
+    // makes every tensor an input leaf first) -- only set_param's state
+    // decides its storage split.
     void set_param(ggml_tensor* t) override {
         parent_.set_param(t);
         TraceNode& n = nodes_[ensure_node(t)];
         n.is_param = true;
+        n.is_fixed = false;
         n.op_name = "param";
+        n.candidates = param_candidates(n.rank);
     }
 
     ggml_tensor* fill(ggml_tensor* t, float value) override {
@@ -216,7 +222,7 @@ public:
     // Runtime: unary arithmetic
     // ---------------------------------------------------------------------
     ggml_tensor* sqrt(ggml_tensor* t) override { return carry_over_op("sqrt", parent_.sqrt(t), t, w_comp()); }
-    ggml_tensor* exp(ggml_tensor* t) override { return unsupported_op("exp", parent_.exp(t), t); }
+    ggml_tensor* exp(ggml_tensor* t) override { return carry_over_op("exp", parent_.exp(t), t, w_comp()); }
     ggml_tensor* log(ggml_tensor* t) override { return carry_over_op("log", parent_.log(t), t, w_comp()); }
     ggml_tensor* sin(ggml_tensor* t) override { return carry_over_op("sin", parent_.sin(t), t, w_comp()); }
     ggml_tensor* cos(ggml_tensor* t) override { return carry_over_op("cos", parent_.cos(t), t, w_comp()); }

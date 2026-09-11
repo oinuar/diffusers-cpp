@@ -16,12 +16,12 @@ class TestCase(unittest.TestCase):
             '--runner-use_gpu', str(use_gpu)
         ]
 
-        #print(" ".join([cli_bin] + list(map(lambda x: x if x.startswith("--") else f'"{x}"', command))))
+        command_w_args = " ".join([cli_bin] + list(map(lambda x: x if x.startswith("--") else f'"{x}"', command)))
 
         result = subprocess.run([cli_bin] + command, capture_output=True, text=True, timeout=30)
 
         if result.returncode != 0:
-            raise RuntimeError(f'{cli_bin} failed (rc={result.returncode}):\n{result.stderr}')
+            raise RuntimeError(f'{command_w_args} failed (rc={result.returncode}):\n{result.stderr}')
 
         outputs = []
         for line in result.stdout.strip().split('\n'):
@@ -36,7 +36,7 @@ class TestCase(unittest.TestCase):
 
             outputs.append(value)
 
-        print(result.stderr)
+        #print(result.stderr)
 
         return outputs
 

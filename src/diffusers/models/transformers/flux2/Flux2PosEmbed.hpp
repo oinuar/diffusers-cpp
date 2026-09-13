@@ -16,9 +16,11 @@ public:
     }
 
     Tensor forward(Scope scope, Tensor x, Tensor position_ids) {
-        // GGML RoPE expects position IDs to be a 1D tensor (vector).
-        if (!ggml_is_vector(*position_ids))
-            position_ids = position_ids.flatten();
+        // position_ids layout: (sequence, num_axes).
+        //
+        // Each axis is rotated with its own position column, so the
+        // position IDs must keep their 2D shape here; each column is
+        // flattened to a 1D vector right before the RoPE call below.
 
         std::vector<Tensor> rotated_sections;
 

@@ -42,9 +42,12 @@ static Tensor create_causal_mask(
 ) {
     const float neg_inf = -std::numeric_limits<float>::infinity();
 
-    auto mask = scope.context().value<float>({1, 1, seq_len, target_len},
+    // ggml_flash_attn_ext() requires the attention mask to be F16, so the
+    // causal mask is created directly in F16 (casting is not supported on
+    // the Meta backend).
+    auto mask = scope.context().value<ggml_fp16_t>({1, 1, seq_len, target_len},
         [=](std::mt19937&) {
-            std::vector<float> mask;
+            std::vector<ggml_fp16_t> mask;
             mask.reserve(seq_len * target_len);
 
             for (int i = 0; i < seq_len; ++i) {
@@ -58,7 +61,7 @@ static Tensor create_causal_mask(
                             (j > i + past_seen_tokens - *sliding_window);
 
                     mask.push_back(
-                        allowed ? 0.0f : neg_inf
+                        ggml_fp32_to_fp16(allowed ? 0.0f : neg_inf)
                     );
                 }
             }
@@ -123,9 +126,18 @@ Tensor Qwen3Model::forward(
     auto past_seen_tokens = 0;
 
     if (!position_ids) {
-        position_ids = scope.context().arange(0.0f, static_cast<float>(seq_len));
-        position_ids = *position_ids + (float)past_seen_tokens;
-        position_ids = position_ids.value().unsqueeze(0);
+        // GGML RoPE expects position IDs to be 32b integers.
+        position_ids = scope.context().create<int32_t>(
+            {static_cast<int64_t>(seq_len)},
+            [seq_len, past_seen_tokens](std::mt19937&) {
+                std::vector<int32_t> ids(static_cast<size_t>(seq_len));
+
+                for (int i = 0; i < seq_len; ++i)
+                    ids[i] = static_cast<int32_t>(i + past_seen_tokens);
+
+                return std::move(ids);
+            }
+        ).unsqueeze(0);
     }
 
     auto rotary_emb =

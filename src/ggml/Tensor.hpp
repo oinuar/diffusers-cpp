@@ -432,6 +432,11 @@ struct Tensor::DType<float> {
 };
 
 template<>
+struct Tensor::DType<ggml_fp16_t> {
+    static constexpr ggml_type value = GGML_TYPE_F16;
+};
+
+template<>
 struct Tensor::DType<int64_t> {
     static constexpr ggml_type value = GGML_TYPE_I64;
 };

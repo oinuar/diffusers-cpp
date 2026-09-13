@@ -115,7 +115,7 @@ public:
             auto theta = args_.get_one<int64_t>("--theta");
             auto axes_dim = args_.get_many<int64_t>("--axes_dim");
             auto x = args_.get_one<Tensor>("--x", {scope.context()});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {scope.context()});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {scope.context(), Tensor::DType<int32_t>::value});
 
             Flux2PosEmbed model(theta, axes_dim);
 
@@ -150,7 +150,7 @@ public:
             auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {scope.context()});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {scope.context()});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {scope.context(), Tensor::DType<int32_t>::value});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -207,7 +207,7 @@ public:
             auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {scope.context()});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {scope.context()});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {scope.context(), Tensor::DType<int32_t>::value});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -256,7 +256,7 @@ public:
             auto text_seq_len = args_.get_optional<int64_t>("--text_seq_len");
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {scope.context()});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {scope.context(), Tensor::DType<int32_t>::value});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -314,7 +314,7 @@ public:
             auto temb_mod_txt = args_.get_one<Tensor>("--temb_mod_txt", {scope.context()});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {scope.context()});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {scope.context(), Tensor::DType<int32_t>::value});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -372,8 +372,8 @@ public:
             auto hidden_states = args_.get_one<Tensor>("--hidden_states", {scope.context()});
             auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {scope.context()});
             auto timestep = args_.get_one<Tensor>("--timestep", {scope.context()});
-            auto img_ids = args_.get_one<Tensor>("--img_ids", {scope.context()});
-            auto txt_ids = args_.get_one<Tensor>("--txt_ids", {scope.context()});
+            auto img_ids = args_.get_one<Tensor>("--img_ids", {scope.context(), Tensor::DType<int32_t>::value});
+            auto txt_ids = args_.get_one<Tensor>("--txt_ids", {scope.context(), Tensor::DType<int32_t>::value});
             auto guidance = args_.get_optional<Tensor>("--guidance", {scope.context()});
             auto num_ref_tokens = args_.get_optional<int64_t>("--num_ref_tokens").value_or(0);
             auto ref_fixed_timestep = args_.get_optional<float>("--ref_fixed_timestep").value_or(0.0f);
@@ -588,11 +588,11 @@ public:
                 auto dt = args_.get_one<float>("--dt");
                 auto init_latents = args_.get_one<Tensor>("--init_latents", {scope.context()});
                 auto prompt_embeds = args_.get_one<Tensor>("--prompt_embeds", {scope.context()});
-                auto img_ids = args_.get_one<Tensor>("--img_ids", {scope.context()});
-                auto txt_ids = args_.get_one<Tensor>("--txt_ids", {scope.context()});
+                auto img_ids = args_.get_one<Tensor>("--img_ids", {scope.context(), Tensor::DType<int32_t>::value});
+                auto txt_ids = args_.get_one<Tensor>("--txt_ids", {scope.context(), Tensor::DType<int32_t>::value});
 
                 auto image_latents = args_.get_optional<Tensor>("--image_latents", {scope.context()});
-                auto image_latent_ids = args_.get_optional<Tensor>("--image_latent_ids", {scope.context()});
+                auto image_latent_ids = args_.get_optional<Tensor>("--image_latent_ids", {scope.context(), Tensor::DType<int32_t>::value});
 
     
                 auto graph = std::move(pipeline.make_denoise_graph(

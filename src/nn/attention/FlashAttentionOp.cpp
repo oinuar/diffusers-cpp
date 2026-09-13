@@ -47,7 +47,6 @@ Tensor FlashAttentionOp::operator ()(
         // Expand broadcast dimensions and convert to the format required
         // by ggml_flash_attn_ext().
         mask = mask->expand(target);
-        mask = mask->to(GGML_TYPE_F16);
 
         ggml_mask = **mask;
     }

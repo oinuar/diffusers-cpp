@@ -241,19 +241,7 @@ public:
             return computation().results();
         }
 
-        if (args_.get(0) == "to") {
-            Scope scope(local_context, allocator.runtime());
-            auto self = args_.get_one<Tensor>("--this", {scope.context()});
-            auto type = (ggml_type)args_.get_one<int>("--type");
-
-            auto output = self.to(type);
-
-            Graph graph(scheduler, scope.context(), {output});
-            Computation computation(allocator, graph, {&context, &scope.context()});
-            return computation().results();
-        }
-
-
+        
         if (args_.get(0) == "neg") {
             Scope scope(local_context, allocator.runtime());
             auto self = args_.get_one<Tensor>("--this", {scope.context()});

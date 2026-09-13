@@ -229,10 +229,8 @@ public:
     }
 
     /** @brief Creates a scalar tensor filled with the given value. */
-    template <typename T>
-    static Tensor scalar(const T& value) {
-        auto tensor = full({}, (float)value);
-        return tensor.to(DType<T>::value);
+    template <typename T> static Tensor scalar(const T& value) {
+        return full({}, (float)value);
     }
 
     /** @brief Creates an uninitialized tensor with the given shape and type. */
@@ -306,17 +304,6 @@ public:
 
     /** @brief Splits a tensor into chunks of specified sizes along dimension `dim`. */
     std::vector<Tensor> split_with_sizes(const std::vector<int64_t>& split_sizes, int64_t dim = 0) const;
-
-    /** @brief Casts a tensor to type `type` if it is not already. */
-    Tensor to(ggml_type type) const {
-        if (dtype() != type)
-            return astype(type);
-
-        return *this;
-    }
-
-    /** @brief Converts a tensor to type `type`. */
-    Tensor astype(ggml_type type) const;
 
     /** @brief Copies this tensor to another tensor. */
     Tensor copy_to(Tensor dest) const;

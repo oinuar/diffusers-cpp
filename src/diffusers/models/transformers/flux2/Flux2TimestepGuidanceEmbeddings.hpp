@@ -24,13 +24,13 @@ public:
         auto timestep_embedder = std::static_pointer_cast<TimestepEmbedding<>>(modules["timestep_embedder"]);
 
         auto timesteps_proj = time_proj->forward(scope, timestep);
-        auto timesteps_emb = timestep_embedder->forward(scope, timesteps_proj).to(timestep.dtype());
+        auto timesteps_emb = timestep_embedder->forward(scope, timesteps_proj);
 
         if (guidance_embeds_) {
             auto guidance_embedder = std::static_pointer_cast<TimestepEmbedding<>>(modules["guidance_embedder"]);
 
             auto guidance_proj = time_proj->forward(scope, guidance.value());
-            auto guidance_emb = guidance_embedder->forward(scope, guidance_proj).to(guidance.value().dtype());
+            auto guidance_emb = guidance_embedder->forward(scope, guidance_proj);
 
             timesteps_emb = timesteps_emb + guidance_emb;
         }

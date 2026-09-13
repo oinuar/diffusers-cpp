@@ -10,10 +10,9 @@ Tensor Qwen3RMSNorm::forward(Scope scope, Tensor hidden_states) {
     auto input_dtype = hidden_states.dtype();
     
     // Preserve exact Python execution order and type casting
-    auto hidden_states_f32 = hidden_states.to(GGML_TYPE_F32);
-    auto variance = (hidden_states_f32 * hidden_states_f32).mean(-1, true);
+    auto variance = (hidden_states * hidden_states).mean(-1, true);
     auto rsqrt_var = rsqrt(variance + eps);
-    auto normalized = hidden_states_f32 * rsqrt_var;
+    auto normalized = hidden_states * rsqrt_var;
     
-    return (weight * normalized).to(input_dtype);
+    return weight * normalized;
 }

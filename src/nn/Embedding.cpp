@@ -46,10 +46,6 @@ Tensor Embedding::forward(Scope scope, Tensor input) {
 
     auto input_shape = input.shape();
 
-    // ggml_get_rows expects int32 indices
-    if (input.dtype() != GGML_TYPE_I32)
-        input = input.to(GGML_TYPE_I32);
-
     // Flatten indices for lookup
     if (!ggml_is_vector(*input))
         input = input.flatten();

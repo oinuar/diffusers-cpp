@@ -207,7 +207,7 @@ public:
             auto num_embeddings = args_.get_one<int64_t>("--num_embeddings");
             auto embedding_dim = args_.get_one<int64_t>("--embedding_dim");
             auto padding_idx = args_.get_optional<int64_t>("--padding_idx");
-            auto input = args_.get_one<Tensor>("--input", {scope.context()});
+            auto input = args_.get_one<Tensor>("--input", {scope.context(), Tensor::DType<int32_t>::value});
 
             Embedding model(num_embeddings, embedding_dim, padding_idx);
 

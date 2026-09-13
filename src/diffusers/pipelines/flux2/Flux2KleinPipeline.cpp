@@ -151,16 +151,17 @@ std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Scope scope, int ba
     //  w = torch.arange(1)
     //  l = torch.arange(L)
     //  coords = torch.cartesian_prod(t, h, w, l)
-    auto txt_ids = scope.context().create<float>({batch, seq_len, 4},
+    // GGML RoPE expects position IDs to be 32b integers.
+    auto txt_ids = scope.context().create<int32_t>({batch, seq_len, 4},
         [=](std::mt19937&) {
-            std::vector<float> ids(size_t(batch) * seq_len * 4, 0.0f);
+            std::vector<int32_t> ids(size_t(batch) * seq_len * 4, 0);
             for (int b = 0; b < batch; ++b) {
                 for (int l = 0; l < seq_len; ++l) {
-                    float* row = &ids[(size_t(b) * seq_len + l) * 4];
-                    row[0] = 0.0f; // T
-                    row[1] = 0.0f; // H
-                    row[2] = 0.0f; // W
-                    row[3] = (float)l; // L
+                    int32_t* row = &ids[(size_t(b) * seq_len + l) * 4];
+                    row[0] = 0; // T
+                    row[1] = 0; // H
+                    row[2] = 0; // W
+                    row[3] = l; // L
                 }
             }
             return std::move(ids);
@@ -172,17 +173,19 @@ std::tuple<Tensor, Tensor> Flux2KleinPipeline::encode_prompt(Scope scope, int ba
 // 4D img_ids: (B, N, 4) -> [0, y, x, 0]
 static Tensor prepare_img_ids(Scope scope, int batch, int packed_h, int packed_w) {
     int64_t N = int64_t(packed_h) * packed_w;
-    return scope.context().create<float>({batch, N, 4},
+
+    // GGML RoPE expects position IDs to be 32b integers.
+    return scope.context().create<int32_t>({batch, N, 4},
         [=](std::mt19937&) {
-            std::vector<float> ids(size_t(batch) * N * 4, 0.0f);
+            std::vector<int32_t> ids(size_t(batch) * N * 4, 0);
             for (int b = 0; b < batch; ++b) {
                 for (int y = 0; y < packed_h; ++y) {
                     for (int x = 0; x < packed_w; ++x) {
-                        float* row = &ids[(size_t(b) * N + y * packed_w + x) * 4];
-                        row[0] = 0.0f; // T
-                        row[1] = (float)y; // H
-                        row[2] = (float)x; // W
-                        row[3] = 0.0f; // L
+                        int32_t* row = &ids[(size_t(b) * N + y * packed_w + x) * 4];
+                        row[0] = 0; // T
+                        row[1] = y; // H
+                        row[2] = x; // W
+                        row[3] = 0; // L
                     }
                 }
             }
@@ -202,12 +205,13 @@ static Tensor prepare_image_ids(Scope scope, int batch, const std::vector<Image>
             int64_t(packed_h) * packed_w;
     }
 
-    return scope.context().create<float>(
+    // GGML RoPE expects position IDs to be 32b integers.
+    return scope.context().create<int32_t>(
         {batch, total_tokens, 4},
         [=, &images](std::mt19937&) {
-            std::vector<float> ids(
+            std::vector<int32_t> ids(
                 size_t(batch) * total_tokens * 4,
-                0.0f);
+                0);
 
             for (int b = 0; b < batch; ++b) {
                 int64_t offset = 0;
@@ -218,22 +222,22 @@ static Tensor prepare_image_ids(Scope scope, int batch, const std::vector<Image>
                     const int packed_h = static_cast<int>(image.height() / vae_multiple);
                     const int packed_w = static_cast<int>(image.width() / vae_multiple);
 
-                    const float t =
-                        10.0f +
-                        10.0f * static_cast<float>(i);
+                    const int32_t t =
+                        10 +
+                        10 * static_cast<int32_t>(i);
 
                     for (int y = 0; y < packed_h; ++y) {
                         for (int x = 0; x < packed_w; ++x) {
-                            float* row =
+                            int32_t* row =
                                 &ids[
                                     (size_t(b) * total_tokens +
                                      offset) * 4
                                 ];
 
                             row[0] = t;
-                            row[1] = static_cast<float>(y);
-                            row[2] = static_cast<float>(x);
-                            row[3] = 0.0f;
+                            row[1] = y;
+                            row[2] = x;
+                            row[3] = 0;
 
                             ++offset;
                         }

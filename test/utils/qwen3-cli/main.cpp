@@ -69,7 +69,7 @@ public:
             config.rope_theta = args_.get_optional<int64_t>("--rope_theta").value_or(config.rope_theta);
 
             auto x = args_.get_one<Tensor>("--x", {scope.context()});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {scope.context()});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {scope.context(), Tensor::DType<int32_t>::value});
 
             Qwen3RotaryEmbedding model(config);
 
@@ -89,7 +89,7 @@ public:
             config.num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.num_attention_heads);
             config.num_key_value_heads = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.num_key_value_heads);
 
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {scope.context()});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {scope.context(), Tensor::DType<int32_t>::value});
             auto hidden_states = args_.get_one<Tensor>("--hidden_states", {scope.context()});
             auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {scope.context()});
             auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {scope.context()});
@@ -122,7 +122,7 @@ public:
 
             auto layer_idx = args_.get_one<int>("--layer_idx");
             auto hidden_states = args_.get_one<Tensor>("--hidden_states", {scope.context()});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {scope.context()});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {scope.context(), Tensor::DType<int32_t>::value});
 
             Qwen3DecoderLayer model(config, layer_idx);
             Qwen3RotaryEmbedding rotary_emb(config);
@@ -155,10 +155,10 @@ public:
             config.pad_token_id = args_.get_optional<int64_t>("--pad_token_id");
             config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
 
-            auto input_ids = args_.get_optional<Tensor>("--input_ids", {scope.context()});
+            auto input_ids = args_.get_optional<Tensor>("--input_ids", {scope.context(), Tensor::DType<int32_t>::value});
             auto input_embeds = args_.get_optional<Tensor>("--input_embeds", {scope.context()});
             auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {scope.context()});
-            auto position_ids = args_.get_optional<Tensor>("--position_ids", {scope.context()});
+            auto position_ids = args_.get_optional<Tensor>("--position_ids", {scope.context(), Tensor::DType<int32_t>::value});
             auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {scope.context()});
             auto use_cache = args_.get_optional<bool>("--past_key_values");
             auto output_hidden_states = args_.get_optional<bool>("--output_hidden_states").value_or(false);
@@ -205,9 +205,9 @@ public:
             config.num_key_value_heads = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.num_key_value_heads);
             config.max_position_embeddings = args_.get_optional<int64_t>("--max_position_embeddings").value_or(config.max_position_embeddings);
 
-            auto input_ids = args_.get_optional<Tensor>("--input_ids", {scope.context()});
+            auto input_ids = args_.get_optional<Tensor>("--input_ids", {scope.context(), Tensor::DType<int32_t>::value});
             auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {scope.context()});
-            auto position_ids = args_.get_optional<Tensor>("--position_ids", {scope.context()});
+            auto position_ids = args_.get_optional<Tensor>("--position_ids", {scope.context(), Tensor::DType<int32_t>::value});
             auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {scope.context()});
             auto inputs_embeds = args_.get_optional<Tensor>("--inputs_embeds", {scope.context()});
             auto labels = args_.get_optional<Tensor>("--labels", {scope.context()});

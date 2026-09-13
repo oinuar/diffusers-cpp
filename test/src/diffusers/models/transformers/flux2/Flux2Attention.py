@@ -60,7 +60,7 @@ class TestFlux2Attention(TestCase):
             "--heads", "2",
             "--dim_head", "8",
             "--hidden_states", str(hidden_states.tolist()),
-            "--image_rotary_emb-theta", "1000",
+            "--image_rotary_emb-theta", "10000",
             "--image_rotary_emb-axes_dim", str(axes_dim[0]),
             "--image_rotary_emb-axes_dim", str(axes_dim[1]),
             "--image_rotary_emb-axes_dim", str(axes_dim[2]),

@@ -12,8 +12,9 @@
 
 template <>
 struct ArgumentParser::parser<Tensor> {
-    parser(Scope scope) : scope_(scope) {
-
+    parser(Scope scope, const ggml_type& dtype = Tensor::DType<float>::value)
+        : scope_(scope), dtype_(dtype)
+    {
     }
 
     Tensor operator ()(const std::string& option, const std::string& value) const {
@@ -22,11 +23,41 @@ struct ArgumentParser::parser<Tensor> {
         try {
             auto [shape, data] = parser.parse();
 
-            // std::cerr << "inferred shape for " << option << ": " << shape.to_string() << " (data size = " << data.size() << ')' << std::endl;
+            std::cerr << option << ": shape = " << shape.to_string() << ", data size = " << data.size() << ", dtype = " << ggml_type_name(dtype_) << std::endl;
 
-            auto tensor = scope_.context().create<float>(shape, [data = std::move(data)](std::mt19937&) {
-                return data;
-            });
+            Tensor tensor;
+
+            switch (dtype_) {
+            case Tensor::DType<int64_t>::value:
+                tensor = scope_.context().create<int64_t>(shape, [data = std::move(data)](std::mt19937&) {
+                    return std::vector<int64_t>(data.begin(), data.end());
+                });
+                break;
+
+            case Tensor::DType<int32_t>::value:
+                tensor = scope_.context().create<int32_t>(shape, [data = std::move(data)](std::mt19937&) {
+                    return std::vector<int32_t>(data.begin(), data.end());
+                });
+                break;
+
+            case Tensor::DType<int16_t>::value:
+                tensor = scope_.context().create<int16_t>(shape, [data = std::move(data)](std::mt19937&) {
+                    return std::vector<int16_t>(data.begin(), data.end());
+                });
+                break;
+
+            case Tensor::DType<int8_t>::value:
+                tensor = scope_.context().create<int8_t>(shape, [data = std::move(data)](std::mt19937&) {
+                    return std::vector<int8_t>(data.begin(), data.end());
+                });
+                break;
+
+            default:
+                tensor = scope_.context().create<float>(shape, [data = std::move(data)](std::mt19937&) {
+                    return data;
+                });
+                break;
+            }
 
             tensor.name(option.c_str());
 
@@ -38,6 +69,7 @@ struct ArgumentParser::parser<Tensor> {
 
 private:
     Scope scope_;
+    ggml_type dtype_;
 
 public:
     class TensorParser {

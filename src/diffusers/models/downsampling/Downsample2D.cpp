@@ -41,7 +41,7 @@ Tensor Downsample2D::forward(Scope scope, Tensor hidden_states) {
             // [N,C,H,W] -> [N,C,H,W+1]
             auto w_zeros = Tensor::zeros(
                 {n, c, h, 1}
-            ).to(hidden_states.dtype());
+            );
 
             hidden_states = Tensor::cat(
                 {hidden_states, w_zeros},
@@ -52,7 +52,7 @@ Tensor Downsample2D::forward(Scope scope, Tensor hidden_states) {
             // [N,C,H,W+1] -> [N,C,H+1,W+1]
             auto h_zeros = Tensor::zeros(
                 {n, c, 1, w + 1}
-            ).to(hidden_states.dtype());
+            );
 
             hidden_states = Tensor::cat(
                 {hidden_states, h_zeros},

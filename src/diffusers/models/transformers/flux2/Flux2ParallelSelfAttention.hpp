@@ -94,7 +94,6 @@ public:
         );
 
         hidden_states = hidden_states.flatten(2, 3);
-        hidden_states = hidden_states.to(query.dtype());
 
         auto mlp_act_fn = std::static_pointer_cast<Flux2SwiGLU>(modules["mlp_act_fn"]);
 

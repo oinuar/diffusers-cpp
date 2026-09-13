@@ -132,7 +132,6 @@ public:
         );
 
         hidden_states = hidden_states.flatten(2, 3);
-        hidden_states = hidden_states.to(query.dtype());
 
         if (encoder_hidden_states) {
             auto to_add_out = std::static_pointer_cast<Linear>(modules["to_add_out"]);

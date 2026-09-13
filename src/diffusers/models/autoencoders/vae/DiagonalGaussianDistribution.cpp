@@ -17,8 +17,8 @@ DiagonalGaussianDistribution::DiagonalGaussianDistribution(
     logvar_ = logvar_.clamp(-30.0, 20.0).contiguous();
 
     if (deterministic) {
-        std_ = Tensor::zeros(mean_.shape()).to(mean_.dtype());
-        var_ = Tensor::zeros(mean_.shape()).to(mean_.dtype());
+        std_ = Tensor::zeros(mean_.shape());
+        var_ = Tensor::zeros(mean_.shape());
     }
     else {
         std_ = exp(0.5f * logvar_);

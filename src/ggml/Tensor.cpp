@@ -75,10 +75,6 @@ Tensor Tensor::full(const Shape& shape, float value) {
     return tensor;
 }
 
-Tensor Tensor::astype(ggml_type type) const {
-    return Tensor(Scope::runtime().cast(t_, type), shape_);
-}
-
 Tensor Tensor::copy_to(Tensor dest) const {
     return Tensor(Scope::runtime().cpy(t_, *dest), dest.shape_);
 }
@@ -87,9 +83,6 @@ Tensor Tensor::operator+(Tensor rhs) const {
     auto lhs = *this;
     auto target = Shape::broadcast(lhs.shape_, rhs.shape_);
     auto dtype = DType<void>::unify(lhs.dtype(), rhs.dtype());
-
-    lhs = lhs.to(dtype);
-    rhs = rhs.to(dtype);
 
     // ggml_add() natively broadcasts its second argument against the first
     // (the first must already be a broadcast superset). Addition is
@@ -115,9 +108,6 @@ Tensor Tensor::operator-(Tensor rhs) const {
     auto target = Shape::broadcast(lhs.shape_, rhs.shape_);
     auto dtype = DType<void>::unify(lhs.dtype(), rhs.dtype());
 
-    lhs = lhs.to(dtype);
-    rhs = rhs.to(dtype);
-
     if (ggml_broadcasts(lhs.shape_, rhs.shape_))
         return Tensor(Scope::runtime().sub(lhs.t_, rhs.t_), target);
 
@@ -139,9 +129,6 @@ Tensor Tensor::operator*(Tensor rhs) const {
     auto lhs = *this;
     auto target = Shape::broadcast(lhs.shape_, rhs.shape_);
     auto dtype = DType<void>::unify(lhs.dtype(), rhs.dtype());
-
-    lhs = lhs.to(dtype);
-    rhs = rhs.to(dtype);
 
     // ggml_mul() natively broadcasts its second argument against the first
     // (the first must already be a broadcast superset). Multiplication is
@@ -166,9 +153,6 @@ Tensor Tensor::operator/(Tensor rhs) const {
     auto lhs = *this;
     auto target = Shape::broadcast(lhs.shape_, rhs.shape_);
     auto dtype = DType<void>::unify(lhs.dtype(), rhs.dtype());
-
-    lhs = lhs.to(dtype);
-    rhs = rhs.to(dtype);
 
     if (ggml_broadcasts(lhs.shape_, rhs.shape_))
         return Tensor(Scope::runtime().div(lhs.t_, rhs.t_), target);

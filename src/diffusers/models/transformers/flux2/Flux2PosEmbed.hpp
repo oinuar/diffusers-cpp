@@ -16,9 +16,9 @@ public:
     }
 
     Tensor forward(Scope scope, Tensor x, Tensor position_ids) {
-        // GGML RoPE expects positions IDs to be 32b integers.
-        if (position_ids.dtype() != GGML_TYPE_I32)
-            position_ids = position_ids.to(GGML_TYPE_I32);
+        // GGML RoPE expects position IDs to be a 1D tensor (vector).
+        if (!ggml_is_vector(*position_ids))
+            position_ids = position_ids.flatten();
 
         std::vector<Tensor> rotated_sections;
 

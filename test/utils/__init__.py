@@ -36,7 +36,7 @@ class TestCase(unittest.TestCase):
 
             outputs.append(value)
 
-        #print(result.stderr)
+        print(result.stderr)
 
         return outputs
 

@@ -6,7 +6,7 @@ class TestNN_Attention(TestCase):
     def test_basic(self):
         model = Attention(
             query_dim=8,
-            heads=1,
+            heads=2,
             dim_head=8
         )
 
@@ -21,7 +21,7 @@ class TestNN_Attention(TestCase):
         actual = self.cli(
             "Attention",
             "--query_dim", "8",
-            "--heads", "1",
+            "--heads", "2",
             "--dim_head", "8",
             "--hidden_states", str(hidden_states.tolist()),
             *self.params(model),
@@ -58,7 +58,7 @@ class TestNN_Attention(TestCase):
     def test_single_token(self):
         model = Attention(
             query_dim=4,
-            heads=1,
+            heads=2,
             dim_head=4,
         )
 
@@ -73,7 +73,7 @@ class TestNN_Attention(TestCase):
         actual = self.cli(
             "Attention",
             "--query_dim", "4",
-            "--heads", "1",
+            "--heads", "2",
             "--dim_head", "4",
             "--hidden_states", str(hidden_states.tolist()),
             *self.params(model),
@@ -84,7 +84,7 @@ class TestNN_Attention(TestCase):
     def test_spatial_input(self):
         model = Attention(
             query_dim=8,
-            heads=1,
+            heads=2,
             dim_head=8,
         )
 
@@ -100,7 +100,7 @@ class TestNN_Attention(TestCase):
         actual = self.cli(
             "Attention",
             "--query_dim", "8",
-            "--heads", "1",
+            "--heads", "2",
             "--dim_head", "8",
             "--hidden_states", str(hidden_states.tolist()),
             *self.params(model),
@@ -111,7 +111,7 @@ class TestNN_Attention(TestCase):
     def test_residual(self):
         model = Attention(
             query_dim=8,
-            heads=1,
+            heads=2,
             dim_head=8,
             residual_connection=True
         )
@@ -128,7 +128,7 @@ class TestNN_Attention(TestCase):
         actual = self.cli(
             "Attention",
             "--query_dim", "8",
-            "--heads", "1",
+            "--heads", "2",
             "--dim_head", "8",
             "--residual_connection", "true",
             "--hidden_states", str(hidden_states.tolist()),
@@ -140,7 +140,7 @@ class TestNN_Attention(TestCase):
     def test_bias(self):
         model = Attention(
             query_dim=8,
-            heads=1,
+            heads=2,
             dim_head=8,
             bias=True,
             out_bias=True
@@ -158,7 +158,7 @@ class TestNN_Attention(TestCase):
         actual = self.cli(
             "Attention",
             "--query_dim", "8",
-            "--heads", "1",
+            "--heads", "2",
             "--dim_head", "8",
             "--bias", "true",
             "--out_bias", "true",
@@ -171,7 +171,7 @@ class TestNN_Attention(TestCase):
     def test_bias_3d(self):
         model = Attention(
             query_dim=8,
-            heads=1,
+            heads=2,
             dim_head=8,
             bias=True,
             out_bias=True
@@ -189,7 +189,7 @@ class TestNN_Attention(TestCase):
         actual = self.cli(
             "Attention",
             "--query_dim", "8",
-            "--heads", "1",
+            "--heads", "2",
             "--dim_head", "8",
             "--bias", "true",
             "--out_bias", "true",

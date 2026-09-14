@@ -654,6 +654,7 @@ public:
         Context local_context(836464);
 
         allocator.use(context, device, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+        allocator.use(local_context, device, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
 
         Flux2Transformer2DModel::Config transformer_config;
         {

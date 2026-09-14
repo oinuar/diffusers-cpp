@@ -278,26 +278,26 @@ public:
         return reinterpret_op("reshape", parent_.reshape_4d(t, ne0, ne1, ne2, ne3), t, out_ne);
     }
 
-    ggml_tensor* permute(ggml_tensor* t, int a0, int a1, int a2, int a3) override {
-        ggml_tensor* out = parent_.permute(t, a0, a1, a2, a3);
-        const int id = get_id(t);
-        const TraceNode& src = nodes_[id];
-        const int ax[4] = {a0, a1, a2, a3};
-        int64_t out_ne[4] = {1, 1, 1, 1};
-        for (int i = 0; i < 4; ++i)
-            out_ne[i] = src.ne[ax[i] >= 0 && ax[i] < 4 ? ax[i] : i];
-
+    ggml_tensor* permute(ggml_tensor* t, int a0, int a1, int a2, int a3) override {                                                                                                                                 
+        ggml_tensor* out = parent_.permute(t, a0, a1, a2, a3);                                                                                                                                                      
+        const int id = get_id(t);                                                                                                                                                                                   
+        const TraceNode& src = nodes_[id];                                                                                                                                                                          
+        const int ax[4] = {a0, a1, a2, a3};                                                                                                                                                                         
+        int64_t out_ne[4] = {1, 1, 1, 1};                                                                                                                                                                           
+        for (int i = 0; i < 4; ++i)                                                                                                                                                                                 
+            out_ne[i] = src.ne[ax[i] >= 0 && ax[i] < 4 ? ax[i] : i];                                                                                                                                                
+                                                            
         // GGML_OP_PERMUTE: a shard of the input along axis b reappears on
-        // the output axis i with ax[i] == b (the meta's handle_permute).
-        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}, 0.0}};
-        for (int b = 0; b < src.rank; ++b) {
-            for (int i = 0; i < src.rank; ++i) {
-                if (ax[i] == b)
-                    cands.push_back({Dist::shard(i), {Dist::shard(b)}, 0.0});
-            }
-        }
-        return traced("permute", {id}, std::move(cands), src.rank, out_ne, out);
-    }
+        // the output axis i with ax[i] == b (the meta's handle_permute).                                                                                                                                                        
+        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}, 0.0}};                                                                                                                           
+        for (int b = 0; b < src.rank; ++b) {          // b: the source's meaningful axes                                                                                                                            
+            for (int i = 0; i < 4; ++i) {             // i: the output axis (the full 4D space)                                                                                                                     
+                if (ax[i] == b)                                                                                                                                                                                     
+                    cands.push_back({Dist::shard(i), {Dist::shard(b)}, 0.0});                                                                                                                                       
+            }                                                                                                                                                                                                       
+        }                                                                                                                                                                                                           
+        return traced("permute", {id}, std::move(cands), out_rank_of(out_ne), out_ne, out);                                                                                                                         
+    }   
 
     ggml_tensor* view_1d(ggml_tensor* t, int64_t ne0, size_t offset) override {
         const int64_t out_ne[4] = {ne0, 1, 1, 1};

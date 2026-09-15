@@ -14,13 +14,25 @@ class RethrowVisitor : public Visitor {
 public:
     explicit RethrowVisitor(Visitor& parent) : parent_(parent) {}
 
-    virtual void visit(Parameter& parameter, std::vector<std::string> path) {
+    void visit(Parameter& parameter, std::vector<std::string> path) override {
         visitWithCatch([&] {
             parent_.visit(parameter, std::move(path));
         });
     }
 
-    virtual void visit(Module& module, std::vector<std::string> path) {
+    void visit(Module& module, std::vector<std::string> path) override {
+        visitWithCatch([&] {
+            parent_.visit(module, std::move(path));
+        });
+    }
+
+    void visit(Flux2FusedQKVProjection& module, std::vector<std::string> path) override {
+        visitWithCatch([&] {
+            parent_.visit(module, std::move(path));
+        });
+    }
+
+    void visit(Flux2FusedAttentionOutput& module, std::vector<std::string> path) override {
         visitWithCatch([&] {
             parent_.visit(module, std::move(path));
         });

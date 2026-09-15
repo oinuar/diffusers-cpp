@@ -77,6 +77,11 @@ Tensor Qwen3Attention<AttnOp>::forward(
 
     // 5. Transpose back, reshape and output projection
     auto attn_output_reshaped = attn_output.reshape({batch_size, seq_len, -1});
-    
-    return o_proj->forward(scope, attn_output_reshaped);
+
+    // Sink op: the planner may leave o_proj row-parallel (PARTIAL output).
+    // The meta backend materializes the P -> R AllReduce only at a
+    // subgraph boundary before a consumer, and a PARTIAL tensor can never
+    // be read -- so the graph's output must be an op that consumes the
+    // (bridged) result and is itself replicated.
+    return o_proj->forward(scope, attn_output_reshaped).clone();
 }

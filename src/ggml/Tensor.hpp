@@ -423,7 +423,11 @@ inline Tensor pow(float base, const Tensor& exponent) {
 }
 
 inline Tensor rsqrt(const Tensor& tensor) {
-    return 1.0f / sqrt(tensor);
+    // exp(log(x) * -0.5) instead of 1.0f / sqrt(x): the scalar-over-tensor
+    // division would broadcast-lift the scalar to a replicated tensor and
+    // divide R by S(a), which the tensor-parallel meta backend cannot
+    // execute. The pow() form keeps every op in the sharded state.
+    return pow(tensor, -0.5f);
 }
 
 template<>

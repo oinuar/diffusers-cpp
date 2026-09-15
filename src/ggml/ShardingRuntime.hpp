@@ -121,9 +121,14 @@ public:
         for (int i = 0; i < rank; ++i)
             padded[i] = ne[i];
 
-        // A bare tensor is a static-tensor candidate (R or S(a)); set_param()
-        // promotes it to a model param, set_input() fixes it to R.
-        trace_op("new_tensor", {}, param_candidates(rank), rank, padded, t);
+        // A bare tensor created through the engine is a compute leaf:
+        // the meta backend stores it in the compute buffer as GGML_OP_NONE
+        // and derives MIRRORED for it, so the only legal state is R. A
+        // model param created through the engine (Context::create) is
+        // pinned to R by the following set_input(), and set_param() (the
+        // param's forward) refines this node to the param candidates when
+        // the weight enters the graph.
+        trace_op("new_tensor", {}, {{Dist::replicated(), {}, 0.0}}, rank, padded, t);
         return t;
     }
 
@@ -299,21 +304,21 @@ public:
         return traced("permute", {id}, std::move(cands), out_rank_of(out_ne), out_ne, out);                                                                                                                         
     }   
 
+    // view_1d/2d/3d/4d → GGML_OP_VIEW: modeled by view_op() (the meta's
+    // handle_view: contiguous views follow the handle_reshape rule, views
+    // with unchanged strides carry the source state over, the remaining
+    // unpermuted case remaps the axis via the matching next-dim stride).
     ggml_tensor* view_1d(ggml_tensor* t, int64_t ne0, size_t offset) override {
-        const int64_t out_ne[4] = {ne0, 1, 1, 1};
-        return reinterpret_op("view", parent_.view_1d(t, ne0, offset), t, out_ne);
+        return view_op("view", parent_.view_1d(t, ne0, offset), t);
     }
     ggml_tensor* view_2d(ggml_tensor* t, int64_t ne0, int64_t ne1, size_t nb1, size_t offset) override {
-        const int64_t out_ne[4] = {ne0, ne1, 1, 1};
-        return reinterpret_op("view", parent_.view_2d(t, ne0, ne1, nb1, offset), t, out_ne);
+        return view_op("view", parent_.view_2d(t, ne0, ne1, nb1, offset), t);
     }
     ggml_tensor* view_3d(ggml_tensor* t, int64_t ne0, int64_t ne1, int64_t ne2, size_t nb1, size_t nb2, size_t offset) override {
-        const int64_t out_ne[4] = {ne0, ne1, ne2, 1};
-        return reinterpret_op("view", parent_.view_3d(t, ne0, ne1, ne2, nb1, nb2, offset), t, out_ne);
+        return view_op("view", parent_.view_3d(t, ne0, ne1, ne2, nb1, nb2, offset), t);
     }
     ggml_tensor* view_4d(ggml_tensor* t, int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3, size_t nb1, size_t nb2, size_t nb3, size_t offset) override {
-        const int64_t out_ne[4] = {ne0, ne1, ne2, ne3};
-        return reinterpret_op("view", parent_.view_4d(t, ne0, ne1, ne2, ne3, nb1, nb2, nb3, offset), t, out_ne);
+        return view_op("view", parent_.view_4d(t, ne0, ne1, ne2, ne3, nb1, nb2, nb3, offset), t);
     }
 
     // ---------------------------------------------------------------------
@@ -342,7 +347,9 @@ public:
             out_ne[i] = (i == dim) ? nodes_[ai].ne[i] + nodes_[bi].ne[i] : nodes_[ai].ne[i];
 
         std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp()}};
-        for (int a = 0; a < rank && a != dim; ++a) {
+        for (int a = 0; a < rank; ++a) {
+            if (a == dim)
+                continue;
             cands.push_back({Dist::shard(a), {Dist::shard(a), Dist::shard(a)}, sharded_comp()});
             cands.push_back({Dist::shard(a), {Dist::shard(a), Dist::replicated()}, sharded_comp()});
             cands.push_back({Dist::shard(a), {Dist::replicated(), Dist::shard(a)}, sharded_comp()});
@@ -594,6 +601,68 @@ private:
         return a;   // unreachable for candidate axes (derive_reshape checked)
     }
 
+
+    // GGML_OP_VIEW (the meta's handle_view): a view that is contiguous (and
+    // views a contiguous source) follows the handle_reshape rule above; a view
+    // whose strides match the source's on every non-trivial dim (e.g. a dim-0
+    // slice) carries the source's state over unchanged (axis preserved); the
+    // remaining unpermuted case maps the source shard axis to the output axis
+    // whose next-dim stride matches; R/P always carry over.
+    ggml_tensor* view_op(const char* name, ggml_tensor* out, ggml_tensor* t) {
+        const int id = get_id(t);
+        const TraceNode& src = nodes_[id];
+        int64_t out_ne[4] = {out->ne[0], out->ne[1], out->ne[2], out->ne[3]};
+        const int out_rank = out_rank_of(out_ne);
+        if (ggml_is_contiguous(out) && ggml_is_contiguous(t))
+            return reinterpret_op(name, out, t, out_ne);
+        bool all_strides_the_same = true;
+        for (int i = 0; i < 4; ++i) {
+            if (out_ne[i] == 1 && src.ne[i] == 1)
+                continue;
+            if (out->nb[i] != t->nb[i]) {
+                all_strides_the_same = false;
+                break;
+            }
+        }
+        const size_t off = (out->view_src == t) ? out->view_offs : 0;
+
+        if (all_strides_the_same) {
+            std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}, 0.0}};
+            // A shard-axis carry-over (the meta returns src_ss[0] as-is,
+            // nr included) is sound only if the view covers the sharded
+            // axis in full from its start: every device must own the same
+            // uniform slice of the view. A windowed slice along the sharded
+            // axis (a chunk at an offset) would leave some devices with the
+            // wrong or no data while the derived state claims a uniform
+            // split. Slices along the other axes are local to each device's
+            // region and always fine.
+            for (int a = 0; a < src.rank; ++a) {
+                const int64_t s_a = (int64_t)((off / out->nb[a]) % src.ne[a]);
+                if (s_a == 0 && out_ne[a] == src.ne[a])
+                    cands.push_back({Dist::shard(a), {Dist::shard(a)}, 0.0});
+            }
+            return traced(name, {id}, std::move(cands), out_rank, out_ne, out);
+        }
+        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}, 0.0}};
+        if (!ggml_is_permuted(out) && !ggml_is_permuted(t)) {
+            for (int axis = 0; axis < 3 && axis < src.rank; ++axis) {
+                // Same uniformity requirement as the stride branch above:
+                // the source shard axis must be covered in full from its
+                // start, and the mapped output axis must keep its full size.
+                const int64_t s_axis = (int64_t)((off / t->nb[axis]) % src.ne[axis]);
+                if (s_axis != 0)
+                    continue;
+                for (int dim = 0; dim < 3; ++dim) {
+                    if (out->nb[dim + 1] == t->nb[axis + 1]) {
+                        if (out_ne[dim] == src.ne[axis] && out_ne[dim] > 1)
+                            cands.push_back({Dist::shard(dim), {Dist::shard(axis)}, 0.0});
+                        break;
+                    }
+                }
+            }
+        }
+        return traced(name, {id}, std::move(cands), out_rank, out_ne, out);
+    }
     static int out_rank_of(const int64_t ne[4]) { return n_dims(ne); }
 
     // ggml's output-size formulas (ggml.c), for conv_2d_direct and pool_2d.

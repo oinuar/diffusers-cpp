@@ -11,8 +11,8 @@ class TestFlux2TransformerBlock(TestCase):
             attention_head_dim=4,
         )
 
-        hidden_states = torch.randn(1, 1, 8)
-        encoder_hidden_states = torch.randn(1, 1, 8)
+        hidden_states = torch.randn(1, self.n_devices(), 8)
+        encoder_hidden_states = torch.randn(1, self.n_devices(), 8)
 
         temb_mod_img = torch.randn(1, 1, 48)
         temb_mod_txt = torch.randn(1, 1, 48)
@@ -46,8 +46,8 @@ class TestFlux2TransformerBlock(TestCase):
             bias=True,
         )
 
-        hidden_states = torch.randn(1, 1, 8)
-        encoder_hidden_states = torch.randn(1, 1, 8)
+        hidden_states = torch.randn(1, self.n_devices(), 8)
+        encoder_hidden_states = torch.randn(1, self.n_devices(), 8)
 
         temb_mod_img = torch.randn(1, 1, 48)
         temb_mod_txt = torch.randn(1, 1, 48)

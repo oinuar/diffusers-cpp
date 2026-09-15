@@ -117,14 +117,14 @@ public:
         constexpr auto expected = Tensor::DType<T>::value;
 
         if (tensor.dtype() != expected)
-            throw std::invalid_argument("value(): dtype mismatch: expected " + std::string(ggml_type_name(expected)) + ", but got " + std::string(ggml_type_name(tensor.dtype())));
+            throw std::invalid_argument("read(): dtype mismatch '" + std::string(ggml_get_name(*tensor)) + "': expected " + std::string(ggml_type_name(expected)) + ", but got " + std::string(ggml_type_name(tensor.dtype())));
 
         std::vector<T> data(
             ggml_nelements(*tensor)
         );
 
         if (data.size() * sizeof(T) != ggml_nbytes(*tensor))
-            throw std::invalid_argument("value(): data size mismatch: expected " + std::to_string(data.size() * sizeof(T)) + ", but got " + std::to_string(ggml_nbytes(*tensor)));
+            throw std::invalid_argument("read(): data size mismatch '" + std::string(ggml_get_name(*tensor)) + "': expected " + std::to_string(data.size() * sizeof(T)) + ", but got " + std::to_string(ggml_nbytes(*tensor)));
 
         ggml_backend_tensor_get(
             *tensor,
@@ -138,7 +138,7 @@ public:
 
     void write(const Tensor& tensor, const std::vector<std::byte>& bytes) {
         if (bytes.size() != ggml_nbytes(*tensor))
-            throw std::invalid_argument("write(): data size mismatch: expected " + std::to_string(bytes.size()) + ", but got " + std::to_string(ggml_nbytes(*tensor)));
+            throw std::invalid_argument("write(): data size mismatch '" + std::string(ggml_get_name(*tensor)) + "': expected " + std::to_string(bytes.size()) + ", but got " + std::to_string(ggml_nbytes(*tensor)));
 
         ggml_backend_tensor_set(
             *tensor,

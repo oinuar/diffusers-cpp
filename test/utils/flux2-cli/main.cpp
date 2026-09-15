@@ -716,7 +716,7 @@ public:
 
         Flux2Transformer2DModel transformer(transformer_config);
         {
-            TestCLI::CreateParametersVisitor create_parameters(context, args_, "transformer");
+            CreateParametersVisitor create_parameters(context, args_, "transformer");
             RethrowVisitor visitor(create_parameters);
             transformer.accept(visitor);
             visitor.rethrow();
@@ -724,7 +724,7 @@ public:
         
         AutoencoderKLFlux2 vae(vae_config);
         {
-            TestCLI::CreateParametersVisitor create_parameters(context, args_, "vae");
+            CreateParametersVisitor create_parameters(context, args_, "vae");
             RethrowVisitor visitor(create_parameters);
             vae.accept(visitor);
             visitor.rethrow();
@@ -732,7 +732,7 @@ public:
 
         Qwen3ForCausalLM text_encoder(qwen_config);
         {
-            TestCLI::CreateParametersVisitor create_parameters(context, args_, "text_encoder");
+            CreateParametersVisitor create_parameters(context, args_, "text_encoder");
             RethrowVisitor visitor(create_parameters);
             text_encoder.accept(visitor);
             visitor.rethrow();
@@ -771,6 +771,125 @@ public:
 
         return EXIT_SUCCESS;
     }
+
+private:
+    class CreateParametersVisitor : public TestCLI::CreateParametersVisitor {
+    public:
+        CreateParametersVisitor(Context& context, const ArgumentParser& args, const std::string& prefix = "")
+            : TestCLI::CreateParametersVisitor(context, args, prefix)
+        {}
+
+        void visit(Flux2FusedQKVProjection& to_qkv_mlp_proj, std::vector<std::string> path) override {
+            Scope scope(context());
+            ModulePath module_path("-", "--param");
+            auto weight_path = module_path(path, prefix(), {"weight"});
+
+            auto weight_value = args().get_one<std::string>(weight_path); // TODO: support files!
+            ArgumentParser::parser<Tensor>::TensorParser parser(weight_value);
+
+            auto q_weight = to_qkv_mlp_proj.q()->weight();
+            auto k_weight = to_qkv_mlp_proj.k()->weight();
+            auto v_weight = to_qkv_mlp_proj.v()->weight();
+            auto mlp_in_weight = to_qkv_mlp_proj.mlp_in()->weight();
+
+            auto [shape, data] = parser.parse();
+            auto inner = to_qkv_mlp_proj.inner_dim();
+            auto mlp_out = to_qkv_mlp_proj.mlp_out_dim();
+            
+            q_weight->set(context().create<float>(q_weight->shape(), [=](std::mt19937&) {
+                return slice_rows(data, inner, 0, inner);
+            }));
+
+            k_weight->set(context().create<float>(k_weight->shape(), [=](std::mt19937&) {
+                return slice_rows(data, inner, inner, 2 * inner);
+            }));
+
+            v_weight->set(context().create<float>(v_weight->shape(), [=](std::mt19937&) {
+                return slice_rows(data, inner, 2 * inner, 3 * inner);
+            }));
+
+            mlp_in_weight->set(context().create<float>(mlp_in_weight->shape(), [=](std::mt19937&) {
+                return slice_rows(data, inner, 3 * inner, 3 * inner + mlp_out);
+            }));
+        }
+
+        void visit(Flux2FusedAttentionOutput& to_out, std::vector<std::string> path) override {
+            Scope scope(context());
+            ModulePath module_path("-", "--param");
+
+            auto weight_path = module_path(path, prefix(), {"weight"});
+            auto weight_value = args().get_one<std::string>(weight_path); // TODO: support files!
+            ArgumentParser::parser<Tensor>::TensorParser weight_parser(weight_value);
+
+            auto [weight_shape, weight_data] = weight_parser.parse();
+
+            auto attn_weight = to_out.attn()->weight();
+            auto mlp_weight = to_out.mlp()->weight();
+
+            auto inner = to_out.inner_dim();
+            auto mlp_hidden = to_out.mlp_hidden_dim();
+
+            attn_weight->set(context().create<float>(attn_weight->shape(), [=](std::mt19937&) {
+                return slice_cols(weight_data, inner, inner + mlp_hidden, 0, inner);
+            }));
+
+            mlp_weight->set(context().create<float>(mlp_weight->shape(), [=](std::mt19937&) {
+                return slice_cols(weight_data, inner, inner + mlp_hidden, inner, inner + mlp_hidden);
+            }));
+
+            auto attn_bias = to_out.attn()->bias();
+
+            if (attn_bias) {
+                auto bias_path = module_path(path, prefix(), {"bias"});
+                auto bias_value = args().get_one<std::string>(bias_path); // TODO: support files!
+                ArgumentParser::parser<Tensor>::TensorParser bias_parser(bias_value);
+
+                auto [bias_shape, bias_data] = bias_parser.parse();
+
+                attn_bias->set(context().create<float>(attn_bias->shape(), [=](std::mt19937&) {
+                    return bias_data;
+                }));
+            }
+        }
+
+    private:
+        // PyTorch: x[start:end]
+        template <typename T>
+        static std::vector<T> slice_rows(
+            const std::vector<T>& x,
+            size_t cols,
+            size_t start,
+            size_t end)
+        {
+            return {
+                x.begin() + start * cols,
+                x.begin() + end * cols
+            };
+        }
+
+        // PyTorch: x[:, start:end]
+        template <typename T>
+        static std::vector<T> slice_cols(
+            const std::vector<T>& x,
+            size_t rows,
+            size_t cols,
+            size_t start,
+            size_t end)
+        {
+            std::vector<T> out;
+            out.reserve(rows * (end - start));
+
+            for (size_t r = 0; r < rows; ++r) {
+                out.insert(
+                    out.end(),
+                    x.begin() + r * cols + start,
+                    x.begin() + r * cols + end);
+            }
+
+            return out;
+        }
+
+    };
 };
 
 int main(int argc, char** argv) {

@@ -194,7 +194,7 @@ public:
 
             FlashAttentionOp attention;
 
-            auto output = attention(context, q, k, v, mask);
+            auto output = attention(scope.context(), q, k, v, mask);
 
             Graph graph(scheduler, scope.context(), {output});
             Computation computation(allocator, graph, {&context, &scope.context()});

@@ -118,3 +118,35 @@ class TestTensorDiv(TestCase):
         )
 
         self.assertTensors(actual, [expected])
+
+    def test_div_cross_rank_broadcast(self):
+        # [2, 1, 8] / [77, 1] -> [2, 77, 8] — neither operand is a
+        # broadcast superset of the other (cross-rank).
+        a = torch.randn(2, 1, 8)
+        b = torch.randn(77, 1)
+
+        expected = a / b
+
+        actual = self.cli(
+            'div',
+            '--lhs', str(a.tolist()),
+            '--rhs', str(b.tolist()),
+        )
+
+        self.assertTensors(actual, [expected])
+
+    def test_div_4d_cross_broadcast(self):
+        # [1, 2, 1, 3] / [4, 1, 5, 1] -> [4, 2, 5, 3] — neither operand is
+        # a broadcast superset of the other (4D).
+        a = torch.randn(1, 2, 1, 3)
+        b = torch.randn(4, 1, 5, 1)
+
+        expected = a / b
+
+        actual = self.cli(
+            'div',
+            '--lhs', str(a.tolist()),
+            '--rhs', str(b.tolist()),
+        )
+
+        self.assertTensors(actual, [expected])

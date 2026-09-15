@@ -61,7 +61,7 @@ public:
         }
     }
 
-    virtual std::tuple<Tensor, std::optional<Tensor>> forward(
+    std::tuple<Tensor, std::optional<Tensor>> forward(
         Scope scope,
         Tensor hidden_states,
         std::optional<Tensor> encoder_hidden_states,

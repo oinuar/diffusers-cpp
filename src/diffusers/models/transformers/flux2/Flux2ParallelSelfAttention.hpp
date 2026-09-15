@@ -5,6 +5,8 @@
 #include "nn/modules/normalization/RMSNorm.hpp"
 #include "diffusers/models/transformers/flux2/Flux2SwiGLU.hpp"
 #include "diffusers/models/transformers/flux2/Flux2PosEmbed.hpp"
+#include "diffusers/models/transformers/flux2/Flux2FusedQKVProjection.hpp"
+#include "diffusers/models/transformers/flux2/Flux2FusedAttentionOutput.hpp"
 
 template <class AttnOp>
 class Flux2ParallelSelfAttention : public Module {
@@ -36,7 +38,7 @@ public:
         mlp_mult_factor_ = mlp_mult_factor;
 
         // Fused QKV projections + MLP input projection
-        modules["to_qkv_mlp_proj"] = std::make_shared<Linear>(query_dim_, inner_dim_ * 3 + mlp_hidden_dim_ * mlp_mult_factor, bias);
+        modules["to_qkv_mlp_proj"] = std::make_shared<Flux2FusedQKVProjection>(query_dim_, inner_dim_, mlp_hidden_dim_, mlp_mult_factor, bias);
         modules["mlp_act_fn"] = std::make_shared<Flux2SwiGLU>();
         
         // QK Norm
@@ -44,29 +46,19 @@ public:
         modules["norm_k"] = std::make_shared<RMSNorm>(dim_head, eps, elementwise_affine);
 
         // Fused attention output projection + MLP output projection
-        modules["to_out"] = std::make_shared<Linear>(inner_dim_ + mlp_hidden_dim_, out_dim_, out_bias);
+        modules["to_out"] = std::make_shared<Flux2FusedAttentionOutput>(inner_dim_, mlp_hidden_dim_, out_dim_, out_bias);
     }
 
-    virtual Tensor forward(
+    Tensor forward(
         Scope scope,
         Tensor hidden_states,
         std::optional<Tensor> attention_mask = std::nullopt,
         std::optional<std::pair<std::shared_ptr<Flux2PosEmbed>, Tensor>> image_rotary_emb = std::nullopt
     ) {
         // Parallel in (QKV + MLP in) projection
-        auto to_qkv_mlp_proj = std::static_pointer_cast<Linear>(modules["to_qkv_mlp_proj"]);
+        auto to_qkv_mlp_proj = std::static_pointer_cast<Flux2FusedQKVProjection>(modules["to_qkv_mlp_proj"]);
 
-        hidden_states = to_qkv_mlp_proj->forward(scope, hidden_states);
-
-        auto parts = hidden_states.split_with_sizes({3 * inner_dim_, mlp_hidden_dim_ * mlp_mult_factor_}, -1);
-        auto qkv = parts.at(0);
-        auto mlp_hidden_states = parts.at(1);
-
-        // Handle the attention logic
-        auto chunks = qkv.chunk(3, -1);
-        auto query = chunks.at(0);
-        auto key = chunks.at(1);
-        auto value = chunks.at(2);
+        auto [query, key, value, mlp_hidden_states] = to_qkv_mlp_proj->forward(scope, hidden_states);
 
         query = query.unflatten(-1, {heads_, -1});
         key = key.unflatten(-1, {heads_, -1});
@@ -100,16 +92,15 @@ public:
         // Handle the feedforward (FF) logic
         mlp_hidden_states = mlp_act_fn->forward(scope, mlp_hidden_states);
 
-        auto to_out = std::static_pointer_cast<Linear>(modules["to_out"]);
+        auto to_out = std::static_pointer_cast<Flux2FusedAttentionOutput>(modules["to_out"]);
 
         // Concatenate and parallel output projection
-        hidden_states = Tensor::cat({hidden_states, mlp_hidden_states}, -1);
-        hidden_states = to_out->forward(scope, hidden_states);
+        hidden_states = to_out->forward(scope, hidden_states, mlp_hidden_states);
 
         return hidden_states;
     }
 
-protected:
+private:
     int64_t head_dim_;
     int64_t inner_dim_;
     int64_t query_dim_;
@@ -122,31 +113,4 @@ protected:
     float mlp_ratio_;
     int64_t mlp_hidden_dim_;
     int64_t mlp_mult_factor_;
-
-    static Tensor apply_rotary_emb(
-        Scope& scope,
-        Tensor x,
-        const Tensor& cos,
-        const Tensor& sin
-    ) {
-        const auto head_dim = x.shape()[-1];
-
-        // (..., D) -> (..., D/2, 2)
-        auto t = x.unflatten(-1, {head_dim / 2, 2});
-
-        // Extract real/imag parts of each pair.
-        auto real = t[{Tensor::Slice::ellipsis(), Tensor::Slice::index(0)}];
-        auto imag = t[{Tensor::Slice::ellipsis(), Tensor::Slice::index(1)}];
-
-        // Rotate: (a, b) -> (-b, a)
-        auto rotated = Tensor::cat({
-            (-imag).unsqueeze(-1),
-            real.unsqueeze(-1),
-        }, -1);
-
-        // (..., D/2, 2) -> (..., D)
-        rotated = rotated.flatten(-2, -1);
-
-        return x * cos + rotated * sin;
-    }
 };

@@ -112,9 +112,10 @@ public:
             auto joined_path = module_path(path, prefix_);
 
             auto tensor_value = args_.get_one<std::string>(joined_path);
-            ArgumentParser::parser<Tensor> parser(context_);
             Tensor tensor;
 
+            ArgumentParser::parser<Tensor> parser(context_, parameter.dtype());
+            
             // Read tensor value from file
             std::error_code ec;
             if (std::filesystem::is_regular_file(tensor_value, ec)) {
@@ -134,6 +135,18 @@ public:
                 tensor = parser(joined_path, tensor_value);
 
             parameter.set(tensor);
+        }
+
+        Context& context() {
+            return context_;
+        }
+
+        const ArgumentParser& args() const {
+            return args_;
+        }
+
+        const std::string& prefix() const {
+            return prefix_;
         }
 
     private:

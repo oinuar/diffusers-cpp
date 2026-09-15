@@ -12,9 +12,10 @@ namespace {
 // ggml's elementwise binary ops natively broadcast their second argument
 // against the first: for every dim i, src[0]->ne[i] % src[1]->ne[i] must be
 // zero, and the result takes src[0]'s shape. The first argument must already
-// be a broadcast superset of the second — one operand at a time. Avoiding
-// repeat matters for the tensor-parallel meta device, where GGML_OP_REPEAT
-// is only supported with mirrored operands.
+// be a broadcast superset of the second — one operand at a time. The binary
+// operators rely on this native broadcast exclusively: no expand/REPEAT
+// fallback is ever inserted, which matters for the tensor-parallel meta
+// device, where GGML_OP_REPEAT is only supported with mirrored operands.
 //
 // True if a's shape is a broadcast superset of b's shape: every dim of a is
 // a multiple of the matching dim of b (missing dims count as 1).
@@ -32,6 +33,21 @@ bool ggml_broadcasts(const Tensor::Shape& a, const Tensor::Shape& b) {
     }
 
     return true;
+}
+
+// The broadcast target of two broadcastable shapes is a broadcast superset
+// of both operands (every target dim is a multiple of the matching dim of
+// each operand, missing dims counting as 1), so every operand can be lifted
+// to the target shape with a single native broadcast. When an operand cannot
+// go into the first argument slot directly (neither shape is a superset of
+// the other, or the op is not commutative), it is lifted by combining it
+// with the identity element of the op created in the target shape: 0 + x ==
+// x for +, -, / and 1 * x == x for *. The combination broadcasts natively
+// and its result already has the target shape, so it can be combined
+// natively with the other operand.
+Tensor native_broadcast_identity(const Tensor::Shape& shape, ggml_type type, float value) {
+    auto blank = Tensor::empty(shape, type);
+    return Tensor(Scope::runtime().fill(*blank, value), shape);
 }
 
 }
@@ -86,21 +102,22 @@ Tensor Tensor::operator+(Tensor rhs) const {
 
     // ggml_add() natively broadcasts its second argument against the first
     // (the first must already be a broadcast superset). Addition is
-    // commutative, so use the argument order that lets ggml broadcast: no
-    // expand/repeat nodes needed.
+    // commutative, so use the argument order that lets ggml broadcast.
     if (ggml_broadcasts(lhs.shape_, rhs.shape_))
         return Tensor(Scope::runtime().add(lhs.t_, rhs.t_), target);
 
     if (ggml_broadcasts(rhs.shape_, lhs.shape_))
         return Tensor(Scope::runtime().add(rhs.t_, lhs.t_), target);
 
-    // Neither shape is a superset of the other (both operands have
-    // singleton dims the other lacks): ggml broadcasts one operand at a
-    // time, so fall back to explicit expansion.
-    lhs = lhs.expand(target);
-    rhs = rhs.expand(target);
+    // Neither shape is a broadcast superset of the other (both operands
+    // have singleton dims the other lacks). The target shape is still a
+    // broadcast superset of both, so lift lhs to the target with a native
+    // broadcast against the identity (0 + lhs == lhs), then combine the
+    // lifted operand with rhs natively.
+    auto identity = native_broadcast_identity(target, dtype, 0.0f);
+    auto lifted = Tensor(Scope::runtime().add(identity.t_, lhs.t_), target);
 
-    return Tensor(Scope::runtime().add(lhs.t_, rhs.t_), target);
+    return Tensor(Scope::runtime().add(lifted.t_, rhs.t_), target);
 }
 
 Tensor Tensor::operator-(Tensor rhs) const {
@@ -113,16 +130,20 @@ Tensor Tensor::operator-(Tensor rhs) const {
 
     if (ggml_broadcasts(rhs.shape_, lhs.shape_)) {
         // lhs - rhs = -(rhs - lhs) keeps both operands in an order ggml can
-        // broadcast natively, without expand/repeat nodes.
+        // broadcast natively.
         auto diff = Tensor(Scope::runtime().sub(rhs.t_, lhs.t_), target);
 
         return -diff;
     }
 
-    lhs = lhs.expand(target);
-    rhs = rhs.expand(target);
+    // Neither shape is a broadcast superset of the other. The target shape
+    // is a broadcast superset of both, so lift lhs to the target with a
+    // native broadcast against the identity (0 + lhs == lhs), then subtract
+    // rhs natively.
+    auto identity = native_broadcast_identity(target, dtype, 0.0f);
+    auto lifted = Tensor(Scope::runtime().add(identity.t_, lhs.t_), target);
 
-    return Tensor(Scope::runtime().sub(lhs.t_, rhs.t_), target);
+    return Tensor(Scope::runtime().sub(lifted.t_, rhs.t_), target);
 }
 
 Tensor Tensor::operator*(Tensor rhs) const {
@@ -132,21 +153,21 @@ Tensor Tensor::operator*(Tensor rhs) const {
 
     // ggml_mul() natively broadcasts its second argument against the first
     // (the first must already be a broadcast superset). Multiplication is
-    // commutative, so use the argument order that lets ggml broadcast: no
-    // expand/repeat nodes needed.
+    // commutative, so use the argument order that lets ggml broadcast.
     if (ggml_broadcasts(lhs.shape_, rhs.shape_))
         return Tensor(Scope::runtime().mul(lhs.t_, rhs.t_), target);
 
     if (ggml_broadcasts(rhs.shape_, lhs.shape_))
         return Tensor(Scope::runtime().mul(rhs.t_, lhs.t_), target);
 
-    // Neither shape is a superset of the other (both operands have
-    // singleton dims the other lacks): ggml broadcasts one operand at a
-    // time, so fall back to explicit expansion.
-    lhs = lhs.expand(target);
-    rhs = rhs.expand(target);
+    // Neither shape is a broadcast superset of the other. The target shape
+    // is a broadcast superset of both, so lift lhs to the target with a
+    // native broadcast against the identity (1 * lhs == lhs), then multiply
+    // by rhs natively.
+    auto identity = native_broadcast_identity(target, dtype, 1.0f);
+    auto lifted = Tensor(Scope::runtime().mul(identity.t_, lhs.t_), target);
 
-    return Tensor(Scope::runtime().mul(lhs.t_, rhs.t_), target);
+    return Tensor(Scope::runtime().mul(lifted.t_, rhs.t_), target);
 }
 
 Tensor Tensor::operator/(Tensor rhs) const {
@@ -154,18 +175,19 @@ Tensor Tensor::operator/(Tensor rhs) const {
     auto target = Shape::broadcast(lhs.shape_, rhs.shape_);
     auto dtype = DType<void>::unify(lhs.dtype(), rhs.dtype());
 
+    // ggml_div() only natively broadcasts the second argument, and division
+    // is not commutative, so lhs cannot be moved into the first argument
+    // slot. When lhs is not a broadcast superset of rhs (the target shape
+    // is still a broadcast superset of both), lift lhs to the target with a
+    // native broadcast against the identity (0 + lhs == lhs), then divide
+    // the lifted operand by rhs natively.
     if (ggml_broadcasts(lhs.shape_, rhs.shape_))
         return Tensor(Scope::runtime().div(lhs.t_, rhs.t_), target);
 
-    // ggml_div() only natively broadcasts the second argument; any other
-    // argument order falls back to explicit expansion. Note that the
-    // fallback is not executable on the tensor-parallel meta device with
-    // sharded operands: keep the dominating operand on the left, or use
-    // scale() for a scalar divisor.
-    lhs = lhs.expand(target);
-    rhs = rhs.expand(target);
+    auto identity = native_broadcast_identity(target, dtype, 0.0f);
+    auto lifted = Tensor(Scope::runtime().add(identity.t_, lhs.t_), target);
 
-    return Tensor(Scope::runtime().div(lhs.t_, rhs.t_), target);
+    return Tensor(Scope::runtime().div(lifted.t_, rhs.t_), target);
 }
 
 Tensor Tensor::clamp(float a, float b) const {

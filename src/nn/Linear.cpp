@@ -15,22 +15,33 @@ Linear::Linear(
 }
 
 Tensor Linear::forward(Scope scope, Tensor x) {
-    auto weight = std::static_pointer_cast<Parameter>(modules["weight"])->forward(scope);
+    auto w = weight()->forward(scope);
 
     // Weight is logically shaped [out_features, in_features] (PyTorch),
     // but stored in GGML's native reversed layout {in_features, out_features}.
     // Since ggml_mul_mat() already performs Aᵀ * B on its first operand,
     // explicitly transposing the weight would transpose it twice.
-    auto y = scope.runtime().mul_mat(*weight, *x);
+    auto y = scope.runtime().mul_mat(*w, *x);
 
     if (bias_) {
-        auto bias = std::static_pointer_cast<Parameter>(modules["bias"])->forward(scope);
+        auto b = bias()->forward(scope);
 
-        y = scope.runtime().add(y, *bias);
+        y = scope.runtime().add(y, *b);
     }
 
     Tensor::Shape shape = x.shape();
-    shape[shape.rank() - 1] = weight.shape()[0];
+    shape[shape.rank() - 1] = w.shape()[0];
 
     return Tensor(y, shape);
+}
+
+std::shared_ptr<Parameter> Linear::weight() const {
+    return std::static_pointer_cast<Parameter>(modules.at("weight"));
+}
+
+std::shared_ptr<Parameter> Linear::bias() const {
+    if (bias_)
+        return std::static_pointer_cast<Parameter>(modules.at("bias"));
+
+    return nullptr;
 }

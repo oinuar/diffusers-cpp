@@ -16,6 +16,10 @@ public:
 
     virtual void accept(Visitor& visitor, std::vector<std::string> path = std::vector<std::string>());
 
+    const Children& children() const {
+        return modules;
+    }
+
 protected:
     Children modules;
 };

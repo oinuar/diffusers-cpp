@@ -7,13 +7,11 @@ import torch
 class TestCase(unittest.TestCase):
     def cli(self, *args: str) -> list:
         cli_bin = os.environ['CLI']
-        n_devices = os.environ.get('N_DEVICES', 2)
-        use_gpu = os.environ.get('USE_GPU', 'false')
 
         command = [
             *args,
-            '--runner-n_devices', str(n_devices),
-            '--runner-use_gpu', str(use_gpu)
+            '--runner-n_devices', str(self.n_devices()),
+            '--runner-use_gpu', str(self.use_gpu()).lower()
         ]
 
         command_w_args = " ".join([cli_bin] + list(map(lambda x: x if x.startswith("--") else f'"{x}"', command)))
@@ -39,6 +37,12 @@ class TestCase(unittest.TestCase):
         print(result.stderr)
 
         return outputs
+
+    def n_devices(self):
+        return int(os.environ.get('N_DEVICES', '2'))
+
+    def use_gpu(self):
+        return os.environ.get('USE_GPU', 'false') == 'true'
 
     def params(self, model, path=None, prefix=""):
         args = []
@@ -66,7 +70,7 @@ class TestCase(unittest.TestCase):
         index = 0
 
         # GPU uses less accurate versions of operators in some cases, so make thresholds looser
-        if str(os.environ.get('USE_GPU', 'false')) == 'true':
+        if self.use_gpu:
             finalKwargs['rtol'] = 2e-3
             finalKwargs['atol'] = 1e-3
 

@@ -3,6 +3,7 @@
 #include "ggml/Allocator.hpp"
 #include "ggml/ShardingRuntime.hpp"
 #include <set>
+#include <numeric>
 #include <sstream>
 #include <iomanip>
 
@@ -85,7 +86,16 @@ public:
             ss << "=== plan (total cost " << std::fixed << std::setprecision(2) << total_cost << ") ===\n";
             for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
                 const PlanNode& pn = *it;
-                ss << "  [" << pn.id << "] " << pn.op_name << (pn.tensor_name.empty() ? "" : " " + pn.tensor_name) << ": ";
+
+                ss << "  [" << pn.id << "] ";
+
+                if (pn.op_name == "param")
+                    ss << (pn.tensor_name.empty() ? pn.op_name : pn.tensor_name);
+                else
+                    ss << pn.op_name << (pn.tensor_name.empty() ? "" : " " + pn.tensor_name);
+
+                ss << ": ";
+
                 if (pn.produced == pn.required) {
                     ss << pn.produced.to_string();
                 } else {
@@ -365,16 +375,40 @@ private:
     }
 
     std::string infeasibility_reason(const ShardingRuntime::Dist& required) const {
-        std::string r;
+        std::vector<std::string> r;
         for (const ShardingRuntime::TraceNode& n : runtime_.nodes()) {
-            if (n.is_fixed || !n.candidates.empty()) continue;
-            if (!r.empty()) r += "; ";
-            r += n.op_name + " (node " + std::to_string(n.id) + ") is not supported by the meta backend (no split-state rule)";
+            if (n.is_fixed)
+                continue;
+
+            // If there are no candidates for node, the plan is trivially infeasible.
+            if (n.candidates.empty())
+                r.push_back(n.op_name + " (node " + std::to_string(n.id) + ") is not supported by the meta backend (no split-state rule)");
+
+            // flash_attn_ext is only splittable with q/k/v sharded along the
+            // sequence axis and the output sharded along the heads axis (S(1)).
+            // That committed S(1) split must be uniform across the devices,
+            // so the heads dim (axis 1 of the flash_attn output) must divide by
+            // the device count.
+            else if (n.op_name == "flash_attn" && n.ne[1] % device_.count() != 0)
+                r.push_back(n.op_name + " (node " + std::to_string(n.id) + ") " +
+                    "must be sharded along the heads axis (S(1)), but its size " +
+                    std::to_string(n.ne[1]) + " is not divisible by the device count " +
+                    std::to_string(device_.count()));
         }
+
+        // Infeasibility is because of unknown reason.
         if (r.empty())
-            r = "no feasible split plan satisfies the required output distribution " + required.to_string() +
-                (decisions_.empty() ? "" : ", given the parameter splits committed by the earlier outputs");
-        return r;
+            r.push_back("no feasible split plan satisfies the required output distribution " + required.to_string() +
+                (decisions_.empty() ? "" : ", given the parameter splits committed by the earlier outputs"));
+
+        return std::accumulate(std::begin(r), std::end(r), std::string(),
+            [](const std::string& acc, const std::string& x) {
+                if (acc.empty())
+                    return x;
+
+                return acc + "\n" + x;
+            }
+        );
     }
 
     // Solve one plan round over the trace (the DP above + the commit

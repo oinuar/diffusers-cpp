@@ -37,7 +37,7 @@ class TestNN_UNetMidBlock2D(TestCase):
 
     def test_with_attention(self):
         model = UNetMidBlock2D(
-            in_channels=8,
+            in_channels=16,
             attention_head_dim=8,
             resnet_groups=4,
             temb_channels=None,
@@ -47,7 +47,7 @@ class TestNN_UNetMidBlock2D(TestCase):
 
         sample = torch.randn(
             1,
-            8,
+            16,
             4,
             4,
         )
@@ -56,7 +56,7 @@ class TestNN_UNetMidBlock2D(TestCase):
 
         actual = self.cli(
             "UNetMidBlock2D",
-            "--in_channels", "8",
+            "--in_channels", "16",
             "--attention_head_dim", "8",
             "--resnet_groups", "4",
             "--sample", str(sample.tolist()),

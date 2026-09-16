@@ -4,7 +4,7 @@
 #include "diffusers/models/resnet/ResnetBlock2D.hpp"
 #include "diffusers/models/attention_processor/Attention.hpp"
 #include "nn/attention/ScaledDotProductAttention.hpp"
-#include "nn/attention/FlashAttentionOp.hpp"
+#include "nn/attention/SoftmaxAttentionOp.hpp"
 #include <iostream>
 
 UNetMidBlock2D::UNetMidBlock2D(
@@ -33,7 +33,7 @@ UNetMidBlock2D::UNetMidBlock2D(
             auto heads = in_channels / attention_head_dim;
 
             (*attentions)[i - 1] =
-                std::make_shared<Attention<ScaledDotProductAttention<FlashAttentionOp>>>(
+                std::make_shared<Attention<ScaledDotProductAttention<SoftmaxAttentionOp>>>(
                     in_channels, // query_dim
                     in_channels / attention_head_dim, // heads
                     attention_head_dim, // dim_head
@@ -78,7 +78,7 @@ Tensor UNetMidBlock2D::forward(Scope scope, Tensor hidden_states, std::optional<
         if (i > 0 && add_attention_) {
             auto attentions = std::static_pointer_cast<ModuleList>(modules["attentions"]);
 
-            hidden_states = std::static_pointer_cast<Attention<ScaledDotProductAttention<FlashAttentionOp>>>((*attentions)[i - 1])
+            hidden_states = std::static_pointer_cast<Attention<ScaledDotProductAttention<SoftmaxAttentionOp>>>((*attentions)[i - 1])
                 ->forward(scope, hidden_states);
         }
 

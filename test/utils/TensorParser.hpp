@@ -18,12 +18,10 @@ struct ArgumentParser::parser<Tensor> {
     }
 
     Tensor operator ()(const std::string& option, const std::string& value) const {
-        TensorParser parser(value);
+        TensorParser parser(option, value, dtype_);
 
         try {
             auto [shape, data] = parser.parse();
-
-            std::cerr << option << ": shape = " << shape.to_string() << ", data size = " << data.size() << ", dtype = " << ggml_type_name(dtype_) << std::endl;
 
             Tensor tensor;
 
@@ -74,8 +72,8 @@ private:
 public:
     class TensorParser {
     public:
-        explicit TensorParser(std::string_view s)
-            : s_(s), i_(0) {}
+        explicit TensorParser(std::string_view option, std::string_view s, const ggml_type& dtype = GGML_TYPE_F32)
+            : option_(option), s_(s), i_(0), dtype_(dtype) {}
 
         std::pair<Tensor::Shape, std::vector<float>> parse() {
             skip_ws();
@@ -97,6 +95,8 @@ public:
                 result.scalar = false;
             }
 
+            std::cerr << option_ << ": shape = " << result.shape.to_string() << ", data size = " << result.values.size() << ", dtype = " << ggml_type_name(dtype_) << std::endl;
+
             return {result.shape, std::move(result.values)};
         }
 
@@ -107,8 +107,10 @@ public:
             bool scalar = false; // true only for parse_number()
         };
 
+        std::string_view option_;
         std::string_view s_;
         size_t i_;
+        ggml_type dtype_;
 
         Node parse_array() {
             expect('[');

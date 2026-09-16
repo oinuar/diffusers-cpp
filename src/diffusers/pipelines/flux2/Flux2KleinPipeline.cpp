@@ -276,6 +276,16 @@ static Tensor make_packed_latents(Scope scope, int batch, int packed_h, int pack
         });
 }
 
+static Tensor make_init_latents(Scope scope, int batch, int packed_h, int packed_w, int num_latent_channels, std::vector<float>&& init_latents) {
+    const int64_t token_dim = int64_t(num_latent_channels) * 4; // C * 4
+    const size_t count = size_t(batch) * packed_h * packed_w * token_dim;
+
+    return scope.context().create<float>({batch, int64_t(packed_h) * packed_w, token_dim},
+        [init_latents = std::move(init_latents)](std::mt19937&) {
+            return init_latents;
+        });
+}
+
 static std::vector<Image> latents_to_images(const std::vector<float>& data, int batch, int height, int width) {
     std::vector<Image> images;
     images.reserve(batch);
@@ -680,10 +690,8 @@ std::vector<Image> Flux2KleinPipeline::operator ()(
         options.images
     ));
 
-    const int64_t token_dim = int64_t(vae_.latent_channels()) * 4; // C * 4
-
     auto latents = options.init_latents
-        ? context.create<float>({batch, int64_t(packed_h) * packed_w, token_dim}, [init_latents = std::move(*options.init_latents)](std::mt19937&) { return init_latents; })
+        ? make_init_latents(context, batch, packed_h, packed_w, vae_.latent_channels(), std::move(*options.init_latents))
         : make_packed_latents(context, batch, packed_h, packed_w, vae_.latent_channels());
 
     auto denoise_graph = std::move(make_denoise_graph(

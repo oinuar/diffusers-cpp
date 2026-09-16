@@ -111,38 +111,36 @@ public:
             ModulePath module_path("-", "--param");
             auto joined_path = module_path(path, prefix_);
 
-            auto tensor_value = args_.get_one<std::string>(joined_path);
-            Tensor tensor;
-
             ArgumentParser::parser<Tensor> parser(context_, parameter.dtype());
             
+            auto tensor = parser(joined_path, get_param(joined_path));
+
+            parameter.set(tensor, joined_path);
+        }
+
+        std::string get_param(const std::string& path) {
+            auto value = args_.get_one<std::string>(path);
+
             // Read tensor value from file
             std::error_code ec;
-            if (std::filesystem::is_regular_file(tensor_value, ec)) {
-                std::ifstream file(tensor_value);
+            if (std::filesystem::is_regular_file(value, ec)) {
+                std::ifstream file(value);
                 if (!file)
                     throw std::runtime_error(
-                        "Failed to open parameter file: " + tensor_value);
+                        "Failed to open parameter file: " + value);
                 
                 std::stringstream buffer;
                 buffer << file.rdbuf();
 
-                tensor = parser(joined_path, buffer.str());
+                return buffer.str();
             }
 
             // Otherwise, read inline tensor
-            else
-                tensor = parser(joined_path, tensor_value);
-
-            parameter.set(tensor);
+            return value;
         }
 
         Context& context() {
             return context_;
-        }
-
-        const ArgumentParser& args() const {
-            return args_;
         }
 
         const std::string& prefix() const {

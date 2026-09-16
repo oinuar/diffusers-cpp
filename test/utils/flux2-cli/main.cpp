@@ -417,11 +417,11 @@ public:
             Tensor result;
 
             if (args_.get(0) == "Flux2KleinPipeline_pack_latents") {
-            Scope scope(local_context, allocator.runtime());
+                Scope scope(local_context, allocator.runtime());
 
                 result = Flux2KleinPipeline::pack_latents(latents);
             } else if (args_.get(0) == "Flux2KleinPipeline_unpack_latents") {
-            Scope scope(local_context, allocator.runtime());
+                Scope scope(local_context, allocator.runtime());
 
                 result = Flux2KleinPipeline::unpack_latents(
                     latents,
@@ -429,7 +429,7 @@ public:
                     args_.get_one<int>("--packed_w")
                 );
             } else if (args_.get(0) == "Flux2KleinPipeline_patchify_latents") {
-            Scope scope(local_context, allocator.runtime());
+                Scope scope(local_context, allocator.runtime());
 
                 result = Flux2KleinPipeline::patchify_latents(
                     latents,
@@ -509,6 +509,7 @@ public:
             }
 
             auto tokenizer_dir = args_.get_one<std::string>("--tokenizer_dir");
+            Scope scope(allocator.runtime());
 
             Flux2Transformer2DModel transformer(transformer_config);
             {
@@ -544,7 +545,7 @@ public:
             );
 
             if (args_.get(0) == "Flux2KleinPipeline_embeddings") {
-            Scope scope(local_context, allocator.runtime());
+                Scope scope(local_context);
 
                 auto batch = args_.get_one<int>("--batch");
                 auto prompt = args_.get_one<std::string>("--prompt");
@@ -578,7 +579,7 @@ public:
             }
 
             if (args_.get(0) == "Flux2KleinPipeline_denoise") {
-            Scope scope(local_context, allocator.runtime());
+                Scope scope(local_context);
 
                 auto batch = args_.get_one<int>("--batch");
                 auto packed_h = args_.get_one<int>("--packed_h");
@@ -618,13 +619,12 @@ public:
             }
 
             if (args_.get(0) == "Flux2KleinPipeline_decode") {
-            Scope scope(local_context, allocator.runtime());
+                Scope scope(local_context);
 
                 auto packed_h = args_.get_one<int>("--packed_h");
                 auto packed_w = args_.get_one<int>("--packed_w");
                 auto latents = args_.get_one<Tensor>("--latents", {scope.context()});
 
-    
                 auto graph = std::move(pipeline.make_decode_graph(
                     scheduler,
                     scope.context(),
@@ -713,6 +713,7 @@ public:
         }
 
         auto tokenizer_dir = args_.get_one<std::string>("--tokenizer_dir");
+        Scope scope(allocator.runtime());
 
         Flux2Transformer2DModel transformer(transformer_config);
         {
@@ -755,11 +756,9 @@ public:
         options.num_inference_steps = args_.get_one<int>("--num_inference_steps");
         options.max_sequence_length = args_.get_one<int>("--max_sequence_length");
 
-        Scope scope(local_context, allocator.runtime());
-
         if (auto init_latents = args_.get_optional<std::string>("--init_latents"))
             options.init_latents = std::move(
-                ArgumentParser::parser<Tensor>::TensorParser(*init_latents).parse().second);
+                ArgumentParser::parser<Tensor>::TensorParser("--init_latents", *init_latents).parse().second);
 
         auto images = pipeline(allocator, scheduler, local_context, context, context, context, std::move(options));
         std::vector<Tensor> results;
@@ -780,12 +779,11 @@ private:
         {}
 
         void visit(Flux2FusedQKVProjection& to_qkv_mlp_proj, std::vector<std::string> path) override {
-            Scope scope(context());
             ModulePath module_path("-", "--param");
             auto weight_path = module_path(path, prefix(), {"weight"});
 
-            auto weight_value = args().get_one<std::string>(weight_path); // TODO: support files!
-            ArgumentParser::parser<Tensor>::TensorParser parser(weight_value);
+            auto weight_value = get_param(weight_path);
+            ArgumentParser::parser<Tensor>::TensorParser parser(weight_path, weight_value);
 
             auto q_weight = to_qkv_mlp_proj.q()->weight();
             auto k_weight = to_qkv_mlp_proj.k()->weight();
@@ -814,12 +812,11 @@ private:
         }
 
         void visit(Flux2FusedAttentionOutput& to_out, std::vector<std::string> path) override {
-            Scope scope(context());
             ModulePath module_path("-", "--param");
 
             auto weight_path = module_path(path, prefix(), {"weight"});
-            auto weight_value = args().get_one<std::string>(weight_path); // TODO: support files!
-            ArgumentParser::parser<Tensor>::TensorParser weight_parser(weight_value);
+            auto weight_value = get_param(weight_path);
+            ArgumentParser::parser<Tensor>::TensorParser weight_parser(weight_path, weight_value);
 
             auto [weight_shape, weight_data] = weight_parser.parse();
 
@@ -841,8 +838,8 @@ private:
 
             if (attn_bias) {
                 auto bias_path = module_path(path, prefix(), {"bias"});
-                auto bias_value = args().get_one<std::string>(bias_path); // TODO: support files!
-                ArgumentParser::parser<Tensor>::TensorParser bias_parser(bias_value);
+                auto bias_value = get_param(bias_path);
+                ArgumentParser::parser<Tensor>::TensorParser bias_parser(bias_path, bias_value);
 
                 auto [bias_shape, bias_data] = bias_parser.parse();
 

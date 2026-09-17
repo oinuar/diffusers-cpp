@@ -26,7 +26,19 @@
 class ShardingRuntime : public Runtime {
 public:
     static constexpr int kNoAxis = -1;
-    static constexpr double kInf = 1e30;
+    // kInf: the "infinite" sentinel. It is the initial cost of a not-yet-
+    // satisfied DP state and the cost of an infeasible bridge, so it must be
+    // larger than any feasible (capped) cost -- see kCostCap.
+    static constexpr double kInf = 1e300;
+    // kCostCap: feasible DP costs are capped at this value. The per-candidate
+    // cost double-counts every shared input once per consumer (a deliberate
+    // per-output accounting), so on a deep graph the raw cost grows
+    // exponentially with the number of shared subgraphs and can overflow a
+    // double. Feasibility is tracked separately (the `feasible` flags), so
+    // capping the cost only affects plan *selection* for absurdly deep graphs
+    // and never feasibility. It is kept below kInf so a capped feasible cost
+    // is always cheaper than the infeasible sentinel.
+    static constexpr double kCostCap = 1e200;
 
     struct Dist {
         enum Type { R, S, P };

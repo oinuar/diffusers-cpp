@@ -544,6 +544,26 @@ public:
                 std::move(tokenizer)
             );
 
+            if (args_.get(0) == "Flux2KleinPipeline_encode_prompt") {
+                Scope scope(local_context);
+
+                auto batch = args_.get_one<int>("--batch");
+                auto prompt = args_.get_one<std::string>("--prompt");
+                auto max_sequence_length = args_.get_one<int>("--max_sequence_length");
+
+                auto [prompt_embeds, txt_ids] = pipeline.encode_prompt(
+                    scope,
+                    batch,
+                    prompt,
+                    max_sequence_length
+                );
+
+                Graph graph(scheduler, scope.context(), {prompt_embeds, txt_ids});
+                Computation computation(allocator, graph, {&context, &scope.context()});
+
+                return computation().results();
+            }
+
             if (args_.get(0) == "Flux2KleinPipeline_embeddings") {
                 Scope scope(local_context);
 
@@ -644,7 +664,8 @@ public:
 
     virtual size_t get_graph_size() const {
         if (args_.get(0) == "Flux2KleinPipeline_embeddings" ||
-            args_.get(0) == "Flux2KleinPipeline_call")
+            args_.get(0) == "Flux2KleinPipeline_call" ||
+            args_.get(0) == "Flux2KleinPipeline_encode_prompt")
             return 65536;
         
         return TestCLI::get_graph_size();

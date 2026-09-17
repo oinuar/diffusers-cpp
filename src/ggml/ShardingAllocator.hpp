@@ -165,13 +165,6 @@ public:
     // The plan of the last allocate().
     const Plan& plan() const { return last_plan_; }
 
-    // Re-derive every node's split state the way the meta backend does,
-    // from the plan's callback table (params) and R (fixed inputs),
-    // applying the same per-op rules, and compare against the planned
-    // states. Returns false (with an explanation) if the plan is not what
-    // the meta device will derive.
-    bool verify(const Plan& plan, std::string& error) const;
-
     // Debug dump of the trace: every node with its shape and the
     // output distributions its candidates can produce.
     std::string dump_trace() const;
@@ -196,7 +189,8 @@ private:
     // F(node, d): node produces exactly d.
     struct ExactState {
         bool done = false;
-        double cost = ShardingRuntime::kInf;
+        bool feasible = false;   // a candidate exists whose inputs are all feasible
+        double cost = ShardingRuntime::kInf;   // min cost over feasible candidates (capped)
         int cand = -1;
         std::vector<ShardingRuntime::Dist> in_dists;
     };
@@ -204,7 +198,8 @@ private:
     // G(node, d): node satisfies d (produces some d' and bridges d' -> d).
     struct BestState {
         bool done = false;
-        double cost = ShardingRuntime::kInf;
+        bool feasible = false;   // some producible d' is exact-feasible and bridges to d
+        double cost = ShardingRuntime::kInf;   // min cost over feasible productions (capped)
         ShardingRuntime::Dist produced;
     };
 
@@ -303,13 +298,20 @@ private:
             std::vector<ShardingRuntime::Dist> ins;
             ins.reserve(cand.inputs.size());
             for (size_t i = 0; i < cand.inputs.size(); ++i) {
-                const double in_cost = best(n.inputs[i], cand.inputs[i]).cost;
-                if (in_cost >= ShardingRuntime::kInf / 2) { ok = false; break; }
-                cost += in_cost;
+                const BestState& in = best(n.inputs[i], cand.inputs[i]);
+                if (!in.feasible) { ok = false; break; }
+                cost += in.cost;
                 ins.push_back(cand.inputs[i]);
             }
-            if (ok && cost < m.cost)
-                m = {true, cost, c, std::move(ins)};
+            if (!ok) continue;
+            if (cost > ShardingRuntime::kCostCap)
+                cost = ShardingRuntime::kCostCap;   // cap: feasibility is tracked separately
+            if (cost < m.cost) {
+                m.feasible = true;
+                m.cost = cost;
+                m.cand = c;
+                m.in_dists = std::move(ins);
+            }
         }
         return m;
     }
@@ -333,13 +335,18 @@ private:
 
         for (const ShardingRuntime::Dist& p : producible) {
             if (exact_only && p != d) continue;
-            const double exact_cost = exact(node, p).cost;
-            if (exact_cost >= ShardingRuntime::kInf / 2) continue;
+            const ExactState& e = exact(node, p);
+            if (!e.feasible) continue;
             const Bridge b = bridge(p, d);
             if (b.cost >= ShardingRuntime::kInf / 2) continue;
-            const double total = exact_cost + b.cost;
-            if (total < m.cost)
-                m = {true, total, p};
+            double total = e.cost + b.cost;
+            if (total > ShardingRuntime::kCostCap)
+                total = ShardingRuntime::kCostCap;   // cap: feasibility is tracked separately
+            if (total < m.cost) {
+                m.feasible = true;
+                m.cost = total;
+                m.produced = p;
+            }
         }
         return m;
     }

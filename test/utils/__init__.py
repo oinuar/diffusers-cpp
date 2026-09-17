@@ -34,7 +34,8 @@ class TestCase(unittest.TestCase):
 
             outputs.append(value)
 
-        print(result.stderr)
+        if self.verbose():
+            print(result.stderr)
 
         return outputs
 
@@ -43,6 +44,9 @@ class TestCase(unittest.TestCase):
 
     def use_gpu(self):
         return os.environ.get('USE_GPU', 'false') == 'true'
+
+    def verbose(self):
+        return os.environ.get('VERBOSE', 'false') == 'true'
 
     def params(self, model, path=None, prefix=""):
         args = []

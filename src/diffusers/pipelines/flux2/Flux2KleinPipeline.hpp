@@ -151,9 +151,9 @@ public:
         return scheduler_;
     }
 
-private:
     std::tuple<Tensor, Tensor> encode_prompt(Scope scope, int batch, const std::string& prompt, size_t max_sequence_length);
 
+private:
     Flux2Transformer2DModel transformer_;
     AutoencoderKLFlux2 vae_;
     FlowMatchEulerDiscreteScheduler scheduler_;

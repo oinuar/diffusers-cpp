@@ -1,4 +1,5 @@
 #include "ggml/ShardingAllocator.hpp"
+#include <functional>
 
 void ShardingAllocator::forget(const Context& context) {
     unuse(context);         // free the context's buffers
@@ -94,8 +95,8 @@ ShardingAllocator::Plan ShardingAllocator::plan_round(const std::vector<Tensor>&
         const Goal g = {runtime_.id_of(*root), ShardingRuntime::Dist::replicated()};
         exact_memo_.clear();
         best_memo_.clear();
-        const double total = best(g.root, g.required).cost;   // roots are exact-only (no bridge)
-        if (total >= ShardingRuntime::kInf / 2) {
+        const auto& root_state = best(g.root, g.required);   // roots are exact-only (no bridge)
+        if (!root_state.feasible) {
             plan.infeasible = true;
             plan.infeasible_reason = infeasibility_reason(g.required);
             return plan;

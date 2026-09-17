@@ -249,7 +249,7 @@ if(DIFFUSERS_BUILD_TESTS)
     target_include_directories(test-flux2-cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_link_libraries(test-flux2-cli PRIVATE diffusers)
 
-    # Generate an individual ctest entry for each test
+    # Generate an individual ctest entry for each Python test
     file(
         GLOB_RECURSE TEST_FILES
         CONFIGURE_DEPENDS
@@ -259,6 +259,8 @@ if(DIFFUSERS_BUILD_TESTS)
     list(FILTER TEST_FILES EXCLUDE REGEX "(/|^)__init__\\.py$")
     list(SORT TEST_FILES)
 
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+
     foreach(TEST_FILE IN LISTS TEST_FILES)
         get_filename_component(TEST_NAME "${TEST_FILE}" NAME_WE)
 
@@ -266,11 +268,6 @@ if(DIFFUSERS_BUILD_TESTS)
         string(REPLACE "/" "-" TEST_ID "${TEST_FILE}")
         string(REPLACE "\\" "-" TEST_ID "${TEST_ID}")
         string(REGEX REPLACE "\\.py$" "" TEST_ID "${TEST_ID}")
-
-        add_test(
-            NAME "${TEST_ID}"
-            COMMAND ${UV_EXECUTABLE} run python -m unittest "${TEST_FILE}" -v
-        )
 
         if(TEST_FILE MATCHES "^src/ggml/Tensor/")
             set(CLI_TARGET test-tensor-cli)
@@ -290,10 +287,87 @@ if(DIFFUSERS_BUILD_TESTS)
             message(FATAL_ERROR "No CLI target for ${TEST_FILE}")
         endif()
 
-        set_tests_properties("${TEST_ID}" PROPERTIES
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/test/${TEST_FILE}")
+
+        # Discover test methods using Python's AST parser.
+        # This does NOT import or execute the test file.
+        execute_process(
+            COMMAND
+                ${Python3_EXECUTABLE} -c [=[
+import ast
+import sys
+
+path = sys.argv[1]
+
+# Convert:
+#   src/diffusers/models/attention_processor/Attention.py
+#
+# into:
+#   src.diffusers.models.attention_processor.Attention
+module = path.replace("\\", "/").removesuffix(".py").replace("/", ".")
+
+with open(path, encoding="utf-8") as f:
+    tree = ast.parse(f.read(), filename=path)
+
+for cls in tree.body:
+    if not isinstance(cls, ast.ClassDef):
+        continue
+
+    for method in cls.body:
+        if (
+            isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and method.name.startswith("test")
+        ):
+            print(
+                method.name
+                + "|"
+                + module
+                + "."
+                + cls.name
+                + "."
+                + method.name
+            )
+]=]
+                "${TEST_FILE}"
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/test"
-            ENVIRONMENT "CLI=$<TARGET_FILE:${CLI_TARGET}>;PYTHONDONTWRITEBYTECODE=1"
+            OUTPUT_VARIABLE DISCOVERED_TESTS
+            ERROR_VARIABLE DISCOVERY_ERROR
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE DISCOVERY_RESULT
         )
+
+        if(NOT DISCOVERY_RESULT EQUAL 0)
+            message(FATAL_ERROR
+                "Failed to discover tests in ${TEST_FILE}:\n"
+                "${DISCOVERY_ERROR}"
+            )
+        endif()
+
+        if(NOT DISCOVERED_TESTS STREQUAL "")
+            string(REPLACE "\n" ";" DISCOVERED_TESTS "${DISCOVERED_TESTS}")
+
+            foreach(DISCOVERED_TEST IN LISTS DISCOVERED_TESTS)
+                string(REPLACE "|" ";" TEST_INFO "${DISCOVERED_TEST}")
+
+                list(GET TEST_INFO 0 PYTHON_TEST_NAME)
+                list(GET TEST_INFO 1 PYTHON_TEST_ID)
+
+                # Extend the file-based CTest name with the Python test name.
+                set(INDIVIDUAL_TEST_ID "${TEST_ID}-${PYTHON_TEST_NAME}")
+
+                add_test(
+                    NAME "${INDIVIDUAL_TEST_ID}"
+                    COMMAND
+                        ${UV_EXECUTABLE} run python -m unittest
+                        "${PYTHON_TEST_ID}" -v
+                )
+
+                set_tests_properties("${INDIVIDUAL_TEST_ID}" PROPERTIES
+                    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/test"
+                    ENVIRONMENT "CLI=$<TARGET_FILE:${CLI_TARGET}>;PYTHONDONTWRITEBYTECODE=1"
+                )
+            endforeach()
+        endif()
     endforeach()
 
     message(STATUS "diffusers: tests enabled")

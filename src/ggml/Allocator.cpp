@@ -3,40 +3,33 @@
 #include "ggml/Device.hpp"
 #include "ggml/ExecutionRuntime.hpp"
 
-Allocator::Allocator() : usages_(), buffers_() {
+Allocator::Allocator() : usages_() {
 
 }
 
 void Allocator::use(Context& context, const Device& device, const std::optional<ggml_backend_buffer_usage>& usage) {
-    usages_.push_back({&context, &device, usage});
+    usages_[&context] = {&device, usage, {}};
 }
 
-void Allocator::unuse(const Context& context) {
-    usages_.erase(std::remove_if(usages_.begin(), usages_.end(),
-        [&](const Usage& usage) { return usage.context == &context; }), usages_.end());
-}
+void Allocator::allocate(const std::vector<Context*>& contexts, const std::vector<Tensor>&) {
+    for (auto& context : contexts) {
+        auto it = usages_.find(context);
 
-void Allocator::allocate(const std::vector<Tensor>&, bool reallocate) {
-    if (usages_.empty() || reallocate)
-        buffers_.clear();
+        // Skip allocating context if it is not known by this Allocator.
+        if (it == std::end(usages_))
+            continue;
 
-    for (auto& [context, device, usage] : usages_) {
-        auto buft = device->buffer_type();
+        auto buft = it->second.device->buffer_type();
         auto buffer = ggml_backend_alloc_ctx_tensors_from_buft(**context, buft);
 
         // NULL is returned when every tensor in the context already has a buffer,
         // e.g. when the graph is built entirely in another context. There is
         // nothing to allocate in that case.
         if (buffer == nullptr)
-            return;
+            continue;
 
-        buffers_.emplace_back(buffer, usage);
+        it->second.buffers.emplace_back(buffer, it->second.usage);
     }
-}
-
-void Allocator::reset() {
-    usages_.clear();
-    buffers_.clear();
 }
 
 Runtime& Allocator::runtime() {

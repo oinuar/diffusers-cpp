@@ -138,8 +138,8 @@ Tensor AutoencoderKLFlux2::decode(Scope& scope, Tensor z) {
     return dec;
 }
 
-const BatchNorm2d& AutoencoderKLFlux2::bn() const {
-    return *std::static_pointer_cast<BatchNorm2d>(modules.at("bn"));
+std::shared_ptr<BatchNorm2d> AutoencoderKLFlux2::bn() const {
+    return std::static_pointer_cast<BatchNorm2d>(modules.at("bn"));
 }
 
 template <typename T>

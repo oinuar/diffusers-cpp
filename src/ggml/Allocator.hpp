@@ -17,21 +17,16 @@ public:
 
     void use(Context& context, const Device& device, const std::optional<ggml_backend_buffer_usage>& usage = std::nullopt);
 
-    void unuse(const Context& context);
-
-    virtual void allocate(const std::vector<Tensor>& outputs, bool reallocate = false);
-
-    virtual void reset();
+    virtual void allocate(const std::vector<Context*>& contexts, const std::vector<Tensor>& outputs);
 
     virtual Runtime& runtime();
 
 private:
     struct Usage {
-        Context* context;
         const Device* device;
         std::optional<ggml_backend_buffer_usage> usage;
+        std::vector<Buffer> buffers;
     };
 
-    std::vector<Usage> usages_;
-    std::vector<Buffer> buffers_;
+    std::unordered_map<Context*, Usage> usages_;
 };

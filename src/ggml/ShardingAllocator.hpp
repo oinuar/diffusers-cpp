@@ -17,36 +17,39 @@
 // ShardingRuntime every context's forward() runs through, so every
 // context's graph is one subgraph of the single trace.
 //
-// allocate(outputs) is one allocation round over the graph the outputs
-// define:
+// allocate(contexts, outputs) is one allocation round. The plan is
+// incremental: the allocator keeps the plan of every earlier round
+// (committed_), so a round plans only what the earlier rounds did not:
 //
-//   1. plan only when the outputs are new -- the first round, or a
-//      changed output set (a different graph): the DP runs one goal at a
-//      time (in graph order); a tensor shared by several outputs (a
-//      parameter consumed by several contexts' forwards) is ONE node,
+//   1. the first round plans its outputs (roots): the DP runs one goal
+//      at a time (in graph order); a tensor shared by several outputs
+//      (a parameter consumed by several contexts' forwards) is ONE node,
 //      planned exactly once, for all of them -- the first output to plan
 //      it decides its split, and that committed split constrains every
 //      later output (the meta backend derives one state per tensor).
-//      Repeated allocations with the same outputs (the same graph run
-//      again) skip the DP entirely;
-//   2. commit the plan to the shared resource -- the MetaDevice's split
-//      table, GLOBAL across contexts and across every allocator: erase
-//      this allocator's parameter entries, insert the materialized states
-//      of the plan (the splits are just GGML's way of doing the sharding;
+//      Every planned tensor is committed, so its split is locked for
+//      every later output and every later round;
+//   2. a later round (a new output set) solves the DP for its new
+//      outputs constrained by the committed plan: a committed tensor
+//      may only produce its committed distribution. An output planned
+//      by an earlier round is skipped -- the DP is solved for it
+//      exactly once, when it first becomes a root (repeated
+//      allocations with the same outputs skip the DP entirely). If the
+//      DP cannot satisfy a new output given the locked-in splits, the
+//      round is infeasible and allocate() throws: the earlier
+//      allocation constraints are final, the plan cannot change;
+//   3. the round's NEW parameter splits are committed to the shared
+//      resource -- the MetaDevice's split table, GLOBAL across contexts
+//      and across every allocator (the earlier rounds' entries are
+//      untouched; the splits are just GGML's way of doing the sharding;
 //      the table is what the meta backend queries at runtime);
-//   3. run the base allocation over every registered context: every
-//      tensor is placed with a snapshot of its current effective split
-//      state, and every context whose snapshots went stale (a changed
-//      split, a changed device count) is freed + reallocated -- the
-//      reallocation the global table makes necessary when the sharding
-//      changes.
+//   4. the base allocation runs over the round's contexts, exactly like
+//      the base Allocator called again: it allocates only the tensors
+//      without a buffer yet, incrementally.
 //
-// An infeasible plan leaves the table untouched, so the existing
-// allocation stays valid for the last good plan. A round's contexts are
-// forgotten (forget) when they go away: their tensors are destroyed with
-// them, so the trace that referenced them is reset and the planned
-// outputs invalidated -- the next round re-traces and allocate()
-// replans from scratch.
+// An infeasible round commits nothing (its tentative commits are rolled
+// back), so the committed plan -- and the allocation built against it --
+// stays valid for the last good plan.
 // ============================================================================
 
 class ShardingAllocator : public Allocator {
@@ -144,23 +147,17 @@ public:
     // changed cost model).
     void set_w_comm(double w_comm) { w_comm_ = w_comm; }
 
-    // `context` is going away: deregister it (free its buffers) and reset
-    // the trace -- it spanned the context, so its tensors are destroyed
-    // with it (a re-plan re-traces the live contexts, and the shared
-    // params -- created in the persistent weights context -- are re-traced
-    // lazily by set_param()). The planned outputs go with it. Call before
-    // the context is destroyed.
-    void forget(const Context& context);
-
-    // One allocation round: plan the graph the outputs define -- but only
-    // when the outputs are new (the first round, or a changed output set:
-    // a re-plan), one DP goal per output -- commit the plan to the meta
-    // device's split table, then (re)allocate every registered context
-    // (the base does the buffer work; its staleness snapshots detect the
-    // split states this round committed).
-    void allocate(const std::vector<Tensor>& outputs, bool reallocate = false) override;
-
-    bool is_stale() const;
+    // One allocation round: plan the outputs incrementally -- the
+    // outputs an earlier round did not plan (their DP is constrained by
+    // the committed plan: a committed tensor may only produce its
+    // committed split; an output already planned is skipped) -- commit
+    // the round's new parameter splits to the meta device's split table,
+    // then run the base allocation over the round's contexts (it
+    // allocates only the tensors without a buffer yet, exactly like the
+    // base Allocator called again). A round that cannot be planned
+    // against the locked-in splits throws: the previously committed
+    // allocation constraints are final.
+    void allocate(const std::vector<Context*>& contexts, const std::vector<Tensor>& outputs) override;
 
     // The plan of the last allocate().
     const Plan& plan() const { return last_plan_; }
@@ -169,8 +166,9 @@ public:
     // output distributions its candidates can produce.
     std::string dump_trace() const;
 
-    // The committed parameter splits of the last plan round: one entry per
-    // shared parameter, spanning every output that consumes it.
+    // The committed parameter splits of every finished round (the
+    // public view of committed_): one entry per shared parameter,
+    // accumulated over the rounds.
     const std::map<const ggml_tensor*, ShardingRuntime::Dist>& decisions() const { return decisions_; }
 
     const MetaDevice& device() const { return device_; }
@@ -268,10 +266,10 @@ private:
     // recomputes the emitted plan's true per-tensor cost. A tensor shared
     // by several outputs (a param consumed by several contexts' forwards)
     // is ONE node here, so its storage is paid exactly once, for all of
-    // them. A param whose split is already committed (by an earlier
-    // output's solve) may only produce that split, which keeps the
-    // per-output plans consistent: one split per shared param, decided by
-    // the first output to plan it.
+    // them. A tensor whose split is already committed (by an earlier
+    // output's solve, or by an earlier allocation round) may only produce
+    // that split, which keeps the incremental plans consistent: one split
+    // per tensor, decided by the first output to plan it.
     //
     // F(node, d): node produces exactly d.
     ExactState& exact(int node, const ShardingRuntime::Dist& d) {
@@ -279,16 +277,18 @@ private:
         if (m.done) return m;
         m.done = true;
 
-        const ShardingRuntime::TraceNode& n = runtime_.nodes()[node];
-        // A parameter whose split is already committed (planned by an
-        // earlier output in this plan round) must keep it: the meta
-        // backend derives one state per tensor, shared by every output
-        // that consumes it.
-        if (n.is_param) {
-            const auto c = decisions_.find(runtime_.raw_of()[node]);
-            if (c != decisions_.end() && c->second != d)
-                return m;   // infeasible state (cost stays kInf)
+        // A tensor committed by an earlier round (or an earlier output of
+        // this round) is locked to its committed split: it may only
+        // produce that distribution, with the candidate and cost it was
+        // planned with. Its subgraph is frozen -- the stored state is
+        // returned as-is, without re-optimizing its inputs.
+        const auto locked = committed_.find(node);
+        if (locked != committed_.end()) {
+            if (locked->second.produced == d)
+                m = locked->second.exact;
+            return m;   // otherwise infeasible (cost stays kInf)
         }
+        const ShardingRuntime::TraceNode& n = runtime_.nodes()[node];
         for (int c = 0; c < (int)n.candidates.size(); ++c) {
             const ShardingRuntime::Candidate& cand = n.candidates[c];
             if (cand.output != d) continue;
@@ -329,9 +329,15 @@ private:
 
         const bool exact_only = goal_roots_.count(node) != 0;
 
+        // A committed tensor is producible only in its committed
+        // distribution; an uncommitted one in every candidate output.
         std::set<ShardingRuntime::Dist> producible;
-        for (const ShardingRuntime::Candidate& cand : runtime_.nodes()[node].candidates)
-            producible.insert(cand.output);
+        const auto locked = committed_.find(node);
+        if (locked != committed_.end())
+            producible.insert(locked->second.produced);
+        else
+            for (const ShardingRuntime::Candidate& cand : runtime_.nodes()[node].candidates)
+                producible.insert(cand.output);
 
         for (const ShardingRuntime::Dist& p : producible) {
             if (exact_only && p != d) continue;
@@ -352,12 +358,19 @@ private:
     }
 
     void emit(int node, const ShardingRuntime::Dist& required, Plan& plan, std::set<std::pair<int, ShardingRuntime::Dist>>& emitted) {
+        // A committed tensor keeps the split the round that planned it
+        // decided (locked in committed_): it is already in the
+        // cumulative plan, so skip it -- this round's plan covers only
+        // the tensors it plans.
+        if (committed_.count(node))
+            return;
+        //
         // A tensor consumed several times (even by different outputs) in
-        // the same distribution is planned once. A parameter can never be
-        // emitted in two distributions (the earlier outputs' commits
-        // constrain the DP), but a non-parameter tensor needed in two
-        // different distributions would be, and the plan round rejects
-        // that: the meta backend derives exactly one state per tensor.
+        // the same distribution is planned once. A tensor can never be
+        // committed in two distributions (the earlier commits constrain
+        // the DP), but one needed in two different distributions within
+        // this round would be, and the plan round rejects that: the meta
+        // backend derives exactly one state per tensor.
         if (!emitted.insert({node, required}).second) return;
 
         const BestState& b = best(node, required);
@@ -406,7 +419,8 @@ private:
         // Infeasibility is because of unknown reason.
         if (r.empty())
             r.push_back("no feasible split plan satisfies the required output distribution " + required.to_string() +
-                (decisions_.empty() ? "" : ", given the parameter splits committed by the earlier outputs"));
+                (committed_.empty() ? "" :
+                 ", given the splits locked in by the earlier allocation rounds: the previously committed outputs constrain the plan"));
 
         return std::accumulate(std::begin(r), std::end(r), std::string(),
             [](const std::string& acc, const std::string& x) {
@@ -418,12 +432,16 @@ private:
         );
     }
 
-    // Solve one plan round over the trace (the DP above + the commit
-    // to the meta device's table): one goal per output tensor, in the
-    // order the graph provides them. The table is replaced only for a
-    // feasible plan: an infeasible one returns early and leaves the
-    // previous entries in place, so the allocation stays valid for the
-    // last good plan.
+    // Solve one allocation round incrementally: plan the outputs that
+    // are not committed yet (one DP goal per output, in the order
+    // given), each constrained by the committed plan of the earlier
+    // rounds (a committed tensor may only produce its committed split),
+    // and commit the round's new parameter splits to the meta device's
+    // table (the earlier rounds' entries are untouched). The returned
+    // plan is the cumulative plan (last_plan_ + the round's new nodes);
+    // an infeasible round rolls back its tentative commits and returns
+    // the previous cumulative plan marked infeasible, so the allocation
+    // built against the committed plan stays valid.
     Plan plan_round(const std::vector<Tensor>& outputs);
 
     MetaDevice& device_;                 // the shared split-state table + device count
@@ -433,13 +451,37 @@ private:
     // context's forward (topological order), owned by the allocator.
     ShardingRuntime runtime_;
 
-    // The roots of the last committed plan: allocate() plans only when
-    // the outputs differ from these -- a new graph, or a fresh trace
-    // after forget(); the same outputs (the same graph computed again)
-    // skip the DP.
-    std::vector<Tensor> planned_outputs_;
-
-    std::map<const ggml_tensor*, ShardingRuntime::Dist> decisions_;   // committed param splits, accumulated as the round plans the outputs
+    // The committed plan of every finished round: trace node -> the split
+    // it was planned with, locked for every later output and round. The
+    // DP treats a committed tensor as fixed (exact(): only its committed
+    // distribution is feasible; best(): only it is producible), which is
+    // what keeps the incremental plans consistent with the split states
+    // already materialized in the meta device's table.
+    struct Committed {
+        ShardingRuntime::Dist produced;   // the distribution the node produces
+        ExactState exact;                 // the state it was planned with (feasible, cost, cand, in_dists)
+    };
+    std::map<int, Committed> committed_;
+    
+    // The node ids committed since the start of the current round: an
+    // infeasible round rolls them back (a failed round must not lock in
+    // any of its decisions).
+    std::vector<int> committed_this_round_;
+    
+    // Lock one newly planned node into committed_ (the DP of the next
+    // output of this round -- and of every later round -- must plan
+    // around it). Called in execution order (inputs before consumers),
+    // so a node's inputs are already committed when its state is locked
+    // in.
+    void commit_node(const PlanNode& pn);
+    
+    // Undo the current round's tentative commits (an infeasible round).
+    void rollback_round();
+    
+    // The committed parameter splits of every finished round (the public
+    // view of committed_): one entry per shared parameter, accumulated
+    // over the rounds.
+    std::map<const ggml_tensor*, ShardingRuntime::Dist> decisions_;
 
     // The trace ids of this round's goal roots (the graph outputs): they
     // must be produced exactly in the required state, never bridged

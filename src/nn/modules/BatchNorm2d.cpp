@@ -26,10 +26,10 @@ Tensor BatchNorm2d::forward(Scope scope, Tensor x) {
     return (x - mean) / sqrt(var + eps_);
 }
 
-const Parameter& BatchNorm2d::running_mean() const {
-    return *std::static_pointer_cast<const Parameter>(modules.at("running_mean"));
+std::shared_ptr<Parameter> BatchNorm2d::running_mean() const {
+    return std::static_pointer_cast<Parameter>(modules.at("running_mean"));
 }
 
-const Parameter& BatchNorm2d::running_var() const {
-    return *std::static_pointer_cast<const Parameter>(modules.at("running_var"));
+std::shared_ptr<Parameter> BatchNorm2d::running_var() const {
+    return std::static_pointer_cast<Parameter>(modules.at("running_var"));
 }

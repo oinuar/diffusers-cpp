@@ -14,9 +14,9 @@ public:
 
     Tensor forward(Scope scope, Tensor x);
 
-    const Parameter& running_mean() const;
+    std::shared_ptr<Parameter> running_mean() const;
 
-    const Parameter& running_var() const;
+    std::shared_ptr<Parameter> running_var() const;
 
 private:
     float eps_;

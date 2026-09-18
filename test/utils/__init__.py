@@ -40,7 +40,7 @@ class TestCase(unittest.TestCase):
         return outputs
 
     def n_devices(self):
-        return int(os.environ.get('N_DEVICES', '2'))
+        return int(os.environ.get('N_DEVICES', '1'))
 
     def use_gpu(self):
         return os.environ.get('USE_GPU', 'false') == 'true'

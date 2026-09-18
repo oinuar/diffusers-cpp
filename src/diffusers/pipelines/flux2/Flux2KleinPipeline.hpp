@@ -20,39 +20,6 @@ class Context;
 class Scheduler;
 class Allocator;
 
-// 
-//                     ┌────────────────────┐
-// prompt ────────────►│ Qwen3 text encoder │
-//                     └─────────┬──────────┘
-//                               │
-//                     prompt_embeds + txt_ids
-//                               │
-//                               ▼
-//                          ┌─────────┐
-// noise ────────────────►  │         │
-// timestep ─────────────►  │ Flux2   │
-// img_ids ──────────────►  │transform│
-// image latents ────────►  └─────────┘
-//                               │
-//                               ▼
-//                          noise_pred
-//                               │
-//                               ▼
-//                          scheduler
-//                               │
-//                               ▼
-//                          next_latents
-//                               │
-//                          repeat N times
-//                               │
-//                               ▼
-//                          unpack / BN
-//                               │
-//                               ▼
-//                             VAE
-//                               │
-//                               ▼
-//                            image
 class Flux2KleinPipeline {
 public:
     struct GenerationOptions {
@@ -73,6 +40,101 @@ public:
 
     static Flux2KleinPipeline from_pretrained(Context& vae_context, Context& text_encoder_context, Context& transformer_context, const std::filesystem::path& path);
 
+    Flux2KleinPipeline(Flux2Transformer2DModel&& transformer,
+                       AutoencoderKLFlux2&& vae,
+                       Qwen3ForCausalLM&& text_encoder,
+                       Qwen2TokenizerFast&& tokenizer);
+
+    std::vector<Image> operator ()(
+        Allocator& allocator,
+        Scheduler& scheduler,
+        Context& vae_context,
+        Context& text_encoder_context,
+        Context& transformer_context,
+        GenerationOptions&& options);
+
+    //
+    // Graph construction.
+    //
+    // Each graph is built on its own graph context: the temporary
+    // (computational) tensors are allocated by the scheduler when the graph
+    // is computed and may be reclaimed by subsequent graphs. Only the state
+    // that crosses graph boundaries is created in the state context, where
+    // the allocator keeps it alive for the whole generation. Computed
+    // outputs that must cross a boundary are copied into the returned state
+    // tensors right after the graph runs (see operator()).
+    //
+    struct VaeEncodeGraph {
+        Graph graph;
+        // State tensors shared with the denoise graph.
+        Tensor image_latents;      // (B, N_ref, 4 * latent_channels)
+        Tensor image_latent_ids;   // (B, N_ref, 4)
+    };
+
+    struct TextEncoderGraph {
+        Graph graph;
+        // State tensors shared with the denoise graph.
+        Tensor prompt_embeds;      // (B, seq, 3 * hidden)
+        Tensor txt_ids;            // (B, seq, 4)
+    };
+
+    // Encodes the reference images into packed, normalized latents
+    // (img2img only). image_latents is computed into the graph context and
+    // the returned state tensor holds the copy the denoise graph reads;
+    // image_latent_ids is created directly in the state context.
+    std::tuple<std::optional<Graph>, std::optional<Tensor>> make_vae_encode_graph(
+        Scope scope,
+        Scheduler& scheduler,
+        const std::vector<Image>& images,
+        int batch
+    );
+
+    // Encodes the prompt into text embeddings and creates the position ids.
+    // prompt_embeds is computed into the graph context and the returned
+    // state tensor holds the copy the denoise graph reads; txt_ids and
+    // img_ids are created directly in the state context.
+    std::tuple<Graph, Tensor> make_text_encoder_graph(
+        Scope scope,
+        Scheduler& scheduler,
+        int batch,
+        const std::string& prompt,
+        size_t max_sequence_length
+    );
+
+    // One denoising step: transformer forward + scheduler integration.
+    // The embeddings, ids and latents are read from the state context;
+    // the next latents are computed into the graph context and copied back
+    // into latents by the caller after each run.
+    Graph make_denoise_graph(
+        Scope scope,
+        Scheduler& scheduler,
+        int batch,
+        int packed_h,
+        int packed_w,
+        size_t max_sequence_length,
+        Tensor latents,
+        Tensor prompt_embeds,
+        std::optional<Tensor> image_latents,
+        const std::vector<Image>& images,
+        float* timestep,
+        float* dt
+    );
+
+    // Unpacks, unnormalizes and unpatchifies the latents and runs the VAE
+    // decoder. The latents are read from the state context; the decoded
+    // image is computed into the graph context.
+    Graph make_vae_decode_graph(
+        Scope scope,
+        Scheduler& scheduler,
+        int packed_h,
+        int packed_w,
+        Tensor latents
+    );
+
+    const FlowMatchEulerDiscreteScheduler& scheduler() const {
+        return scheduler_;
+    }
+
     // Latent shape conversions mirroring the static methods of the Python
     // Flux2KleinPipeline. Pure tensor ops with no model state.
     //
@@ -84,74 +146,6 @@ public:
     static Tensor unpack_latents(Tensor packed, int packed_h, int packed_w);
     static Tensor patchify_latents(Tensor latents, int channels, int packed_h, int packed_w);
     static Tensor unpatchify_latents(Tensor latents, int channels, int packed_h, int packed_w);
-
-    Flux2KleinPipeline(Flux2Transformer2DModel&& transformer,
-                       AutoencoderKLFlux2&& vae,
-                       Qwen3ForCausalLM&& text_encoder,
-                       Qwen2TokenizerFast&& tokenizer);
-
-    std::vector<Image> operator ()(
-        Allocator& allocator,
-        Scheduler& scheduler,
-        Context& context,
-        Context& vae_context,
-        Context& text_encoder_context,
-        Context& transformer_context,
-        GenerationOptions&& options);
-
-    struct Embeddings {
-        Graph graph;
-        Tensor prompt_embeds;
-        Tensor txt_ids;
-        Tensor img_ids;
-        std::optional<Tensor> image_latents_concat;
-        std::optional<Tensor> image_latent_ids_concat;
-        // (computed graph output, stable state-allocator destination) pairs
-        // to copy after `graph` runs. Empty when no state allocator was given.
-        //std::vector<std::pair<Tensor, Tensor>> copies;
-    };
-
-    Embeddings make_embeddings_graph(
-        Scheduler& scheduler,
-        Scope scope,
-        const std::string& prompt,
-        size_t max_sequence_length,
-        int batch,
-        int packed_h,
-        int packed_w,
-        std::vector<Image>& images
-    );
-
-    Graph make_denoise_graph(
-        Scheduler& scheduler,
-        Scope scope,
-        int batch,
-        int packed_h,
-        int packed_w,
-        size_t num_ref_tokens,
-        Tensor prompt_embeds,
-        Tensor img_ids,
-        Tensor txt_ids,
-        Tensor latents,
-        std::optional<Tensor> image_latents,
-        std::optional<Tensor> image_latent_ids,
-        float* timestep,
-        float* dt
-    );
-
-    Graph make_decode_graph(
-        Scheduler& scheduler,
-        Scope scope,
-        int packed_h,
-        int packed_w,
-        Tensor latents
-    );
-
-    const FlowMatchEulerDiscreteScheduler& scheduler() const {
-        return scheduler_;
-    }
-
-    std::tuple<Tensor, Tensor> encode_prompt(Scope scope, int batch, const std::string& prompt, size_t max_sequence_length);
 
 private:
     Flux2Transformer2DModel transformer_;

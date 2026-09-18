@@ -40,7 +40,7 @@ public:
 
     Tensor forward(Scope scope, Tensor sample, bool sample_posterior = false);
     
-    const BatchNorm2d& bn() const;
+    std::shared_ptr<BatchNorm2d> bn() const;
 
     int64_t scale_factor() const {
         return 1LL << (block_out_channels_.size() - 1);

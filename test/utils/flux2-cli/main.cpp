@@ -544,54 +544,38 @@ public:
                 std::move(tokenizer)
             );
 
-            if (args_.get(0) == "Flux2KleinPipeline_encode_prompt") {
+            if (args_.get(0) == "Flux2KleinPipeline_vae_encode") {
                 Scope scope(local_context);
 
                 auto batch = args_.get_one<int>("--batch");
-                auto prompt = args_.get_one<std::string>("--prompt");
-                auto max_sequence_length = args_.get_one<int>("--max_sequence_length");
+                auto images = args_.get_many<Image>("--images");
 
-                auto [prompt_embeds, txt_ids] = pipeline.encode_prompt(
+                auto [graph, image_latents] = pipeline.make_vae_encode_graph(
                     scope,
-                    batch,
-                    prompt,
-                    max_sequence_length
+                    scheduler,
+                    images,
+                    batch
                 );
 
-                Graph graph(scheduler, scope.context(), {prompt_embeds, txt_ids});
-                Computation computation(allocator, graph, {&context, &scope.context()});
+                Computation computation(allocator, *graph, {&context, &scope.context()});
 
                 return computation().results();
             }
 
-            if (args_.get(0) == "Flux2KleinPipeline_embeddings") {
+            if (args_.get(0) == "Flux2KleinPipeline_text_encoder") {
                 Scope scope(local_context);
 
                 auto batch = args_.get_one<int>("--batch");
                 auto prompt = args_.get_one<std::string>("--prompt");
                 auto max_sequence_length = args_.get_one<int>("--max_sequence_length");
-                auto packed_h = args_.get_one<int>("--packed_h");
-                auto packed_w = args_.get_one<int>("--packed_w");
-                auto images = args_.get_many<Image>("--images");
 
-    
-                auto [
-                    graph,
-                    prompt_embeds,
-                    txt_ids,
-                    img_ids,
-                    image_latents_concat,
-                    image_latent_ids_concat
-                ] = std::move(pipeline.make_embeddings_graph(
+                auto [graph, prompt_embeds] = pipeline.make_text_encoder_graph(
+                    scope,
                     scheduler,
-                    scope.context(),
-                    prompt,
-                    max_sequence_length,
                     batch,
-                    packed_h,
-                    packed_w,
-                    images
-                ));
+                    prompt,
+                    max_sequence_length
+                );
 
                 Computation computation(allocator, graph, {&context, &scope.context()});
 
@@ -604,31 +588,25 @@ public:
                 auto batch = args_.get_one<int>("--batch");
                 auto packed_h = args_.get_one<int>("--packed_h");
                 auto packed_w = args_.get_one<int>("--packed_w");
-                auto num_ref_tokens = args_.get_one<int>("--num_ref_tokens");
+                auto max_sequence_length = args_.get_one<int>("--max_sequence_length");
                 auto timestep = args_.get_one<float>("--timestep");
                 auto dt = args_.get_one<float>("--dt");
                 auto init_latents = args_.get_one<Tensor>("--init_latents", {scope.context()});
                 auto prompt_embeds = args_.get_one<Tensor>("--prompt_embeds", {scope.context()});
-                auto img_ids = args_.get_one<Tensor>("--img_ids", {scope.context(), Tensor::DType<int32_t>::value});
-                auto txt_ids = args_.get_one<Tensor>("--txt_ids", {scope.context(), Tensor::DType<int32_t>::value});
-
                 auto image_latents = args_.get_optional<Tensor>("--image_latents", {scope.context()});
-                auto image_latent_ids = args_.get_optional<Tensor>("--image_latent_ids", {scope.context(), Tensor::DType<int32_t>::value});
+                auto images = args_.get_many<Image>("--images");
 
-    
                 auto graph = std::move(pipeline.make_denoise_graph(
+                    scope,
                     scheduler,
-                    scope.context(),
                     batch,
                     packed_h,
                     packed_w,
-                    num_ref_tokens,
-                    prompt_embeds,
-                    img_ids,
-                    txt_ids,
+                    max_sequence_length,
                     init_latents,
+                    prompt_embeds,
                     image_latents,
-                    image_latent_ids,
+                    images,
                     &timestep,
                     &dt
                 ));
@@ -638,23 +616,23 @@ public:
                 return computation().results();
             }
 
-            if (args_.get(0) == "Flux2KleinPipeline_decode") {
+            if (args_.get(0) == "Flux2KleinPipeline_vae_decode") {
                 Scope scope(local_context);
 
                 auto packed_h = args_.get_one<int>("--packed_h");
                 auto packed_w = args_.get_one<int>("--packed_w");
                 auto latents = args_.get_one<Tensor>("--latents", {scope.context()});
 
-                auto graph = std::move(pipeline.make_decode_graph(
+                auto graph = std::move(pipeline.make_vae_decode_graph(
+                    scope,
                     scheduler,
-                    scope.context(),
                     packed_h,
                     packed_w,
                     latents
                 ));
 
                 Computation computation(allocator, graph, {&context, &scope.context()});
-                
+
                 return computation().results();
             }
         }
@@ -663,7 +641,8 @@ public:
     }
 
     virtual size_t get_graph_size() const {
-        if (args_.get(0) == "Flux2KleinPipeline_embeddings" ||
+        if (args_.get(0) == "Flux2KleinPipeline_text_encoder" ||
+            args_.get(0) == "Flux2KleinPipeline_vae_encode" ||
             args_.get(0) == "Flux2KleinPipeline_call" ||
             args_.get(0) == "Flux2KleinPipeline_encode_prompt")
             return 65536;
@@ -671,11 +650,8 @@ public:
         return TestCLI::get_graph_size();
     }
 
-    int run_pipeline(Allocator& allocator, Scheduler& scheduler, Context& context, const Device& device) {
-        Context local_context(836464);
-
-        allocator.use(context, device, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-        allocator.use(local_context, device, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
+    int run_pipeline(Allocator& allocator, Scheduler& scheduler, Context& weights_context, const Device& device) {
+        allocator.use(weights_context, device, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
         Flux2Transformer2DModel::Config transformer_config;
         {
@@ -738,7 +714,7 @@ public:
 
         Flux2Transformer2DModel transformer(transformer_config);
         {
-            CreateParametersVisitor create_parameters(context, args_, "transformer");
+            CreateParametersVisitor create_parameters(weights_context, args_, "transformer");
             RethrowVisitor visitor(create_parameters);
             transformer.accept(visitor);
             visitor.rethrow();
@@ -746,7 +722,7 @@ public:
         
         AutoencoderKLFlux2 vae(vae_config);
         {
-            CreateParametersVisitor create_parameters(context, args_, "vae");
+            CreateParametersVisitor create_parameters(weights_context, args_, "vae");
             RethrowVisitor visitor(create_parameters);
             vae.accept(visitor);
             visitor.rethrow();
@@ -754,7 +730,7 @@ public:
 
         Qwen3ForCausalLM text_encoder(qwen_config);
         {
-            CreateParametersVisitor create_parameters(context, args_, "text_encoder");
+            CreateParametersVisitor create_parameters(weights_context, args_, "text_encoder");
             RethrowVisitor visitor(create_parameters);
             text_encoder.accept(visitor);
             visitor.rethrow();
@@ -781,7 +757,7 @@ public:
             options.init_latents = std::move(
                 ArgumentParser::parser<Tensor>::TensorParser("--init_latents", *init_latents).parse().second);
 
-        auto images = pipeline(allocator, scheduler, local_context, context, context, context, std::move(options));
+        auto images = pipeline(allocator, scheduler, weights_context, weights_context, weights_context, std::move(options));
         std::vector<Tensor> results;
 
         for (const auto& image : images) {
@@ -924,7 +900,7 @@ int main(int argc, char** argv) {
         auto n_devices = args_.get_optional<size_t>("--runner-n_devices").value_or(1);
         auto use_gpu = args_.get_optional<bool>("--runner-use_gpu").value_or(false);
 
-        Context context(cli.get_graph_size());
+        Context weights_context(cli.get_graph_size());
 
         // If more than one device, use Meta device.
         if (n_devices > 1) {
@@ -944,7 +920,7 @@ int main(int argc, char** argv) {
 
             ShardingAllocator allocator(ExecutionRuntime::Default, meta, 2.0, 1.0, 0.5);
 
-            return cli.run_pipeline(allocator, scheduler, context, meta);
+            return cli.run_pipeline(allocator, scheduler, weights_context, meta);
         }
 
         if (use_gpu) {
@@ -956,7 +932,7 @@ int main(int argc, char** argv) {
 
             Allocator allocator;
 
-            return cli.run_pipeline(allocator, scheduler, context, gpu);
+            return cli.run_pipeline(allocator, scheduler, weights_context, gpu);
         }
 
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
@@ -965,7 +941,7 @@ int main(int argc, char** argv) {
 
         Allocator allocator;
 
-        return cli.run_pipeline(allocator, scheduler, context, cpu);
+        return cli.run_pipeline(allocator, scheduler, weights_context, cpu);
     }
 
     return cli.main();

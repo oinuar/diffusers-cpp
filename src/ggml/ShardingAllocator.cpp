@@ -2,13 +2,16 @@
 #include <functional>
 
 void ShardingAllocator::allocate(const std::vector<Context*>& contexts, const std::vector<Tensor>& outputs) {
-    // One allocation round: plan the outputs incrementally (the outputs an
-    // earlier round did not plan; each DP is constrained by the committed
-    // plan of the earlier rounds) -- commit the round's new parameter
-    // splits to the meta device's table -- then run the base allocation
-    // over the round's contexts.
+    // The one-shot allocation: plan the WHOLE trace in one go (plan()) --
+    // the goal roots are the outputs the trace marked with set_output()
+    // while the graphs were built, never the `outputs` argument -- commit
+    // the plan's parameter splits to the meta device's split table (done
+    // in plan()) -- then run the base allocation over the contexts (it
+    // allocates only the tensors without a buffer yet, exactly like the
+    // base Allocator). An infeasible plan commits nothing and the
+    // previously committed table stays valid.
 
-    last_plan_ = plan_round(outputs);
+    last_plan_ = plan();
 
     std::cerr << last_plan_.to_string();
 
@@ -19,138 +22,121 @@ void ShardingAllocator::allocate(const std::vector<Context*>& contexts, const st
             "ShardingAllocator: the allocation plan is infeasible: " + last_plan_.infeasible_reason + "\n\n" + dump_trace());
     }
 
-    splits_ = device_.splits();
-
-    // The base allocation is the incremental counterpart of the
-    // incremental plan: called again with the round's contexts, it
-    // allocates only the tensors without a buffer yet.
     Allocator::allocate(contexts, outputs);
 }
 
-void ShardingAllocator::commit_node(const PlanNode& pn) {
-    if (committed_.count(pn.id))
-        return;   // already committed (an earlier round, or twice in this one)
+ShardingAllocator::Plan ShardingAllocator::plan() {
+    // Solves the WHOLE trace in one go: a single DP over every traced
+    // tensor, the goal roots being the outputs the trace marked with
+    // set_output() (ShardingRuntime::goal_roots()), each required exactly
+    // replicated (R) -- the only state a graph output can be read back in.
+    // The roots share the one DP memo, so a tensor shared by several
+    // roots (a parameter consumed by several contexts' forwards) is ONE
+    // node, planned exactly once, for all of them. The DP is strictly
+    // acyclic (topological order), so the memoized recursion terminates.
 
-    Committed c;
-    c.produced = pn.produced;
-    // The inputs are committed already (execution order), so the state is
-    // the one the DP planned with -- locked in as-is.
-    c.exact = exact(pn.id, pn.produced);
-    committed_.emplace(pn.id, std::move(c));
-    committed_this_round_.push_back(pn.id);
-}
-
-void ShardingAllocator::rollback_round() {
-    for (int id : committed_this_round_)
-        committed_.erase(id);
-    committed_this_round_.clear();
-    goal_roots_.clear();
-}
-
-ShardingAllocator::Plan ShardingAllocator::plan_round(const std::vector<Tensor>& outputs) {
-    // The plan is incremental: last_plan_ (and committed_) hold every
-    // tensor the earlier allocation rounds planned, locked to its
-    // committed split. This round adds the outputs that are not planned
-    // yet -- one DP goal per new output, in the order given, each
-    // constrained by the committed plan (a committed tensor may only
-    // produce its committed distribution; an output an earlier round
-    // planned is skipped -- the DP is solved for it exactly once, when it
-    // first becomes a root). The DP is strictly acyclic (topological
-    // order), so the memoized recursion terminates.
-
-    Plan plan = last_plan_;
-    plan.infeasible = false;
-    plan.infeasible_reason.clear();
-
-    if (runtime_.nodes().empty() || outputs.empty())
-        return plan;
-
+    Plan plan;
     plan.device_count = device_.count();
-    const std::vector<ShardingRuntime::TraceNode>& nodes = runtime_.nodes();
-    const std::vector<ggml_tensor*>& raw = runtime_.raw_of();
 
-    std::set<std::pair<int, ShardingRuntime::Dist>> emitted;
-    for (const auto& root : outputs) {
-        const int root_id = runtime_.id_of(*root);
-
-        // Planned by an earlier round (or an earlier output of this
-        // round): the DP is already solved for it -- skip. The base
-        // allocation below still runs: it places this round's new tensors
-        // against the committed table.
-        if (committed_.count(root_id))
-            continue;
-
-        const Goal g = {root_id, ShardingRuntime::Dist::replicated()};
-        goal_roots_.clear();
-        goal_roots_.insert(root_id);
-        exact_memo_.clear();
-        best_memo_.clear();
-        const auto& root_state = best(root_id, g.required);   // roots are exact-only (no bridge)
-        if (!root_state.feasible) {
-            plan.infeasible = true;
-            plan.infeasible_reason = infeasibility_reason(g.required);
-            rollback_round();
-            return plan;
-        }
-
-        const size_t before = plan.nodes.size();
-        emit(root_id, g.required, plan, emitted);
-
-        // The meta backend derives exactly one split state per tensor, so
-        // a tensor this round emitted in two different distributions
-        // cannot be planned (one storage layout per tensor) -- within
-        // this round as well as against the committed plan.
-        {
-            std::map<int, ShardingRuntime::Dist> round_states;
-            for (size_t i = before; i < plan.nodes.size(); ++i) {
-                const PlanNode& pn = plan.nodes[i];
-                auto [it, inserted] = round_states.insert({pn.id, pn.produced});
-                if (!inserted && it->second != pn.produced) {
-                    plan.infeasible = true;
-                    plan.infeasible_reason = nodes[pn.id].op_name + " (node " + std::to_string(pn.id) +
-                        ") is required in both " + it->second.to_string() + " and " +
-                        pn.produced.to_string() + ", but the meta backend derives a single state per tensor";
-                    rollback_round();
-                    return plan;
-                }
-            }
-        }
-
-        // Lock the new nodes: the next output of this round -- and every
-        // later round -- must plan around them. Reverse (execution)
-        // order: a node's inputs before the node itself, so the inputs
-        // are committed when the node's state is locked in.
-        for (size_t i = plan.nodes.size(); i-- > before; )
-            commit_node(plan.nodes[i]);
+    const std::set<int>& roots = runtime_.goal_roots();
+    if (runtime_.nodes().empty() || roots.empty()) {
+        plan.infeasible = true;
+        plan.infeasible_reason = "the trace has no outputs marked with set_output() (nothing to plan for)";
+        last_plan_ = plan;
+        return plan;
     }
 
-    // Commit the round's new parameter splits to the meta device's split
-    // table -- the shared resource, global across contexts and allocators.
-    // The earlier rounds' entries are untouched: they are locked in by
-    // the allocation built against them. The round's true cost: every new
-    // tensor is planned (and paid for) exactly once, plus its P -> R
-    // bridge (the DP above pays a shared input once per consumer, so its
-    // total overcounts such subtrees).
+    // A re-plan with an unchanged trace and cost model reuses the last
+    // plan (the DP is not re-run): repeated allocations with the same
+    // trace do not re-solve it.
+    if (planned_ && planned_trace_size_ == runtime_.nodes().size() && planned_roots_ == roots && planned_w_comm_ == w_comm_)
+        return last_plan_;
+
+    const ShardingRuntime::Dist root_dist = ShardingRuntime::Dist::replicated();
+
+    // One DP for the whole trace: the single memo is shared by every goal
+    // root (a shared tensor is planned once, for all of them).
+    exact_memo_.clear();
+    best_memo_.clear();
+    for (const int root : roots) {
+        const BestState& root_state = best(root, root_dist);   // roots are exact-only (no bridge)
+        if (!root_state.feasible) {
+            plan.infeasible = true;
+            plan.infeasible_reason = infeasibility_reason(root_dist);
+            last_plan_ = plan;
+            return plan;
+        }
+    }
+
+    // The plan itself: DFS from every goal root. A tensor is planned
+    // (emitted) exactly once, in the distribution its first consumer
+    // needs, and every later consumer is served from that same state.
+    std::set<std::pair<int, ShardingRuntime::Dist>> emitted;
+    for (const int root : roots)
+        emit(root, root_dist, plan, emitted);
+
+    // The meta backend derives exactly one split state per tensor (its
+    // storage layout), so a tensor the plan emitted with two different
+    // PRODUCED distributions cannot be planned. (A produced distribution
+    // bridged to a different required one is fine: the bridge is a
+    // collective at the consumer, not a second storage state.)
+    {
+        std::map<int, ShardingRuntime::Dist> produced;
+        for (const PlanNode& pn : plan.nodes) {
+            auto [it, inserted] = produced.insert({pn.id, pn.produced});
+            if (!inserted && it->second != pn.produced) {
+                plan.infeasible = true;
+                plan.infeasible_reason = runtime_.nodes()[pn.id].op_name + " (node " + std::to_string(pn.id) +
+                    ") would need two different storage states (" + it->second.to_string() + " and " +
+                    pn.produced.to_string() + "), but the meta backend derives a single state per tensor";
+                last_plan_ = plan;
+                return plan;
+            }
+        }
+    }
+
+    // The parameter splits: one entry per shared parameter (the meta
+    // backend derives the compute tensors' states). Retires the splits of
+    // this allocator's previous plan (its raw tensors may have been
+    // re-created by a re-trace) and commits the new ones to the meta
+    // device's split table -- the shared resource, global across contexts
+    // and allocators. The true cost: every planned tensor is paid exactly
+    // once, plus its P -> R bridge (the DP above pays a shared input once
+    // per consumer, so its total overcounts such subtrees).
+    for (const auto& [t, d] : splits_)
+        device_.splits().erase(t);
+    splits_.clear();
+
+    decisions_.clear();
+    plan.callback_dists.clear();
+    plan.callback_states.clear();
+
     double cost = 0.0;
-    for (size_t i = last_plan_.nodes.size(); i < plan.nodes.size(); ++i) {
-        const PlanNode& pn = plan.nodes[i];
-        if (nodes[pn.id].is_param) {
+    for (const PlanNode& pn : plan.nodes) {
+        if (runtime_.nodes()[pn.id].is_param) {
+            const ggml_tensor* raw = runtime_.raw_of()[pn.id];
+
             plan.callback_dists[pn.id] = pn.produced;
-            decisions_[raw[pn.id]] = pn.produced;
-            const ggml_backend_meta_split_state st = materialize(pn.produced, nodes[pn.id].ne, raw[pn.id]->type);
+            decisions_[raw] = pn.produced;
+            const ggml_backend_meta_split_state st = materialize(pn.produced, runtime_.nodes()[pn.id].ne, raw->type);
             plan.callback_states[param_name(pn.id)] = st;
-            device_.splits()[raw[pn.id]] = st;
+            device_.splits()[raw] = st;
+            splits_[raw] = st;
         }
 
         const ExactState& e = exact(pn.id, pn.produced);
         if (e.cand >= 0)
-            cost += nodes[pn.id].candidates[e.cand].comp_cost;
+            cost += runtime_.nodes()[pn.id].candidates[e.cand].comp_cost;
         cost += pn.bridge_cost;
     }
-    plan.total_cost += cost;
+    plan.total_cost = cost;
 
-    committed_this_round_.clear();
-    goal_roots_.clear();
+    planned_ = true;
+    planned_trace_size_ = runtime_.nodes().size();
+    planned_roots_ = roots;
+    planned_w_comm_ = w_comm_;
+
+    last_plan_ = plan;
     return plan;
 }
 

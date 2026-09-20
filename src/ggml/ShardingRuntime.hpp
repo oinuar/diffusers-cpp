@@ -3,6 +3,7 @@
 #include "ggml/Runtime.hpp"
 #include "ggml/MetaDevice.hpp"
 #include <unordered_map>
+#include <set>
 
 // ============================================================================
 // ShardingRuntime -- the trace of everything
@@ -94,6 +95,7 @@ public:
         std::vector<Candidate> candidates;       // empty = the meta backend cannot run this op
         bool is_param = false;                   // set via set_param(): static param, R or S(a) storage decision
         bool is_fixed = false;                   // graph input / compute leaf: externally fixed to R
+        bool is_output = false;                  // set via set_output(): a graph output, a DP goal root
     };
 
     // `parent` creates every ggml tensor (in its ggml_context); the engine
@@ -110,17 +112,21 @@ public:
     const std::vector<ggml_tensor*>& raw_of() const { return raw_of_; }
 
     // The trace node of a tensor this engine traced (or lazy-traced via
-    // set_param / set_input) -- how the allocator registers a goal's root.
+    // set_param / set_input / set_output).
     int id_of(ggml_tensor* t) const { return raw_to_id_.at(t); }
 
-    // A round's contexts are going away: their tensors are destroyed
+    // The goal roots of the trace: the outputs marked with set_output()
+    // -- the DP roots ShardingAllocator::plan() solves the whole trace for.
+    const std::set<int>& goal_roots() const { return goal_roots_; }
+    // The traced contexts are going away: their tensors are destroyed
     // with them, so the trace (which references them) is invalid. The
-    // next round re-traces through the same engine (the persistent
+    // next generation re-traces through the same engine (the persistent
     // weights are re-traced lazily by set_param()).
     void reset() {
         nodes_.clear();
         raw_of_.clear();
         raw_to_id_.clear();
+        goal_roots_.clear();
     }
 
     // ---------------------------------------------------------------------
@@ -177,6 +183,21 @@ public:
         n.is_fixed = false;
         n.op_name = "param";
         n.candidates = param_candidates(n.rank);
+    }
+
+    // Marks a tensor as a graph output (as ggml_set_output -- the
+    // project's Graph marks its outputs through the active runtime): the
+    // trace node becomes a DP goal root -- ShardingAllocator::plan() solves
+    // the whole trace for the roots, each required exactly replicated (R),
+    // since that is the only state a graph output can be read back in. The
+    // node is only flagged (is_output, goal_roots_): an output is a
+    // computed tensor, its distribution the DP decides -- not fixed like an
+    // input (set_input).
+    void set_output(ggml_tensor* t) override {
+        parent_.set_output(t);
+        const int id = ensure_node(t);
+        nodes_[id].is_output = true;
+        goal_roots_.insert(id);
     }
 
     ggml_tensor* fill(ggml_tensor* t, float value) override {
@@ -783,4 +804,5 @@ private:
     std::vector<TraceNode> nodes_;
     std::vector<ggml_tensor*> raw_of_;                 // index = trace node id (owned by the parent)
     std::unordered_map<ggml_tensor*, int> raw_to_id_;
+    std::set<int> goal_roots_;                         // the outputs marked with set_output() (DP roots)
 };

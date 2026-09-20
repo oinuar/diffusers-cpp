@@ -35,6 +35,12 @@ void ExecutionRuntime::set_param(
     // There is no GGML counterpart for this.
 }
 
+void ExecutionRuntime::set_output(
+    ggml_tensor* tensor
+) {
+    ggml_set_output(tensor);
+}
+
 ggml_tensor* ExecutionRuntime::fill(
     ggml_tensor* tensor,
     float value

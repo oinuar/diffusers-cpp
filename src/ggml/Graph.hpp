@@ -34,8 +34,10 @@ public:
             else if (!tensor.is_contiguous())
                 tensor = tensor.contiguous();
 
-            // Set output & build the graph.
-            ggml_set_output(*tensor);
+            // Set output & build the graph. The output is marked through
+            // the active runtime (the ShardingRuntime registers it as a DP
+            // goal root; the ExecutionRuntime is the raw ggml_set_output).
+            Scope::runtime().set_output(*tensor);
             ggml_build_forward_expand(gf_, *tensor);
         }
     }

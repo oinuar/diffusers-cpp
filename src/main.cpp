@@ -14,13 +14,13 @@
 //
 //   low level (unchanged)  Module::forward() / Tensor ops build the low-level
 //                          ggml tensor chain in a context (a Scope). The
-//                          pipeline's make_*_graph code becomes the region
+//                          pipeline's make_*_graph code becomes the output
 //                          bodies below, calling the same forwards.
 //
 //   high level (the monad) Computation<T> is the build-phase value: a Tensor
 //                          plus a shared Description of the whole
-//                          computation. bind threads values; region()
-//                          records a single-execution graph; fold() records
+//                          computation. bind threads values; output()
+//                          records a single-execution graph; loop() records
 //                          a loop (the body is built once, re-executed N
 //                          times); save() puts a value in the state context
 //                          (a copy of a graph's output after the graph
@@ -61,9 +61,9 @@
 //
 //   - the four per-stage Computation objects (each: allocate + plan +
 //     execute one graph) -> one Executor: one allocation pass, one execution
-//     pass over the regions.
+//     pass over the outputs.
 //   - the imperative denoise loop (re-executing the graph with the state
-//     feedback missing — the latents input is never updated) -> fold: the
+//     feedback missing — the latents input is never updated) -> loop: the
 //     per-step timestep/dt are re-bindable inputs (their providers iterate
 //     the schedule through the loop's iter clock), and the state is fed
 //     back after each step (an explicit copy into the state cell).
@@ -79,7 +79,7 @@
 //   - Computation: the Computation<T> monad value (build) + the Executor
 //     (run).
 //   - Allocator: a single non-incremental pass.
-//   - Scheduler: the same ggml_backend_sched, driven per region.
+//   - Scheduler: the same ggml_backend_sched, driven per output.
 //   - Context: unchanged (create/value/bind/read/write/copy) — it also hosts
 //     the state context.
 //
@@ -130,7 +130,7 @@
 // ============================================================================
 
 class Context;
-struct Region;  // the monad's region (defined below) — a temporary context points back to its region
+struct Output;  // the monad's output (defined below) — a temporary context points back to its output
 class Tensor;
 static Tensor buffer_owner(const Tensor& t);  // resolves a view chain to its buffer-owning tensor
 
@@ -403,7 +403,7 @@ public:
     // from the one-shot allocator. The temporary contexts get nothing here —
     // the scheduler owns their memory (the compute buffer).
     std::vector<std::byte> buffer;
-    Region* region = nullptr;  // back-pointer (temporary contexts only)
+    Output* output = nullptr;  // back-pointer (temporary contexts only)
 
 private:
 
@@ -428,8 +428,8 @@ int64_t Tensor::numel() const { return meta().shape.numel(); }
 std::size_t Tensor::nbytes() const { return meta().size_bytes; }
 bool Tensor::is_contiguous() const { return meta().contiguous; }
 
-// The monad never changes this layer: the region bodies call the same ops
-// and module forwards, only the context is the region's temporary context.
+// The monad never changes this layer: the output bodies call the same ops
+// and module forwards, only the context is the output's temporary context.
 
 static Shape broadcast_shape(const Shape& a, const Shape& b) {
     // Real: Shape::broadcast. PoC: the binary ops take the broadcast
@@ -571,7 +571,7 @@ Tensor Tensor::stack(const std::vector<Tensor>& ts, int axis) {
 }
 
 // ============================================================================
-// The monad: Computation<T>, bind, region, fold, save
+// The monad: Computation<T>, bind, output, loop, save
 // ============================================================================
 //
 // Computation<T> is the build-phase value: a Tensor (a tensor handle in one
@@ -582,20 +582,20 @@ Tensor Tensor::stack(const std::vector<Tensor>& ts, int axis) {
 //
 //   bind    the Kleisli chain (join): the continuation receives the value
 //           and returns the next computation's output
-//   region  a single-execution graph: the body (Scope, ...) builds the
+//   output  a single-execution graph: the body (Scope, ...) builds the
 //           low-level tensor chain in a fresh temporary context and returns
 //           the graph's output
 //   save    the door to the state context: save(value) copies a graph's
 //           output into a state cell right after the graph executes;
 //           save(desc, shape, provider) creates a state cell up front
-//   fold    the generic monadic loop: the body (Scope, state, iter) is
+//   loop    the generic monadic loop: the body (Scope, state, iter) is
 //           built once (one ggml graph), re-executed N times, and the state
 //           is fed back after each iteration
 //
 // Everything above is domain-independent: nothing in this section knows
 // about denoising, schedules, or flux.
 
-struct Region {
+struct Output {
     std::string name;
     std::unique_ptr<Context> temp;  // the graph's scratch (scheduler-allocated, disposable)
     std::optional<Tensor> output;   // the graph's output (in the temporary context)
@@ -610,7 +610,7 @@ struct Region {
 struct Description {
     Context* weights = nullptr;          // provided from outside (pinned)
     std::unique_ptr<Context> state;      // created on demand — by save() only
-    std::vector<std::unique_ptr<Region>> regions;
+    std::vector<std::unique_ptr<Output>> outputs;
 
     // The state context: the monad's to create and manage. The bodies and
     // the pipeline reach it through save() only — they name the values that
@@ -621,18 +621,18 @@ struct Description {
         return *state;
     }
 
-    Region& add_region(const char* name) {
-        regions.push_back(std::make_unique<Region>());
-        auto& r = *regions.back();
+    Output& add_output(const char* name) {
+        outputs.push_back(std::make_unique<Output>());
+        auto& r = *outputs.back();
         r.name = name;
         r.temp = std::make_unique<Context>(std::string("temp: ") + name);
-        r.temp->region = &r;
+        r.temp->output = &r;
         return r;
     }
 
-    Region& region_of(const Tensor& t) {
-        assert(t.ctx && t.ctx->region);
-        return *t.ctx->region;
+    Output& output_of(const Tensor& t) {
+        assert(t.ctx && t.ctx->output);
+        return *t.ctx->output;
     }
 };
 
@@ -640,6 +640,14 @@ template<class T>
 struct Computation {
     Tensor ref;
     std::shared_ptr<Description> desc;
+
+    Tensor operator *() const {
+        return ref;
+    }
+
+    Tensor* operator ->() {
+        return &ref;
+    }
 };
 
 // bind — the Kleisli chain (join): the continuation receives the value and
@@ -647,30 +655,30 @@ struct Computation {
 // the monad — the body returns the value, not the Computation.
 template<class T, class U, class F>
 Computation<U> bind(Computation<T> c, F f) {
-    return {f(c.ref), std::move(c.desc)};
+    return {f(*c), std::move(c.desc)};
 }
 
-// region — a single-execution graph: the body (Scope scope, ...) builds the
+// output — a single-execution graph: the body (Scope scope, ...) builds the
 // low-level tensor chain (Module::forward calls, Tensor ops) in a fresh
 // temporary context and returns the graph's output (a T). The Scope is
 // created by the monad and is the body's argument, so it is alive for the
 // whole body. The description is carried by the monad — the body returns
 // the value, not the Computation. The temporary context is disposable after
 // the graph executes (the scheduler allocates it); to share the output with
-// later regions, wrap the result in save().
-template<class T, class Body>
-Computation<T> region(std::shared_ptr<Description> desc, const char* name, Body body) {
-    auto& r = desc->add_region(name);
+// later outputs, wrap the result in save().
+template<class Body>
+Computation<Tensor> output(std::shared_ptr<Description> desc, const char* name, Body body) {
+    auto& r = desc->add_output(name);
     Scope scope(*r.temp);  // the body's argument: alive for the whole body
     auto out = body(scope);
     r.output = out;
     return {out, desc};
 }
 
-// fold — the monadic loop (generic — no domain knowledge):
+// loop — the monadic loop:
 //
 //   build: the body (Scope scope, Computation<S> state, size_t& iter) is
-//          invoked once with the region's Scope (a fresh temporary context —
+//          invoked once with the output's Scope (a fresh temporary context —
 //          the Scope is the body's argument, alive for the whole body), the
 //          state cell, and the loop's iter clock; the Kleisli morphism it
 //          records is the loop body as a single graph. The body returns the
@@ -679,18 +687,17 @@ Computation<T> region(std::shared_ptr<Description> desc, const char* name, Body 
 //          body's re-bindable (non-once) inputs are rewritten — their
 //          providers iterate the per-iteration values (they read the loop's
 //          `iter` clock). After each execution the body's output is copied
-//          back into the state cell — the feedback that today's re-executed
-//          denoise graph is missing. The value after the loop is the state
+//          back into the state cell. The value after the loop is the state
 //          cell.
 template<class S, class Body>
-Computation<S> fold(Computation<S> state, std::size_t count, Body body, const char* name = "fold") {
-    auto& r = state.desc->add_region(name);
+Computation<S> loop(Computation<S> state, std::size_t count, Body body, const char* name = "loop") {
+    auto& r = state.desc->add_output(name);
     r.loop = true;
     r.count = count;
     Scope scope(*r.temp);  // the body's argument: alive for the whole body
     auto next = body(scope, state, r.iter);
     r.output = next;
-    r.feedback = {next, state.ref};
+    r.feedback = {next, *state};
     return state;
 }
 
@@ -701,9 +708,9 @@ Computation<S> fold(Computation<S> state, std::size_t count, Body body, const ch
 // producing graph executes.
 template<class T>
 Computation<T> save(Computation<T> t) {
-    auto cell = t.desc->state_ctx().tensor(t.ref.shape(), t.ref.dtype());
-    cell.name(t.ref.name());
-    t.desc->region_of(t.ref).saves.push_back({t.ref, cell});
+    auto cell = t.desc->state_ctx().tensor(t->shape(), t->dtype());
+    cell.name(t->name());
+    t.desc->output_of(*t).saves.push_back({*t, cell});
     return {cell, t.desc};
 }
 
@@ -771,9 +778,9 @@ private:
 // low-level ggml tensor chain in the scope's context (Tensor ops,
 // sub-modules). That is the "working" part — the monad does not change it.
 // Here: the same shape — forward(Scope, ...) recording nodes and returning
-// the output Tensor. The region bodies below call them exactly as
+// the output Tensor. The output bodies below call them exactly as
 // Flux2KleinPipeline::operator() calls the real module forwards, only the
-// context is the region's temporary context.
+// context is the output's temporary context.
 
 struct Vae {
     // Weights (created in the weights context by load_weights — stand-ins
@@ -1017,21 +1024,19 @@ struct Pipeline {
 
         //
         // 1. VAE encode (img2img): reference images -> packed, normalized
-        //    latents. A single-execution region; the output crosses into the
+        //    latents. A single-execution output; the output crosses into the
         //    denoise body (save).
         //
         std::optional<Computation<Tensor>> image_latents;
         if (!reference_images.empty()) {
-            image_latents = save(region<Tensor>(desc, "vae encode",
+            image_latents = save(output(desc, "vae encode",
                 [&](Scope scope) -> Tensor {
-                    auto& temp = scope.context();
-
                     std::vector<Tensor> packed_imgs;
                     for (std::size_t i = 0; i < reference_images.size(); ++i) {
                         const auto& img = reference_images[i];
                         // Real: image_to_tensor + VaeImageProcessor.preprocess
                         // (HWC uint8 -> CHW float, /255*2-1, resize_and_crop).
-                        auto img_tensor = temp.create<float>(
+                        auto img_tensor = scope.context().create<float>(
                             {1, 3, img.height, img.width},
                             [&img](std::mt19937&) { return preprocess(img); });
                         img_tensor.name("reference image " + std::to_string(i));
@@ -1060,13 +1065,11 @@ struct Pipeline {
         //    hidden states of layers 0/2/3 (real: 9/18/27). The output
         //    crosses into the denoise body (save).
         //
-        auto prompt_embeds = save(region<Tensor>(desc, "text encode",
+        auto prompt_embeds = save(output(desc, "text encode",
             [&](Scope scope) -> Tensor {
-                auto& temp = scope.context();
-
                 // Real: tokenizer_.apply_chat_template + encode (host-side,
                 // before the graph).
-                auto input_ids = temp.create<int32_t>(
+                auto input_ids = scope.context().create<int32_t>(
                     {batch, L},
                     [tokens, batch, L](std::mt19937&) {
                         std::vector<int32_t> ids(size_t(batch) * L);
@@ -1076,7 +1079,7 @@ struct Pipeline {
                     });
                 input_ids.name("input_ids");
 
-                auto attention_mask = temp.create<float>(
+                auto attention_mask = scope.context().create<float>(
                     {batch, L},
                     [mask, batch, L](std::mt19937&) {
                         std::vector<float> m(size_t(batch) * L);
@@ -1099,7 +1102,7 @@ struct Pipeline {
         //
         // 3. The denoising state: a state cell (the loop's "pure") — saved:
         //    the monad creates it in the state context, because it crosses
-        //    the loop iterations and the decode region. Random noise, or the
+        //    the loop iterations and the decode output. Random noise, or the
         //    caller's initial latents.
         //
         std::function<std::vector<float>(std::mt19937&)> latents_provider;
@@ -1116,42 +1119,40 @@ struct Pipeline {
         auto latents = save<float>(desc, {batch, N, token_dim}, latents_provider, "latents");
 
         //
-        // 4. Denoise — the generic monadic fold. The body is built once (one
+        // 4. Denoise — the generic monadic loop. The body is built once (one
         //    ggml graph, its own temporary context); the executor re-executes
         //    it per step: the per-step timestep/dt are re-bindable inputs
         //    (their providers iterate the schedule through the loop's iter
         //    clock — the same pattern as today's float* timestep capture, but
         //    owned by the loop), and the state is fed back after each step.
         //
-        auto final_latents = fold(latents, schedule.size(),
+        auto final_latents = loop(latents, schedule.size(),
             [&](Scope scope, Computation<Tensor> l, std::size_t& iter) -> Tensor {
-                auto& temp = scope.context();
-
-                auto img_ids = temp.create<int32_t>(
+                auto img_ids = scope.context().create<int32_t>(
                     {batch, N, 4},
                     [batch, N, packed_h, packed_w](std::mt19937&) {
                         return make_img_ids(batch, N, packed_h, packed_w);
                     });
                 img_ids.name("img_ids");
 
-                auto txt_ids = temp.create<int32_t>(
+                auto txt_ids = scope.context().create<int32_t>(
                     {batch, L, 4},
                     [batch, L](std::mt19937&) {
                         return make_txt_ids(batch, L);
                     });
                 txt_ids.name("txt_ids");
 
-                Tensor latent_model_input = l.ref;
+                Tensor latent_model_input = *l;
                 Tensor latent_image_ids = img_ids;
                 if (image_latents) {
-                    auto ref_ids = temp.create<int32_t>(
+                    auto ref_ids = scope.context().create<int32_t>(
                         {batch, Nref, 4},
                         [batch, Nref, &reference_images, vae_multiple](std::mt19937&) {
                             return make_ref_ids(batch, Nref, reference_images, vae_multiple);
                         });
                     ref_ids.name("ref_image_ids");
 
-                    latent_model_input = Tensor::cat({l.ref, image_latents->ref}, /*axis=*/1);
+                    latent_model_input = Tensor::cat({*l, image_latents->ref}, /*axis=*/1);
                     latent_model_input.name("model input (latents + references)");
                     latent_image_ids = Tensor::cat({img_ids, ref_ids}, /*axis=*/1);
                     latent_image_ids.name("latent image ids");
@@ -1160,14 +1161,14 @@ struct Pipeline {
                 // The per-step values: re-bindable inputs. The providers read
                 // the loop's iter clock, so the same graph is re-executed with
                 // the next step's values — no graph rebuild.
-                auto timestep = temp.value<float>(
+                auto timestep = scope.context().value<float>(
                     {batch},
                     [batch, &schedule, &iter](std::mt19937&) {
                         return std::vector<float>(batch, schedule[iter].timestep);
                     });
                 timestep.name("timestep");
 
-                auto dt = temp.value<float>(
+                auto dt = scope.context().value<float>(
                     {1},
                     [&schedule, &iter](std::mt19937&) {
                         return std::vector<float>{schedule[iter].dt};
@@ -1175,7 +1176,7 @@ struct Pipeline {
                 dt.name("dt");
 
                 auto noise_pred = transformer.forward(
-                    scope, latent_model_input, prompt_embeds.ref, timestep / 1000.0f,
+                    scope, latent_model_input, *prompt_embeds, timestep / 1000.0f,
                     latent_image_ids, txt_ids);
 
                 if (image_latents) {
@@ -1185,7 +1186,7 @@ struct Pipeline {
 
                 // The scheduler's integrate: x + dt * model_output — the next
                 // state (real: FlowMatchEulerDiscreteScheduler::integrate).
-                auto next = l.ref + dt * noise_pred;
+                auto next = *l + dt * noise_pred;
                 next.name("next_latents");
                 return next;
             },
@@ -1195,10 +1196,10 @@ struct Pipeline {
         // 5. VAE decode: latents -> pixels. The output is the computation's
         //    result (saved into the state context).
         //
-        auto image = save(region<Tensor>(desc, "vae decode",
+        auto image = save(output(desc, "vae decode",
             [&](Scope scope) -> Tensor {
 
-                auto z_packed = unpack_latents(final_latents.ref, packed_h, packed_w);
+                auto z_packed = unpack_latents(*final_latents, packed_h, packed_w);
                 auto bn_mean = vae.bn_mean.reshape({1, -1, 1, 1});
                 auto bn_std = sqrt(vae.bn_var.reshape({1, -1, 1, 1}) + vae.batch_norm_eps);
                 z_packed = z_packed * bn_std + bn_mean;
@@ -1271,12 +1272,12 @@ static std::string format_bytes(std::size_t bytes) {
 }
 
 // The galloc model (ggml_gallocr, ggml-alloc.c): the high-water mark of the
-// live set of the region's temporary context. A tensor is allocated when its
+// live set of the output's temporary context. A tensor is allocated when its
 // producer runs (bound inputs: at the start) and freed after its last
 // consumer (the graph's output: at the end — the executor reads it after the
 // graph). Tensors that already have a buffer (weights, state) live in other
 // contexts and are skipped by the galloc, as are views.
-static std::size_t high_water(const Region& r) {
+static std::size_t high_water(const Output& r) {
     const auto& tensors = r.temp->tensors();
     const auto& nodes = r.temp->nodes();
     if (nodes.empty())
@@ -1341,14 +1342,14 @@ struct Allocator {
 struct Scheduler {
     std::size_t compute_buffer = 0;
 
-    void alloc(Region& r) {
+    void alloc(Output& r) {
         r.high_water = high_water(r);
         compute_buffer = std::max(compute_buffer, r.high_water);
         std::cout << "     alloc: high-water " << format_bytes(r.high_water)
                   << "  (compute buffer: " << format_bytes(compute_buffer) << ")\n";
     }
 
-    void compute(const Region& r, bool verbose) {
+    void compute(const Output& r, bool verbose) {
         const auto& nodes = r.temp->nodes();
         if (verbose) {
             for (std::size_t i = 0; i < nodes.size(); ++i) {
@@ -1368,12 +1369,12 @@ struct Scheduler {
 // The executor — the run phase. It replaces the per-stage Computation
 // objects: instead of four Computation objects (each: allocate + plan +
 // execute one graph), one executor: one allocation pass, one execution pass
-// over the regions.
+// over the outputs.
 class Executor {
 public:
     Executor(const Computation<Tensor>& result, Allocator& allocator, Scheduler& scheduler,
              uint64_t seed = 0x5EED)
-        : result_(result.ref), desc_(result.desc), scheduler_(scheduler), rng_(seed) {
+        : result_(*result), desc_(result.desc), scheduler_(scheduler), rng_(seed) {
         // The one-shot allocation point: all the module forwards have been
         // called — all the low-level ggml tensor chains exist. Allocate the
         // long-lived contexts in a single non-incremental pass.
@@ -1448,7 +1449,7 @@ void Executor::copy(const Tensor& src, const Tensor& dst, const char* kind) {
 
 void Executor::run() {
     std::cout << "\n=== RUN ===\n";
-    std::cout << "one pass over the regions (build order == execution order)\n\n";
+    std::cout << "one pass over the outputs (build order == execution order)\n\n";
 
     // The weights: the GGUF bindings are streamed once into the weights
     // buffer. (Today: re-streamed by every Computation.)
@@ -1464,9 +1465,9 @@ void Executor::run() {
     }
     std::cout << "\n";
 
-    for (std::size_t i = 0; i < desc_->regions.size(); ++i) {
-        auto& r = *desc_->regions[i];
-        std::cout << "  -- region " << i << "/" << desc_->regions.size() - 1 << ": " << r.name;
+    for (std::size_t i = 0; i < desc_->outputs.size(); ++i) {
+        auto& r = *desc_->outputs[i];
+        std::cout << "  -- output " << i << "/" << desc_->outputs.size() - 1 << ": " << r.name;
         if (r.loop)
             std::cout << "  (loop x" << r.count << ")";
         std::cout << "\n";
@@ -1504,8 +1505,8 @@ void Executor::dump() const {
     std::cout << "\n=== PLAN ===\n";
 
     std::cout << "the description (built by the monad — nothing allocated or executed yet):\n";
-    for (std::size_t i = 0; i < d.regions.size(); ++i) {
-        const auto& r = *d.regions[i];
+    for (std::size_t i = 0; i < d.outputs.size(); ++i) {
+        const auto& r = *d.outputs[i];
         std::cout << "  " << i << ": " << std::left << std::setw(14) << r.name
                   << (r.loop ? std::string("[loop x") + std::to_string(r.count) + "]" : "[once]")
                   << std::right << "  " << r.temp->nodes().size() << " nodes in the temporary context";
@@ -1553,7 +1554,7 @@ void Executor::dump() const {
     std::size_t max_hw = 0;
     std::size_t today_contexts = 0;
     std::cout << "\n  the compute buffer (the scheduler — per-graph liveness, reused across graphs):\n";
-    for (auto& rp : d.regions) {
+    for (auto& rp : d.outputs) {
         const auto& r = *rp;
         const auto hw = high_water(r);
         max_hw = std::max(max_hw, hw);
@@ -1642,7 +1643,7 @@ int main() {
     Executor executable(image, allocator, scheduler);
     executable.dump();
 
-    // 3. Run — one pass over the regions.
+    // 3. Run — one pass over the outputs.
     executable.run();
 
     auto pixels = executable.read_result();

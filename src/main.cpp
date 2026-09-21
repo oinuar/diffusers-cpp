@@ -417,13 +417,12 @@ Tensor Tensor::operator-(const Tensor& rhs) const { return Tensor{ggml_sub(*Scop
 struct Output {
     std::string name;
     std::optional<Context> context; // the graph's scratch (scheduler-allocated, disposable)
-    std::optional<Tensor> output;   // the graph's output (in the temporary context)
+    Tensor output;   // the graph's output (in the temporary context)
     bool loop = false;
     std::size_t count = 0;
     std::size_t iter = 0;           // the loop clock: the per-iteration providers read it
     std::optional<std::pair<Tensor, Tensor>> feedback;  // the loop: next_state -> state cell
     std::vector<std::pair<Tensor, Tensor>> saves;       // boundaries: temporary -> state cell
-    ggml_cgraph* graph = nullptr;   // built at plan time (ggml_build_forward_expand)
 };
 
 struct Description {
@@ -440,11 +439,11 @@ struct Description {
         return *state;
     }
 
-    Output& add_output(const char* name) {
-        outputs.push_back(Output());
+    Output& add_output() {
+        outputs.push_back({});
         auto& r = outputs.back();
-        r.name = name;
-        r.context.emplace(std::string("temp: ") + name);
+        r.context.emplace("temb");
+        r.name = "output";
         return r;
     }
 
@@ -460,7 +459,6 @@ struct Description {
     }
 };
 
-template<class T>
 struct Computation {
     Tensor ref;
     std::shared_ptr<Description> desc;
@@ -472,84 +470,89 @@ struct Computation {
     Tensor* operator ->() {
         return &ref;
     }
+
+    // Creates a Computation with weights context.
+    explicit Computation(Context& weights_context) : Computation() {
+        desc->weights = &weights_context;
+    }
+
+    Computation() : ref(), desc() {
+        desc = std::make_shared<Description>();
+    }
+
+    Computation(Tensor ref, std::shared_ptr<Description> desc) : ref(ref), desc(desc) {
+
+    }
+
+    // scope — a single-execution graph: the body (Scope scope, ...) builds the
+    // low-level ggml tensor chain (Module::forward calls, Tensor ops) in a fresh
+    // temporary context and returns the graph's output (a T). The Scope is
+    // created by the monad and is the body's argument, so it is alive for the
+    // whole body. The description is carried by the monad — the body returns
+    // the value, not the Computation. The temporary context is disposable after
+    // the graph executes (the scheduler allocates it); to share the output with
+    // later outputs, wrap the result in state().
+    template<class Body>
+    Computation scope(Body body) {
+        auto& r = desc->add_output();
+        Scope scope(*r.context);  // the body's argument: alive for the whole body
+        auto out = body(scope);
+        r.output = out;
+        return {out, desc};
+    }
+
+    // repeat — the Computation loop:
+    //
+    //   build: the body (Scope scope, Computation state, size_t& iter) is
+    //          invoked once with the output's Scope (a fresh temporary context —
+    //          the Scope is the body's argument, alive for the whole body), the
+    //          state cell, and the loop's iter clock; the Kleisli morphism it
+    //          records is the loop body as a single graph. The body returns the
+    //          next state (a S); the description is the monad's to carry.
+    //   run:   the graph is re-executed `count` times. Before each execution the
+    //          body's re-bindable (non-once) inputs are rewritten — their
+    //          providers iterate the per-iteration values (they read the loop's
+    //          `iter` clock). After each execution the body's output is copied
+    //          back into the state cell. The value after the loop is the state
+    //          cell.
+    template<class Body>
+    Computation repeat(std::size_t count, Body body) {
+        auto& r = desc->add_output();
+        r.loop = true;
+        r.count = count;
+        Scope scope(*r.context);  // the body's argument: alive for the whole body
+        auto next = body(scope, *this, r.iter);
+        r.output = next;
+        r.feedback = {next, **this};
+        return *this;
+    }
+
+    // state — a value crosses a graph boundary. The scheduler's allocation is
+    // per-graph (not shared between ggml graphs), so a value produced in one
+    // graph and consumed in a later one must live outside both temporary
+    // contexts: it is copied into a state context cell right after the
+    // producing graph executes.
+    Computation state() {
+        if (!ref)
+            throw std::runtime_error("state(): Computation is empty");
+
+        auto cell = desc->state_ctx().tensor(ref.dtype(), ref.shape());
+        cell.name(ref.name());
+        desc->output_of(ref).saves.push_back({**this, cell});
+        return {cell, desc};
+    }
+
+    // state (provider overload) — a value that must exist from the start, before
+    // any graph runs: the initial counter cell. It is created in the state
+    // context — the monad's, created on demand. The caller provides the value,
+    // not the context: it never has to know when a tensor belongs to the state
+    // context.
+    template<class U>
+    Computation state(const Shape& shape, const std::function<std::vector<U>(std::mt19937&)>& provider) {
+        auto cell = desc->state_ctx().create<U>(shape, provider);
+        return {cell, desc};
+    }
 };
-
-// bind — the Kleisli chain (join): the continuation receives the value and
-// returns the next computation's output (a U). The description is carried by
-// the monad — the body returns the value, not the Computation.
-template<class T, class U, class F>
-Computation<U> bind(Computation<T> c, F f) {
-    return {f(*c), std::move(c.desc)};
-}
-
-// output — a single-execution graph: the body (Scope scope, ...) builds the
-// low-level ggml tensor chain (Module::forward calls, Tensor ops) in a fresh
-// temporary context and returns the graph's output (a T). The Scope is
-// created by the monad and is the body's argument, so it is alive for the
-// whole body. The description is carried by the monad — the body returns
-// the value, not the Computation. The temporary context is disposable after
-// the graph executes (the scheduler allocates it); to share the output with
-// later outputs, wrap the result in state().
-template<class Body>
-Computation<Tensor> output(std::shared_ptr<Description> desc, const char* name, Body body) {
-    auto& r = desc->add_output(name);
-    Scope scope(*r.context);  // the body's argument: alive for the whole body
-    auto out = body(scope);
-    r.output = out;
-    return {out, desc};
-}
-
-// repeat — the monadic loop:
-//
-//   build: the body (Scope scope, Computation<S> state, size_t& iter) is
-//          invoked once with the output's Scope (a fresh temporary context —
-//          the Scope is the body's argument, alive for the whole body), the
-//          state cell, and the loop's iter clock; the Kleisli morphism it
-//          records is the loop body as a single graph. The body returns the
-//          next state (a S); the description is the monad's to carry.
-//   run:   the graph is re-executed `count` times. Before each execution the
-//          body's re-bindable (non-once) inputs are rewritten — their
-//          providers iterate the per-iteration values (they read the loop's
-//          `iter` clock). After each execution the body's output is copied
-//          back into the state cell. The value after the loop is the state
-//          cell.
-template<class S, class Body>
-Computation<S> repeat(Computation<S> state, std::size_t count, Body body, const char* name = "loop") {
-    auto& r = state.desc->add_output(name);
-    r.loop = true;
-    r.count = count;
-    Scope scope(*r.context);  // the body's argument: alive for the whole body
-    auto next = body(scope, state, r.iter);
-    r.output = next;
-    r.feedback = {next, *state};
-    return state;
-}
-
-// state — a value crosses a graph boundary. The scheduler's allocation is
-// per-graph (not shared between ggml graphs), so a value produced in one
-// graph and consumed in a later one must live outside both temporary
-// contexts: it is copied into a state context cell right after the
-// producing graph executes.
-template<class T>
-Computation<T> state(Computation<T> t) {
-    auto cell = t.desc->state_ctx().tensor(t->dtype(), t->shape());
-    cell.name(t->name());
-    t.desc->output_of(*t).saves.push_back({*t, cell});
-    return {cell, t.desc};
-}
-
-// save (provider overload) — a value that must exist from the start, before
-// any graph runs: the initial counter cell. It is created in the state
-// context — the monad's, created on demand. The caller provides the value,
-// not the context: it never has to know when a tensor belongs to the state
-// context.
-template<class T>
-Computation<Tensor> state(std::shared_ptr<Description> desc, const Shape& shape,
-                    const std::function<std::vector<T>(std::mt19937&)>& provider, const std::string& name) {
-    auto cell = desc->state_ctx().create<T>(shape, provider);
-    cell.name(name);
-    return {cell, desc};
-}
 
 // ============================================================================
 // Module stand-ins (the real modules are Module::forward(Scope, ...) methods
@@ -593,16 +596,15 @@ struct Pipeline {
     // planning and executing one graph), this composes the whole
     // "generation" into one lazy description and returns the (unexecuted)
     // computation of the final value.
-    Computation<Tensor> compute(Context& weights_ctx, const Options& options) {
-        auto desc = std::make_shared<Description>();
-        desc->weights = &weights_ctx;
+    Computation compute(Context& weights_ctx, const Options& options) {
+        Computation computation(weights_ctx);
 
         //
         // 1. 1 + 2: a single-execution output; the output crosses into the
         //    total output (state).
         //
-        auto sum = state(output(desc, "adder",
-            [&](Scope scope) -> Tensor {
+        auto sum = computation
+            .scope([&](Scope scope) -> Tensor {
                 auto a = scope.context().create<float>(
                     {1}, [](std::mt19937&) { return std::vector<float>{1.0f}; });
                 a.name("a (1)");
@@ -610,15 +612,18 @@ struct Pipeline {
                     {1}, [](std::mt19937&) { return std::vector<float>{2.0f}; });
                 b.name("b (2)");
                 return adder.forward(scope, a, b).name("sum");
-            }));
+            })
+            .state();
 
         //
         // 2. The counter's state: a state cell (the loop's "pure"):
         //    the monad creates it in the state context, because it crosses
         //    the loop iterations and the total output. Starts at 0.
         //
-        auto counter = state<float>(desc, {1},
-            [](std::mt19937&) { return std::vector<float>{0.0f}; }, "counter");
+        auto counter = computation.state<float>({1},
+            [](std::mt19937&) { return std::vector<float>{0.0f}; });
+
+        counter->name("counter");
 
         //
         // 3. Denoise — here a simple counter: x = 0, repeat: x = x + step.
@@ -629,26 +634,26 @@ struct Pipeline {
         //    clock — no graph rebuild), and the state is fed back after
         //    each step.
         //
-        counter = repeat(counter, options.count,
-            [&](Scope scope, Computation<Tensor> x, std::size_t& iter) -> Tensor {
+        counter = counter.repeat(options.count,
+            [&](Scope scope, Computation x, std::size_t& iter) -> Tensor {
                 (void)iter;  // the loop clock — a real body's providers read it
                 // The per-iteration value: a re-bindable input.
                 auto step = scope.context().value<float>(
                     {1}, [](std::mt19937&) { return std::vector<float>{1.0f}; });
                 step.name("step");
                 return counter_step.forward(scope, *x, step);
-            },
-            "counter");
+            });
 
         //
         // 4. total = counter + sum: both values come from the state context.
         //    The output is the computation's result (saved into the state
         //    context).
         //
-        return state(output(desc, "total",
-            [&](Scope scope) -> Tensor {
+        return computation
+            .scope([&](Scope scope) -> Tensor {
                 return (*counter + *sum).name("total");
-            }));
+            })
+            .state();
     }
 };
 
@@ -715,7 +720,7 @@ static std::size_t count_tensors(const Context& ctx) {
 // TODO: migrate this to ExecutionRuntime?
 class Executor {
 public:
-    explicit Executor(const Computation<Tensor>& result)
+    explicit Executor(const Computation& result)
         : result_(*result), desc_(result.desc)
     {
         // One CPU backend + one scheduler (reused across all the graphs).
@@ -760,7 +765,7 @@ public:
     const Tensor& result() const { return result_; }
 
 private:
-    void build_graph(Output& r) const;
+    ggml_cgraph* build_graph(Output& r) const;
     void write_bindings(Context* ctx, bool once_only);
     void copy(const Tensor& src, const Tensor& dst, const char* kind);
 
@@ -771,21 +776,23 @@ private:
     std::mt19937 rng_{0x5EED};
 };
 
-void Executor::build_graph(Output& r) const {
+ggml_cgraph* Executor::build_graph(Output& r) const {
     // The cgraph is built in the temporary context (its memory comes from
     // the context's pool): the body's tensor chain was already recorded
     // there at build time; ggml_build_forward_expand expands it into the
     // graph (the nodes, and the leaves — the bound inputs of this context
     // and the pre-allocated weights / state tensors).
-    r.graph = ggml_new_graph_custom(**r.context, r.context->capacity(), /*grads=*/false);
-    ggml_set_output(**r.output);
-    ggml_build_forward_expand(r.graph, **r.output);
+    auto gf = ggml_new_graph_custom(**r.context, r.context->capacity(), /*grads=*/false);
+    ggml_set_output(*r.output);
+    ggml_build_forward_expand(gf, *r.output);
     // Reserve the compute buffer for this graph (it persists on the
     // scheduler and is reused — and grown — for later graphs; in the
     // project this is done once, with a max-size measure graph). In this
     // ggml version reserve_size measures without allocating, so it cannot
     // be the only reserve: alloc_graph would then skip the allocation.
-    assert(ggml_backend_sched_reserve(sched_, r.graph));
+    assert(ggml_backend_sched_reserve(sched_, gf));
+
+    return gf;
 }
 
 void Executor::write_bindings(Context* ctx, bool once_only) {
@@ -885,8 +892,8 @@ void Executor::run() {
 
         // Build the graph over the output tensor (the body's tensor chain in
         // the temporary context, already recorded at build time).
-        build_graph(r);
-        std::cout << "     graph: " << ggml_graph_n_nodes(r.graph) << " nodes\n";
+        auto gf = build_graph(r);
+        std::cout << "     graph: " << ggml_graph_n_nodes(gf) << " nodes\n";
 
         // Allocate: the galloc plans the graph's temporary tensors with
         // liveness (the compute buffer is sized to the high-water mark of
@@ -896,7 +903,7 @@ void Executor::run() {
         std::cout << "     alloc: compute buffer "
                   << format_bytes(ggml_backend_sched_get_buffer_size(sched_, backend_))
                   << "  (persistent, reused)\n";
-        if (!ggml_backend_sched_alloc_graph(sched_, r.graph))
+        if (!ggml_backend_sched_alloc_graph(sched_, gf))
             throw std::runtime_error("ggml_backend_sched_alloc_graph failed: " + r.name);
 
         // The bound inputs (once): written into the freshly allocated graph
@@ -910,7 +917,7 @@ void Executor::run() {
                 // The re-bindable inputs: rewritten on every (re-)execution —
                 // their providers run through the loop's iter clock.
                 write_bindings(&r.context.value(), /*once_only=*/false);
-                if (ggml_backend_sched_graph_compute(sched_, r.graph) != GGML_STATUS_SUCCESS)
+                if (ggml_backend_sched_graph_compute(sched_, gf) != GGML_STATUS_SUCCESS)
                     throw std::runtime_error("ggml_backend_sched_graph_compute failed: " + r.name);
                 // The feedback: the next state is written back into the
                 // state cell (on every iteration, including the last — the
@@ -919,7 +926,7 @@ void Executor::run() {
                 copy(r.feedback->first, r.feedback->second, "feedback");
             }
         } else {
-            if (ggml_backend_sched_graph_compute(sched_, r.graph) != GGML_STATUS_SUCCESS)
+            if (ggml_backend_sched_graph_compute(sched_, gf) != GGML_STATUS_SUCCESS)
                 throw std::runtime_error("ggml_backend_sched_graph_compute failed: " + r.name);
         }
 
@@ -929,7 +936,6 @@ void Executor::run() {
         // The temporary context is disposable: the graph has been computed,
         // the state is across the boundary. (The compute buffer is kept by
         // the scheduler.)
-        r.context.reset();
         std::cout << "     dispose temporary context '" << r.context->name() << "'\n\n";
     }
 }

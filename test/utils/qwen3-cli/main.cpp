@@ -17,12 +17,12 @@ class TestQwen3CLI : public TestCLI {
 public:
     TestQwen3CLI(int argc, char** argv) : TestCLI(argc, argv) {}
 
-    virtual std::vector<Tensor> compute(Allocator& allocator, Scheduler& scheduler, Context& context, Context& local_context) {
+    virtual Computation<std::vector<Tensor>> compute(Context& context) {
         if (args_.get(0) == "Qwen3RMSNorm") {
-            Scope scope(local_context, allocator.runtime());
+            Computation<Tensor> computation(context);
 
             auto hidden_size = args_.get_one<int64_t>("--hidden_size");
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {scope.context()});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->state_ctx()});
 
             Qwen3RMSNorm model(hidden_size);
 
@@ -31,21 +31,21 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(scope.context(), hidden_states);
+            auto result = computation.scope([&](Scope scope) -> Tensor {
+                return model.forward(scope.context(), hidden_states);
+            });
 
-            Graph graph(scheduler, scope.context(), {output});
-            Computation computation(allocator, graph, {&context, &scope.context()});
-            return computation().results();
+            return Computation<Tensor>::all(result);
         }
 
         if (args_.get(0) == "Qwen3MLP") {
-            Scope scope(local_context, allocator.runtime());
+            Computation<Tensor> computation(context);
 
             Qwen3Config config;
             config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
             config.intermediate_size = args_.get_optional<int64_t>("--intermediate_size").value_or(config.intermediate_size);
 
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {scope.context()});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->state_ctx()});
 
             Qwen3MLP model(config);
 
@@ -54,34 +54,34 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(scope.context(), hidden_states);
+            auto result = computation.scope([&](Scope scope) -> Tensor {
+                return model.forward(scope.context(), hidden_states);
+            });
 
-            Graph graph(scheduler, scope.context(), {output});
-            Computation computation(allocator, graph, {&context, &scope.context()});
-            return computation().results();
+            return Computation<Tensor>::all(result);
         }
 
         if (args_.get(0) == "Qwen3RotaryEmbedding") {
-            Scope scope(local_context, allocator.runtime());
+            Computation<Tensor> computation(context);
 
             Qwen3Config config;
             config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
             config.rope_theta = args_.get_optional<int64_t>("--rope_theta").value_or(config.rope_theta);
 
-            auto x = args_.get_one<Tensor>("--x", {scope.context()});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {scope.context(), Tensor::DType<int32_t>::value});
+            auto x = args_.get_one<Tensor>("--x", {computation.desc()->state_ctx()});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
 
             Qwen3RotaryEmbedding model(config);
 
-            auto output = model.forward(scope.context(), x, position_ids);
+            auto result = computation.scope([&](Scope scope) -> Tensor {
+                return model.forward(scope.context(), x, position_ids);
+            });
 
-            Graph graph(scheduler, scope.context(), {output});
-            Computation computation(allocator, graph, {&context, &scope.context()});
-            return computation().results();
+            return Computation<Tensor>::all(result);
         }
 
         if (args_.get(0) == "Qwen3Attention") {
-            Scope scope(local_context, allocator.runtime());
+            Computation<Tensor> computation(context);
 
             Qwen3Config config;
             config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
@@ -89,10 +89,10 @@ public:
             config.num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.num_attention_heads);
             config.num_key_value_heads = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.num_key_value_heads);
 
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {scope.context(), Tensor::DType<int32_t>::value});
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {scope.context()});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {scope.context()});
-            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {scope.context()});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->state_ctx()});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {computation.desc()->state_ctx()});
+            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {computation.desc()->state_ctx()});
             auto layer_idx = args_.get_one<int>("--layer_idx");
 
             Qwen3Attention<ScaledDotProductAttention<FlashAttentionOp>> model(config, layer_idx);
@@ -103,15 +103,15 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(scope.context(), rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
+            auto result = computation.scope([&](Scope scope) -> Tensor {
+                return model.forward(scope.context(), rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
+            });
 
-            Graph graph(scheduler, scope.context(), {output});
-            Computation computation(allocator, graph, {&context, &scope.context()});
-            return computation().results();
+            return Computation<Tensor>::all(result);
         }
 
         if (args_.get(0) == "Qwen3DecoderLayer") {
-            Scope scope(local_context, allocator.runtime());
+            Computation<Tensor> computation(context);
 
             Qwen3Config config;
             config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
@@ -121,8 +121,8 @@ public:
             config.max_position_embeddings = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.max_position_embeddings);
 
             auto layer_idx = args_.get_one<int>("--layer_idx");
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {scope.context()});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {scope.context(), Tensor::DType<int32_t>::value});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->state_ctx()});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
 
             Qwen3DecoderLayer model(config, layer_idx);
             Qwen3RotaryEmbedding rotary_emb(config);
@@ -132,15 +132,15 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(scope.context(), rotary_emb, hidden_states, position_ids);
+            auto result = computation.scope([&](Scope scope) -> Tensor {
+                return model.forward(scope.context(), rotary_emb, hidden_states, position_ids);
+            });
 
-            Graph graph(scheduler, scope.context(), {output});
-            Computation computation(allocator, graph, {&context, &scope.context()});
-            return computation().results();
+            return Computation<Tensor>::all(result);
         }
 
         if (args_.get(0) == "Qwen3Model") {
-            Scope scope(local_context, allocator.runtime());
+            Computation<Tensor> computation(context);
 
             Qwen3Config config;
             config.vocab_size = args_.get_optional<int64_t>("--vocab_size").value_or(config.vocab_size);
@@ -155,11 +155,11 @@ public:
             config.pad_token_id = args_.get_optional<int64_t>("--pad_token_id");
             config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
 
-            auto input_ids = args_.get_optional<Tensor>("--input_ids", {scope.context(), Tensor::DType<int32_t>::value});
-            auto input_embeds = args_.get_optional<Tensor>("--input_embeds", {scope.context()});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {scope.context()});
-            auto position_ids = args_.get_optional<Tensor>("--position_ids", {scope.context(), Tensor::DType<int32_t>::value});
-            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {scope.context()});
+            auto input_ids = args_.get_optional<Tensor>("--input_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
+            auto input_embeds = args_.get_optional<Tensor>("--input_embeds", {computation.desc()->state_ctx()});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {computation.desc()->state_ctx()});
+            auto position_ids = args_.get_optional<Tensor>("--position_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
+            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {computation.desc()->state_ctx()});
             auto use_cache = args_.get_optional<bool>("--past_key_values");
             auto output_hidden_states = args_.get_optional<bool>("--output_hidden_states").value_or(false);
 
@@ -170,31 +170,30 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            std::vector<Tensor> hidden_states;
+            auto result = computation.scope([&](Scope scope) -> std::vector<Tensor> {
+                std::vector<Tensor> hidden_states;
 
-            auto output = model.forward(
-                scope.context(),
-                input_ids,
-                input_embeds,
-                attention_mask,
-                position_ids,
-                past_key_values,
-                use_cache,
-                output_hidden_states ? &hidden_states : nullptr);
+                auto output = model.forward(
+                    scope.context(),
+                    input_ids,
+                    input_embeds,
+                    attention_mask,
+                    position_ids,
+                    past_key_values,
+                    use_cache,
+                    output_hidden_states ? &hidden_states : nullptr);
 
-            if (output_hidden_states) {
-                Graph graph(scheduler, scope.context(), std::move(hidden_states));
-                Computation computation(allocator, graph, {&context, &scope.context()});
-                return computation().results();
-            }
-            
-            Graph graph(scheduler, scope.context(), {output});
-            Computation computation(allocator, graph, {&context, &scope.context()});
-            return computation().results();
+                if (output_hidden_states)
+                    return hidden_states;
+
+                return {output};
+            });
+
+            return result;
         }
 
         if (args_.get(0) == "Qwen3ForCausalLM") {
-            Scope scope(local_context, allocator.runtime());
+            Computation<Tensor> computation(context);
 
             Qwen3Config config;
             config.vocab_size = args_.get_optional<int64_t>("--vocab_size").value_or(config.vocab_size);
@@ -205,12 +204,12 @@ public:
             config.num_key_value_heads = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.num_key_value_heads);
             config.max_position_embeddings = args_.get_optional<int64_t>("--max_position_embeddings").value_or(config.max_position_embeddings);
 
-            auto input_ids = args_.get_optional<Tensor>("--input_ids", {scope.context(), Tensor::DType<int32_t>::value});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {scope.context()});
-            auto position_ids = args_.get_optional<Tensor>("--position_ids", {scope.context(), Tensor::DType<int32_t>::value});
-            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {scope.context()});
-            auto inputs_embeds = args_.get_optional<Tensor>("--inputs_embeds", {scope.context()});
-            auto labels = args_.get_optional<Tensor>("--labels", {scope.context()});
+            auto input_ids = args_.get_optional<Tensor>("--input_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {computation.desc()->state_ctx()});
+            auto position_ids = args_.get_optional<Tensor>("--position_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
+            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {computation.desc()->state_ctx()});
+            auto inputs_embeds = args_.get_optional<Tensor>("--inputs_embeds", {computation.desc()->state_ctx()});
+            auto labels = args_.get_optional<Tensor>("--labels", {computation.desc()->state_ctx()});
             auto use_cache = args_.get_optional<bool>("--use_cache");
             auto logits_to_keep = args_.get_optional<int>("--logits_to_keep").value_or(0);
             
@@ -221,21 +220,21 @@ public:
             model.accept(visitor);
             visitor.rethrow();
 
-            auto output = model.forward(
-                scope.context(),
-                input_ids,
-                attention_mask,
-                position_ids,
-                past_key_values,
-                inputs_embeds,
-                labels,
-                use_cache,
-                logits_to_keep
-            );
+            auto result = computation.scope([&](Scope scope) -> Tensor {
+                return model.forward(
+                    scope,
+                    input_ids,
+                    attention_mask,
+                    position_ids,
+                    past_key_values,
+                    inputs_embeds,
+                    labels,
+                    use_cache,
+                    logits_to_keep
+                );
+            });
 
-            Graph graph(scheduler, scope.context(), {output});
-            Computation computation(allocator, graph, {&context, &scope.context()});
-            return computation().results();
+            return Computation<Tensor>::all(result);
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));

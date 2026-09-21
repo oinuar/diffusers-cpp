@@ -1,5 +1,6 @@
 #include "diffusers/models/resnet/Upsample2D.hpp"
 #include "ggml/Context.hpp"
+#include "ggml/Runtime.hpp"
 #include "nn/modules/conv/Conv2d.hpp"
 
 Upsample2D::Upsample2D(

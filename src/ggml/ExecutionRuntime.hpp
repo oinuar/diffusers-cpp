@@ -1,10 +1,45 @@
 #pragma once
 
 #include "ggml/Runtime.hpp"
+#include "ggml/Computation.hpp"
+
+class Allocator;
+class Scheduler;
 
 class ExecutionRuntime : public Runtime {
 public:
     static ExecutionRuntime Default;
+
+    template <class T>
+    T run(Scheduler& scheduler, Allocator& weights_allocator, Allocator& state_allocator, std::mt19937& rng, Computation<T> computation) const {
+        auto desc = computation.desc();
+        run(scheduler, weights_allocator, state_allocator, rng, *desc);
+        return *computation;
+    }
+
+    template<class T>
+    std::vector<T> read(const Tensor& tensor) {
+        constexpr auto expected = Tensor::DType<T>::value;
+
+        if (tensor.dtype() != expected)
+            throw std::invalid_argument("read(): dtype mismatch '" + std::string(ggml_get_name(*tensor)) + "': expected " + std::string(ggml_type_name(expected)) + ", but got " + std::string(ggml_type_name(tensor.dtype())));
+
+        std::vector<T> data(
+            ggml_nelements(*tensor)
+        );
+
+        if (data.size() * sizeof(T) != ggml_nbytes(*tensor))
+            throw std::invalid_argument("read(): data size mismatch '" + std::string(ggml_get_name(*tensor)) + "': expected " + std::to_string(data.size() * sizeof(T)) + ", but got " + std::to_string(ggml_nbytes(*tensor)));
+
+        ggml_backend_tensor_get(
+            *tensor,
+            data.data(),
+            0,
+            ggml_nbytes(*tensor)
+        );
+
+        return std::move(data);
+    }
 
     // -------------------------------------------------------------------------
     // Tensor creation / initialization
@@ -279,4 +314,10 @@ public:
         ggml_tensor* a,
         int scale_factor,
         ggml_scale_mode mode) override;
+
+private:
+    ggml_cgraph* graph(Scheduler& scheduler, ComputationScope& r) const;
+    void bind(std::mt19937& rng, Context& context, bool once_only) const;
+    void copy(const Tensor& src, const Tensor& dst) const;
+    void run(Scheduler& scheduler, Allocator& weights_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc) const;
 };

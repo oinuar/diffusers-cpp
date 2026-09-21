@@ -1,7 +1,6 @@
 #pragma once
 
 #include "ggml/Tensor.hpp"
-#include "ggml/Scope.hpp"
 #include <ggml.h>
 #include <ggml-backend.h>
 #include <vector>
@@ -69,8 +68,6 @@ public:
 
     template <typename T>
     Tensor create(const Tensor::Shape& shape, const Provider<T>& provider) {
-        Scope scope(*this);
-
         auto tensor = Tensor::empty<T>(shape).input();
         bind(tensor, provider, true);
         return tensor;
@@ -78,8 +75,6 @@ public:
 
     template <typename T>
     Tensor value(const Tensor::Shape& shape, const Provider<T>& provider) {
-        Scope scope(*this);
-
         auto tensor = Tensor::empty<T>(shape).input();
         bind(tensor, provider);
         return tensor;
@@ -111,46 +106,6 @@ public:
         // the bindings to support context reallocation.
         if (it != std::end(bindings_))
             it->second.unbound = true;
-    }
-
-    void copy(const Tensor& src, const Tensor& dst) {
-        ggml_backend_tensor_copy(*src, *dst);
-    }
-
-    template<class T>
-    std::vector<T> read(const Tensor& tensor) {
-        constexpr auto expected = Tensor::DType<T>::value;
-
-        if (tensor.dtype() != expected)
-            throw std::invalid_argument("read(): dtype mismatch '" + std::string(ggml_get_name(*tensor)) + "': expected " + std::string(ggml_type_name(expected)) + ", but got " + std::string(ggml_type_name(tensor.dtype())));
-
-        std::vector<T> data(
-            ggml_nelements(*tensor)
-        );
-
-        if (data.size() * sizeof(T) != ggml_nbytes(*tensor))
-            throw std::invalid_argument("read(): data size mismatch '" + std::string(ggml_get_name(*tensor)) + "': expected " + std::to_string(data.size() * sizeof(T)) + ", but got " + std::to_string(ggml_nbytes(*tensor)));
-
-        ggml_backend_tensor_get(
-            *tensor,
-            data.data(),
-            0,
-            ggml_nbytes(*tensor)
-        );
-
-        return std::move(data);
-    }
-
-    void write(const Tensor& tensor, const std::vector<std::byte>& bytes) {
-        if (bytes.size() != ggml_nbytes(*tensor))
-            throw std::invalid_argument("write(): data size mismatch '" + std::string(ggml_get_name(*tensor)) + "': expected " + std::to_string(bytes.size()) + ", but got " + std::to_string(ggml_nbytes(*tensor)));
-
-        ggml_backend_tensor_set(
-            *tensor,
-            bytes.data(),
-            0,
-            ggml_nbytes(*tensor)
-        );
     }
 
     /** @brief Creates a tensor of the sequence start, start+step, ..., < stop.

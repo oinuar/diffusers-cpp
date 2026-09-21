@@ -1,7 +1,7 @@
 #include "ggml/ShardingAllocator.hpp"
 #include <functional>
 
-void ShardingAllocator::allocate(const std::vector<Context*>& contexts, const std::vector<Tensor>& outputs) {
+void ShardingAllocator::allocate(Context& context) {
     // The one-shot allocation: plan the WHOLE trace in one go (plan()) --
     // the goal roots are the outputs the trace marked with set_output()
     // while the graphs were built, never the `outputs` argument -- commit
@@ -19,10 +19,10 @@ void ShardingAllocator::allocate(const std::vector<Context*>& contexts, const st
         // The trace shows every node and the output distributions its
         // candidates can produce -- the way in to see why the DP gave up.
         throw std::runtime_error(
-            "ShardingAllocator: the allocation plan is infeasible: " + last_plan_.infeasible_reason + "\n\n" + dump_trace());
+            "allocate(): the allocation plan is infeasible: " + last_plan_.infeasible_reason + "\n\n" + dump_trace());
     }
 
-    Allocator::allocate(contexts, outputs);
+    Allocator::allocate(context);
 }
 
 ShardingAllocator::Plan ShardingAllocator::plan() {

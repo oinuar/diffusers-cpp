@@ -1,13 +1,13 @@
 #pragma once
 
-#include "ggml/Graph.hpp"
-#include "ggml/Computation.hpp"
 #include "ggml/Context.hpp"
+#include "ggml/Computation.hpp"
 #include "ggml/Backend.hpp"
 #include "ggml/MetaDevice.hpp"
 #include "ggml/Scheduler.hpp"
 #include "ggml/Allocator.hpp"
 #include "ggml/ShardingAllocator.hpp"
+#include "ggml/ExecutionRuntime.hpp"
 #include "nn/Visitor.hpp"
 #include "nn/Parameter.hpp"
 #include "nn/ModulePath.hpp"
@@ -28,7 +28,9 @@ public:
         auto n_devices = args_.get_optional<size_t>("--runner-n_devices").value_or(1);
         auto use_gpu = args_.get_optional<bool>("--runner-use_gpu").value_or(false);
 
-        Context context(get_graph_size());
+        Context weights_context(get_graph_size());
+
+        auto computation = compute(weights_context);
 
         // If more than one device, use Meta device.
         if (n_devices > 1) {
@@ -45,9 +47,10 @@ public:
             Backend meta_backend(meta);
             Backend cpu_backend(cpu);
             Scheduler scheduler({&meta_backend, &cpu_backend}, get_graph_size());
-            ShardingAllocator allocator(ExecutionRuntime::Default, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
+            Allocator weights_allocator(meta, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+            Allocator state_allocator(meta, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
 
-            return main(scheduler, context, allocator, meta);
+            return run(scheduler, weights_allocator, state_allocator, computation);
         }
 
         if (use_gpu) {
@@ -56,20 +59,22 @@ public:
             Backend cpu_backend(cpu);
             Backend gpu_backend(gpu);
             Scheduler scheduler({&gpu_backend, &cpu_backend}, get_graph_size());
-            Allocator allocator;
+            Allocator weights_allocator(gpu, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+            Allocator state_allocator(gpu, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
 
-            return main(scheduler, context, allocator, gpu);
+            return run(scheduler, weights_allocator, state_allocator, computation);
         }
 
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
         Backend cpu_backend(cpu);
         Scheduler scheduler({&cpu_backend}, get_graph_size());
-        Allocator allocator;
+        Allocator weights_allocator(cpu, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+        Allocator state_allocator(cpu, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
 
-        return main(scheduler, context, allocator, cpu);
+        return run(scheduler, weights_allocator, state_allocator, computation);
     }
 
-    virtual std::vector<Tensor> compute(Allocator& allocator, Scheduler& scheduler, Context& context, Context& local_context) = 0;
+    virtual Computation<std::vector<Tensor>> compute(Context& weights_context) = 0;
 
     virtual size_t get_graph_size() const {
         return GGML_DEFAULT_GRAPH_SIZE;
@@ -153,39 +158,36 @@ public:
         std::string prefix_;
     };
 private:
-    int main(Scheduler& scheduler, Context& context, Allocator& allocator, const Device& device) {
-        allocator.use(context, device, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-
-        Context local_context(get_graph_size());
-
-        auto results = compute(allocator, scheduler, context, local_context);
+    int run(Scheduler& scheduler, Allocator& weights_allocator, Allocator& state_allocator, Computation<std::vector<Tensor>> computation) {
+        std::mt19937 rng;
+        auto results = ExecutionRuntime::Default.run(scheduler, weights_allocator, state_allocator, rng, computation);
 
         for (auto& tensor : results) {
             switch (tensor.dtype()) {
             case Tensor::DType<float>::value:
             {
-                auto data = context.read<float>(tensor);
+                auto data = ExecutionRuntime::Default.read<float>(tensor);
                 print_tensor_like(data, tensor.shape());
                 break;
             }
 
             case Tensor::DType<int8_t>::value:
             {
-                auto data = context.read<int8_t>(tensor);
+                auto data = ExecutionRuntime::Default.read<int8_t>(tensor);
                 print_tensor_like(data, tensor.shape());
                 break;
             }
 
             case Tensor::DType<int16_t>::value:
             {
-                auto data = context.read<int16_t>(tensor);
+                auto data = ExecutionRuntime::Default.read<int16_t>(tensor);
                 print_tensor_like(data, tensor.shape());
                 break;
             }
 
             case Tensor::DType<int32_t>::value:
             {
-                auto data = context.read<int32_t>(tensor);
+                auto data = ExecutionRuntime::Default.read<int32_t>(tensor);
                 print_tensor_like(data, tensor.shape());
                 break;
             }

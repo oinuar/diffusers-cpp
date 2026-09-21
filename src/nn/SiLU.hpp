@@ -2,6 +2,7 @@
 
 #include "nn/Module.hpp"
 #include "ggml/Context.hpp"
+#include "ggml/Runtime.hpp"
 
 class SiLU : public Module {
 public:

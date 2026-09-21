@@ -1,7 +1,6 @@
 #pragma once
 
 #include "ggml/Tensor.hpp"
-#include "ggml/Graph.hpp"
 #include "Image.hpp"
 #include "transformers/models/qwen3/Qwen3ForCausalLM.hpp"
 #include "transformers/models/qwen2/Qwen2TokenizerFast.hpp"
@@ -38,6 +37,7 @@ public:
         size_t max_sequence_length = 512;
     };
 
+    #if 0
     static Flux2KleinPipeline from_pretrained(Context& vae_context, Context& text_encoder_context, Context& transformer_context, const std::filesystem::path& path);
 
     Flux2KleinPipeline(Flux2Transformer2DModel&& transformer,
@@ -45,6 +45,7 @@ public:
                        Qwen3ForCausalLM&& text_encoder,
                        Qwen2TokenizerFast&& tokenizer);
 
+    
     std::vector<Image> operator ()(
         Allocator& allocator,
         Scheduler& scheduler,
@@ -130,7 +131,7 @@ public:
         int packed_w,
         Tensor latents
     );
-
+#endif
     const FlowMatchEulerDiscreteScheduler& scheduler() const {
         return scheduler_;
     }

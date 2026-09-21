@@ -276,7 +276,7 @@ static Image preprocess_reference_image(const Image& image, int multiple, double
     return image.resize_and_crop(target_width, target_height);
 }
 
-
+#if 0
 Flux2KleinPipeline::Flux2KleinPipeline(
     Flux2Transformer2DModel&& transformer,
     AutoencoderKLFlux2&& vae,
@@ -701,6 +701,7 @@ Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(Context& vae_context, Con
 
     return std::move(pipeline);
 }
+#endif
 
 // 1. Unpacks from (B, ph*pw, 4C) to (B, 4C, ph, pw)
 Tensor Flux2KleinPipeline::unpack_latents(Tensor packed, int packed_h, int packed_w) {

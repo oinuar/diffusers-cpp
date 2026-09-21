@@ -1,5 +1,6 @@
 #include "diffusers/models/normalization/SpatialNorm.hpp"
 #include "ggml/Context.hpp"
+#include "ggml/Runtime.hpp"
 #include "nn/modules/normalization/GroupNorm.hpp"
 #include "nn/modules/conv/Conv2d.hpp"
 

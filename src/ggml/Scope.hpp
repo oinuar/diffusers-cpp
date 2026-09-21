@@ -1,6 +1,5 @@
 #pragma once
 
-#include "ggml/ExecutionRuntime.hpp"
 #include <stdexcept>
 #include <memory>
 
@@ -20,17 +19,7 @@ public:
     }
 
     // Set Context in the scope, but does not overwrite Runtime.
-    Scope(Context& context)
-        : frame_(std::make_shared<Frame>(
-              current_context_,
-              current_runtime_))
-    {
-        current_context_ = &context;
-
-        // Set Runtime to default if it is not set.
-        if (!current_runtime_)
-            current_runtime_ = &ExecutionRuntime::Default;
-    }
+    Scope(Context& context);
 
     // Set Runtime in the scope, but does not change Context.
     explicit Scope(Runtime& runtime)

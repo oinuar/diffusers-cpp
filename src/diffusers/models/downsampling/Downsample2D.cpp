@@ -1,5 +1,6 @@
 #include "diffusers/models/downsampling/Downsample2D.hpp"
 #include "ggml/Context.hpp"
+#include "ggml/Runtime.hpp"
 #include "nn/modules/conv/Conv2d.hpp"
 
 Downsample2D::Downsample2D(

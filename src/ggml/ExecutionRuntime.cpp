@@ -1,8 +1,167 @@
 #include "ggml/ExecutionRuntime.hpp"
 #include "ggml/Scope.hpp"
 #include "ggml/Context.hpp"
+#include "ggml/Allocator.hpp"
+#include "ggml/Scheduler.hpp"
+#include "ggml/Computation.hpp"
+#include "ProgressBar.hpp"
+#include <iostream>
 
 ExecutionRuntime ExecutionRuntime::Default;
+
+
+void ExecutionRuntime::run(Scheduler& scheduler, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc, ProgressBar* progress) const {
+    // The one-shot allocation point: all the module forwards have been
+    // called — all the low-level ggml tensor chains exist. Allocate the
+    // long-lived contexts.
+
+    for (auto& pin : desc.pinned)
+        pin_allocator.allocate(*pin);
+
+    if (desc.state)
+        state_allocator.allocate(*desc.state);
+
+    if (progress)
+        progress->push("Preparing", desc.pinned.size() + (desc.state ? 1 : 0));
+
+    // The weights: the one-shot bindings are streamed once into the
+    // weights buffer.
+    for (auto& pin : desc.pinned) {
+        bind(rng, *pin, /*once_only=*/true);
+
+        if (progress)
+            progress->next();
+    }
+
+    // The state's one-shot bindings.
+    if (desc.state) {
+        bind(rng, desc.state.value(), /*once_only=*/true);
+
+        if (progress)
+            progress->next();
+    }
+
+    if (progress) {
+        progress->pop();
+        progress->push("Executing", desc.scopes.size());
+    }
+
+    for (auto i = 0; i < desc.scopes.size(); ++i) {
+        auto& r = desc.scopes[i];
+
+        // The cgraph is built in the temporary context (its memory comes from
+        // the context's pool): the body's tensor chain was already recorded
+        // there at build time; ggml_build_forward_expand expands it into the
+        // graph (the nodes, and the leaves — the bound inputs of this context
+        // and the pre-allocated weights / state tensors).
+        auto gf = ggml_new_graph_custom(**r.context, r.context->capacity(), /*grads=*/false);
+
+        if (progress)
+            progress->push("Initializing", r.outputs.size());
+
+        // Build graph for every output Tensor.
+        for (const auto& out : r.outputs)
+            ggml_build_forward_expand(gf, *out);
+
+        // Reserve the compute buffer for this graph (it persists on the
+        // scheduler and is reused — and grown — for later graphs; in the
+        // project this is done once, with a max-size measure graph). In this
+        // ggml version reserve_size measures without allocating, so it cannot
+        // be the only reserve: alloc_graph would then skip the allocation.
+        if (!ggml_backend_sched_reserve(*scheduler, gf))
+            throw std::runtime_error("run(): ggml_backend_sched_reserve failed");
+
+        // Allocate: the galloc plans the graph's temporary tensors with
+        // liveness (the compute buffer is sized to the high-water mark of
+        // the live set); the weights / state tensors are already allocated
+        // and skipped. build_graph reserved the buffer; alloc_graph assigns
+        // the tensors' addresses in it.
+        if (!ggml_backend_sched_alloc_graph(*scheduler, gf))
+            throw std::runtime_error("run(): ggml_backend_sched_alloc_graph failed");
+
+        // The bound inputs (once): written into the freshly allocated graph
+        // tensors (ggml_backend_tensor_set).
+        bind(rng, *r.context, /*once_only=*/true);
+
+        if (progress)
+            progress->pop();
+
+        // Handle repeating computation with re-binding and state carrying.
+        if (r.repeat) {
+            if (progress)
+                progress->push("Computing (" + std::to_string(ggml_graph_n_nodes(gf)) + " graph nodes)", r.repeat->count);
+
+            // The graph is a single allocation with multiple computations.
+            for (r.repeat->iter = 0; r.repeat->iter < r.repeat->count; ++r.repeat->iter) {
+                // The re-bindable inputs: rewritten on every (re-)execution —
+                // their providers run through the loop's iter clock.
+                bind(rng, *r.context, /*once_only=*/false);
+
+                if (ggml_backend_sched_graph_compute(*scheduler, gf) != GGML_STATUS_SUCCESS)
+                    throw std::runtime_error("run(): ggml_backend_sched_graph_compute failed");
+
+                // The feedback: the next state is written back into the
+                // state cell (on every iteration, including the last — the
+                // cell must hold the final state.
+                for (auto& [src, dst] : r.repeat->feedback)
+                    copy(src, dst);
+
+                if (progress)
+                    progress->next();
+            }
+
+            if (progress)
+                progress->pop();
+        }
+        
+        // Otherwise, handle singular computation.
+        else {
+            if (progress)
+                progress->push("Computing (" + std::to_string(ggml_graph_n_nodes(gf)) + " graph nodes)", 1);
+
+            // The re-bindable inputs of a single-execution scope have no
+            // iter clock to read, so they are written once, right before the
+            // (only) execution.
+            bind(rng, *r.context, /*once_only=*/false);
+
+            if (ggml_backend_sched_graph_compute(*scheduler, gf) != GGML_STATUS_SUCCESS)
+                throw std::runtime_error("run(): ggml_backend_sched_graph_compute failed");
+
+            if (progress) {
+                progress->next();
+                progress->pop();
+            }
+        }
+
+        // Copy output values into state variables.
+        for (auto& [src, dst] : r.saves)
+            copy(src, dst);
+    }
+
+    if (progress) 
+        progress->pop();
+}
+
+void ExecutionRuntime::bind(std::mt19937& rng, Context& context, bool once_only) const {
+    for (auto& [tensor, binding] : context.bindings()) {
+        if (binding.unbound || binding.once != once_only)
+            continue;
+
+        auto bytes = binding.provider(rng);
+
+        if (bytes.size() != ggml_nbytes(*tensor))
+            throw std::runtime_error(std::string("bind(): size mismatch for '") + ggml_get_name(*tensor) + "'");
+
+        ggml_backend_tensor_set(*tensor, bytes.data(), 0, bytes.size());
+    }
+}
+
+void ExecutionRuntime::copy(const Tensor& src, const Tensor& dst) const {
+    // A tensor in a temporary context is copied into the state context
+    // (ggml_backend_tensor_copy — the project's Context::copy).
+    ggml_backend_tensor_copy(*src, *dst);
+}
+
 
 // -------------------------------------------------------------------------
 // Tensor creation / initialization

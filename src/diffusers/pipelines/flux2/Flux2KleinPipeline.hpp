@@ -1,8 +1,8 @@
 #pragma once
 
 #include "ggml/Tensor.hpp"
-#include "ggml/Graph.hpp"
 #include "Image.hpp"
+#include "ggml/Computation.hpp"
 #include "transformers/models/qwen3/Qwen3ForCausalLM.hpp"
 #include "transformers/models/qwen2/Qwen2TokenizerFast.hpp"
 #include "diffusers/models/autoencoders/AutoencoderKLFlux2.hpp"
@@ -44,7 +44,15 @@ public:
                        AutoencoderKLFlux2&& vae,
                        Qwen3ForCausalLM&& text_encoder,
                        Qwen2TokenizerFast&& tokenizer);
+    
+    Computation<Tensor> operator()(
+        Context& vae_context,
+        Context& text_encoder_context,
+        Context& transformer_context,
+        GenerationOptions&& options);
 
+    #if 0
+    
     std::vector<Image> operator ()(
         Allocator& allocator,
         Scheduler& scheduler,
@@ -130,7 +138,7 @@ public:
         int packed_w,
         Tensor latents
     );
-
+#endif
     const FlowMatchEulerDiscreteScheduler& scheduler() const {
         return scheduler_;
     }

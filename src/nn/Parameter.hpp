@@ -3,6 +3,7 @@
 #include "nn/Module.hpp"
 #include "nn/Visitor.hpp"
 #include "ggml/Tensor.hpp"
+#include "ggml/Runtime.hpp"
 #include <optional>
 
 class Parameter : public Module {

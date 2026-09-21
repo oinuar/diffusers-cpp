@@ -1,6 +1,7 @@
 #include "transformers/models/qwen3/Qwen3RotaryEmbedding.hpp"
 #include "transformers/models/qwen3/Qwen3Config.hpp"
 #include "ggml/Context.hpp"
+#include "ggml/Runtime.hpp"
 
 Qwen3RotaryEmbedding::Qwen3RotaryEmbedding(const Qwen3Config& config)
     : head_dim(config.head_dim), rope_theta(config.rope_theta)

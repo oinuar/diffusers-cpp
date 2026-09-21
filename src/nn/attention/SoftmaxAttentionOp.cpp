@@ -1,6 +1,7 @@
 #include "nn/attention/SoftmaxAttentionOp.hpp"
 #include "ggml/Context.hpp"
 #include "ggml/Scope.hpp"
+#include "ggml/Runtime.hpp"
 
 Tensor SoftmaxAttentionOp::operator ()(
     Scope scope,

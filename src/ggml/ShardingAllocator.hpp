@@ -123,13 +123,10 @@ public:
     // (plus the device count). `w_comp`/`w_mem` shape the candidates the
     // engine generates; `w_comm` prices the P -> R bridge (see the cost
     // model in the file header).
-    ShardingAllocator(Runtime& parent, MetaDevice& device, double w_comp, double w_mem, double w_comm)
-        : device_(device), w_comm_(w_comm), runtime_(parent, device, w_comp, w_mem) {}
+    ShardingAllocator(Runtime& parent, MetaDevice& device, double w_comp, double w_mem, double w_comm, const std::optional<ggml_backend_buffer_usage>& usage = std::nullopt)
+        : Allocator(device, usage), device_(device), w_comm_(w_comm), runtime_(parent, device, w_comp, w_mem) {}
 
     virtual ~ShardingAllocator() = default;
-
-    // The engine every forward runs through: the trace the allocator plans.
-    ShardingRuntime& runtime() override { return runtime_; }
 
     // The communication cost of the next plan (a re-plan with a changed
     // cost model).
@@ -140,7 +137,7 @@ public:
     // `outputs` argument -- then run the base allocation over the
     // contexts (it allocates only the tensors without a buffer yet,
     // exactly like the base Allocator). An infeasible plan throws.
-    void allocate(const std::vector<Context*>& contexts, const std::vector<Tensor>& outputs) override;
+    void allocate(Context& context) override;
 
     // Solves the WHOLE trace in one go: one DP over every traced tensor,
     // the goal roots being the outputs the trace marked with set_output()

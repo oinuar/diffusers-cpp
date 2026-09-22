@@ -55,12 +55,12 @@ public:
 
     virtual Computation<std::vector<Tensor>> compute(Context& context) {
         if (args_.get(0) == "Linear") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             auto in_features = args_.get_one<int64_t>("--in_features");
             auto out_features = args_.get_one<int64_t>("--out_features");
             auto bias = args_.get_optional<bool>("--bias").value_or(true);
-            auto x = args_.get_one<Tensor>("--x", {computation.desc()->state_ctx()});
+            auto x = args_.get_one<Tensor>("--x", {computation.desc()->context()});
 
             Linear model(in_features, out_features, bias);
 
@@ -77,9 +77,9 @@ public:
         }
         
         if (args_.get(0) == "SiLU") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
-            auto x = args_.get_one<Tensor>("--x", {computation.desc()->state_ctx()});
+            auto x = args_.get_one<Tensor>("--x", {computation.desc()->context()});
 
             SiLU model;
 
@@ -91,12 +91,12 @@ public:
         }
 
         if (args_.get(0) == "RMSNorm") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             auto dim = args_.get_one<int64_t>("--dim");
             auto eps = args_.get_optional<float>("--eps").value_or(1e-5f);
             auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
-            auto x = args_.get_one<Tensor>("--x", {computation.desc()->state_ctx()});
+            auto x = args_.get_one<Tensor>("--x", {computation.desc()->context()});
 
             RMSNorm model(dim, eps, elementwise_affine);
 
@@ -113,13 +113,13 @@ public:
         }
 
         if (args_.get(0) == "LayerNorm") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             auto dim = args_.get_one<int64_t>("--dim");
             auto eps = args_.get_optional<float>("--eps").value_or(1e-5f);
             auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
             auto bias = args_.get_optional<bool>("--bias").value_or(true);
-            auto x = args_.get_one<Tensor>("--x", {computation.desc()->state_ctx()});
+            auto x = args_.get_one<Tensor>("--x", {computation.desc()->context()});
 
             LayerNorm model(dim, eps, elementwise_affine, bias);
 
@@ -136,14 +136,14 @@ public:
         }
 
         if (args_.get(0) == "GroupNorm") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             auto num_groups = args_.get_one<int64_t>("--num_groups");
             auto num_channels = args_.get_one<int64_t>("--num_channels");
             auto eps = args_.get_optional<float>("--eps").value_or(1e-5f);
             auto affine = args_.get_optional<bool>("--affine").value_or(true);
             auto bias = args_.get_optional<bool>("--bias").value_or(true);
-            auto input = args_.get_one<Tensor>("--input", {computation.desc()->state_ctx()});
+            auto input = args_.get_one<Tensor>("--input", {computation.desc()->context()});
 
             GroupNorm model(num_groups, num_channels, eps, affine, bias);
 
@@ -160,7 +160,7 @@ public:
         }
 
         if (args_.get(0) == "Conv2d") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             auto in_channels = args_.get_one<int64_t>("--in_channels");
             auto out_channels = args_.get_one<int64_t>("--out_channels");
@@ -168,7 +168,7 @@ public:
             auto stride = args_.get_optional<int64_t>("--stride").value_or(1);
             auto padding = args_.get_optional<int64_t>("--padding").value_or(0);
             auto bias = args_.get_optional<bool>("--bias").value_or(true);
-            auto x = args_.get_one<Tensor>("--x", {computation.desc()->state_ctx()});
+            auto x = args_.get_one<Tensor>("--x", {computation.desc()->context()});
 
             Conv2d model(in_channels, out_channels, kernel_size, stride, padding, bias);
 
@@ -185,12 +185,12 @@ public:
         }
 
         if (args_.get(0) == "FlashAttention") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
-            auto q = args_.get_one<Tensor>("--q", {computation.desc()->state_ctx()});
-            auto k = args_.get_one<Tensor>("--k", {computation.desc()->state_ctx()});
-            auto v = args_.get_one<Tensor>("--v", {computation.desc()->state_ctx()});
-            auto mask = args_.get_optional<Tensor>("--mask", {computation.desc()->state_ctx()});
+            auto q = args_.get_one<Tensor>("--q", {computation.desc()->context()});
+            auto k = args_.get_one<Tensor>("--k", {computation.desc()->context()});
+            auto v = args_.get_one<Tensor>("--v", {computation.desc()->context()});
+            auto mask = args_.get_optional<Tensor>("--mask", {computation.desc()->context()});
 
             FlashAttentionOp attention;
 
@@ -202,12 +202,12 @@ public:
         }
 
         if (args_.get(0) == "Embedding") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             auto num_embeddings = args_.get_one<int64_t>("--num_embeddings");
             auto embedding_dim = args_.get_one<int64_t>("--embedding_dim");
             auto padding_idx = args_.get_optional<int64_t>("--padding_idx");
-            auto input = args_.get_one<Tensor>("--input", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
+            auto input = args_.get_one<Tensor>("--input", {computation.desc()->context(), Tensor::DType<int32_t>::value});
 
             Embedding model(num_embeddings, embedding_dim, padding_idx);
 
@@ -224,7 +224,7 @@ public:
         }
         
         if (args_.get(0) == "ShardedMLP") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
             MLP<SiLU> model;
 
             {

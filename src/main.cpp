@@ -91,6 +91,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <set>
 #include <memory>
 #include <optional>
 #include <random>
@@ -415,15 +416,19 @@ Tensor Tensor::operator-(const Tensor& rhs) const { return Tensor{ggml_sub(*Scop
 // about counters, schedules, or flux.
 
 struct ComputationScope {
+    struct Repeat {
+        size_t count;
+        size_t iter; // the loop clock: the per-iteration providers read it
+
+        // Flattened to pairs of tensors so loops and saves work seamlessly with std::vector<Tensor>
+        std::vector<std::pair<Tensor, Tensor>> feedback;  
+    };
+
     std::string name;
     std::optional<Context> context; // the graph's scratch (scheduler-allocated, disposable)
     std::vector<Tensor> outputs;    // the graph's outputs (in the temporary context)
-    bool loop = false;
-    std::size_t count = 0;
-    std::size_t iter = 0;           // the loop clock: the per-iteration providers read it
+    std::optional<Repeat> repeat;
     
-    // Flattened to pairs of tensors so loops and saves work seamlessly with std::vector<Tensor>
-    std::vector<std::pair<Tensor, Tensor>> feedback;  
     std::vector<std::pair<Tensor, Tensor>> saves;       
 };
 
@@ -478,7 +483,7 @@ namespace detail {
 }
 
 struct ComputationDescription {
-    Context* weights = nullptr;          // provided from outside (pinned)
+    std::set<Context*> pinned;          // provided from outside (pinned)
     std::optional<Context> state;        // created on demand — by state() only
     std::vector<ComputationScope> scopes;
 
@@ -508,6 +513,9 @@ struct ComputationDescription {
 template <class T>
 class Computation {
 public:
+    struct Void {};
+    typedef std::conditional_t<std::is_void_v<T>, Void, T> Ref;
+
     template <class... Args>
     static Computation<std::vector<T>> all(const Computation<T>& first, const Args&... rest) {
         std::vector<T> values;
@@ -533,14 +541,14 @@ public:
     }
 
     explicit Computation(Context& weights_context) : Computation() {
-        desc_->weights = &weights_context;
+        desc_->pinned = {&weights_context};
     }
 
     Computation() : ref_(), desc_() {
         desc_ = std::make_shared<ComputationDescription>();
     }
 
-    Computation(T ref, std::shared_ptr<ComputationDescription> desc) : ref_(ref), desc_(desc) {}
+    Computation(Ref ref, std::shared_ptr<ComputationDescription> desc) : ref_(ref), desc_(desc) {}
 
     T operator *() const { return ref_; }
     T* operator ->() { return &ref_; }
@@ -587,12 +595,11 @@ public:
     // rewritten before each execution, and the body's output is fed back into 
     // the state cells after each step to persist the loop state.
     template<class Body>
-    Computation<T> repeat(std::size_t count, Body body) {
+    Computation<T> fold(std::size_t count, Body body) {
         auto& r = desc_->add_output();
-        r.loop = true;
-        r.count = count;
+        r.repeat = {count, 0, {}};
         Scope scope(*r.context);  
-        auto next = body(scope, **this, r.iter);
+        auto next = body(scope, r.repeat->iter, **this);
         
         auto next_tensors = detail::TensorExtractor<T>::extract(next);
         auto curr_tensors = detail::TensorExtractor<T>::extract(**this);
@@ -600,7 +607,7 @@ public:
         r.outputs = next_tensors;
         
         for (std::size_t i = 0; i < next_tensors.size(); ++i) {
-            r.feedback.push_back({next_tensors[i], curr_tensors[i]});
+            r.repeat->feedback.push_back({next_tensors[i], curr_tensors[i]});
         }
         
         return *this;
@@ -640,7 +647,7 @@ public:
     }
 
 private:
-    T ref_;
+    Ref ref_;
     std::shared_ptr<ComputationDescription> desc_;
 };
 
@@ -687,7 +694,7 @@ struct Pipeline {
     // "generation" into one lazy description and returns the (unexecuted)
     // computation of the final value.
     Computation<std::vector<Tensor>> compute(Context& weights_ctx, const Options& options) {
-        Computation<Tensor> computation(weights_ctx);
+        Computation<void> computation(weights_ctx);
 
         //
         // 1. 1 + 2: a single-execution output; the output crosses into the
@@ -724,8 +731,8 @@ struct Pipeline {
         //    clock — no graph rebuild), and the state is fed back after
         //    each step.
         //
-        counter = counter.repeat(options.count,
-            [&](Scope scope, Tensor x, std::size_t& iter) -> Tensor {
+        counter = counter.fold(options.count,
+            [&](Scope scope, std::size_t& iter, Tensor x) -> Tensor {
                 (void)iter;  // the loop clock — a real body's providers read it
                 // The per-iteration value: a re-bindable input.
                 auto step = scope.context().value<float>(
@@ -819,10 +826,10 @@ public:
         // called — all the low-level ggml tensor chains exist. Allocate the
         // long-lived contexts in a single non-incremental pass (one aligned
         // buffer per context).
-        if (desc_->weights) {
-            desc_->weights->allocate(backend_);
+        for (auto& pin : desc_->pinned) {
+            pin->allocate(backend_);
             std::cout << "  [weights] buffer: "
-                      << format_bytes(ggml_backend_buffer_get_size(desc_->weights->buffer()))
+                      << format_bytes(ggml_backend_buffer_get_size(pin->buffer()))
                       << "  (one-shot, pinned — as today's USAGE_WEIGHTS)\n";
         }
         if (desc_->state) {
@@ -925,11 +932,11 @@ void Executor::dump() const {
     for (std::size_t i = 0; i < d.scopes.size(); ++i) {
         const auto& r = d.scopes[i];
         std::cout << "  " << i << ": " << std::left << std::setw(14) << r.name
-                  << (r.loop ? std::string("[loop x") + std::to_string(r.count) + "]" : "[once]")
+                  << (r.repeat ? std::string("[loop x") + std::to_string(r.repeat->count) + "]" : "[once]")
                   << std::right << "  " << count_tensors(*r.context) << " tensors in the temporary context";
-        if (r.loop) {
+        if (r.repeat) {
             std::cout << "\n                            feedback:";
-            for (const auto& [src, dst] : r.feedback) {
+            for (const auto& [src, dst] : r.repeat->feedback) {
                 std::cout << "\n                              '" << src.name() << "' -> '" << dst.name() << "'";
             }
             std::cout << " after each iteration";
@@ -946,8 +953,8 @@ void Executor::dump() const {
                       << "  " << format_bytes(ggml_nbytes(t)) << "\n";
     };
 
-    if (d.weights)
-        print_ctx(d.weights, "weights");
+    for (auto& pin : d.pinned)
+        print_ctx(pin, "weights");
     if (d.state)
         print_ctx(&d.state.value(), "state");
 
@@ -962,9 +969,9 @@ void Executor::run() {
 
     // The weights: the GGUF bindings are streamed once into the weights
     // buffer. (Today: re-streamed by every Computation.)
-    if (desc_->weights) {
-        std::cout << "  [weights] " << count_tensors(*desc_->weights) << " tensors\n";
-        write_bindings(desc_->weights, /*once_only=*/false);
+    for (auto& pin : desc_->pinned) {
+        std::cout << "  [weights] " << count_tensors(*pin) << " tensors\n";
+        write_bindings(pin, /*once_only=*/false);
     }
 
     // The state's one-shot bindings (the initial counter).
@@ -977,8 +984,8 @@ void Executor::run() {
     for (std::size_t i = 0; i < desc_->scopes.size(); ++i) {
         auto& r = desc_->scopes[i];
         std::cout << "  -- output " << i << "/" << desc_->scopes.size() - 1 << ": " << r.name;
-        if (r.loop)
-            std::cout << "  (loop x" << r.count << ")";
+        if (r.repeat)
+            std::cout << "  (loop x" << r.repeat->count << ")";
         std::cout << "\n";
 
         // Build the graph over the output tensors (the body's tensor chain in
@@ -1001,10 +1008,10 @@ void Executor::run() {
         // tensors (ggml_backend_tensor_set).
         write_bindings(&r.context.value(), /*once_only=*/true);
 
-        if (r.loop) {
+        if (r.repeat) {
             // The graph is a single allocation with multiple computations.
-            for (r.iter = 0; r.iter < r.count; ++r.iter) {
-                std::cout << "     iter " << r.iter + 1 << "/" << r.count << ":\n";
+            for (r.repeat->iter = 0; r.repeat->iter < r.repeat->count; ++r.repeat->iter) {
+                std::cout << "     iter " << r.repeat->iter + 1 << "/" << r.repeat->count << ":\n";
                 // The re-bindable inputs: rewritten on every (re-)execution —
                 // their providers run through the loop's iter clock.
                 write_bindings(&r.context.value(), /*once_only=*/false);
@@ -1014,7 +1021,7 @@ void Executor::run() {
                 // The feedback: the next states are written back into the
                 // state cells (on every iteration, including the last — the
                 // cells must hold the final state).
-                for (const auto& [src, dst] : r.feedback) {
+                for (const auto& [src, dst] : r.repeat->feedback) {
                     copy(src, dst, "feedback");
                 }
             }

@@ -11,6 +11,7 @@
 #include "nn/Visitor.hpp"
 #include "nn/Parameter.hpp"
 #include "nn/ModulePath.hpp"
+#include "ProgressBar.hpp"
 #include "./ArgumentParser.hpp"
 #include <iostream>
 #include <fstream>

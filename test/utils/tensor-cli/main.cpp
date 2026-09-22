@@ -8,8 +8,8 @@ public:
     virtual Computation<std::vector<Tensor>> compute(Context& context) {
 
         if (args_.get(0) == "contiguous") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return self.contiguous();
@@ -19,7 +19,7 @@ public:
         }
 
         if (args_.get(0) == "scalar") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
             auto value = args_.get_one<float>("--value");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -30,7 +30,7 @@ public:
         }
 
         if (args_.get(0) == "zeros") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
             auto shape = args_.get_one<Tensor::Shape>("--shape");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -41,7 +41,7 @@ public:
         }
 
         if (args_.get(0) == "ones") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
             auto shape = args_.get_one<Tensor::Shape>("--shape");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -55,7 +55,7 @@ public:
             auto start = args_.get_one<float>("--start");
             auto stop = args_.get_one<float>("--stop");
             auto step = args_.get_one<float>("--step");
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return scope.context().arange(start, stop, step);
@@ -66,8 +66,8 @@ public:
 
         
         if (args_.get(0) == "cat") {
-            Computation<Tensor> computation(context);
-            auto tensors = args_.get_many<Tensor>("--tensor", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto tensors = args_.get_many<Tensor>("--tensor", {computation.desc()->context()});
             auto dim = args_.get_one<int>("--dim");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -78,8 +78,8 @@ public:
         }
 
         if (args_.get(0) == "stack") {
-            Computation<Tensor> computation(context);
-            auto tensors = args_.get_many<Tensor>("--tensor", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto tensors = args_.get_many<Tensor>("--tensor", {computation.desc()->context()});
             auto dim = args_.get_one<int>("--dim");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -91,8 +91,8 @@ public:
 
 
         if (args_.get(0) == "reshape") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto shape = args_.get_one<Tensor::Shape>("--shape");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -103,8 +103,8 @@ public:
         }
 
         if (args_.get(0) == "permute") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto order = args_.get_one<Tensor::Shape>("--order");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -115,8 +115,8 @@ public:
         }
 
         if (args_.get(0) == "squeeze") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto dim = args_.get_one<int>("--dim");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -127,8 +127,8 @@ public:
         }
 
         if (args_.get(0) == "unsqueeze") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto dim = args_.get_one<int>("--dim");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -139,8 +139,8 @@ public:
         }
 
         if (args_.get(0) == "flatten") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto start_dim = args_.get_optional<int>("--start_dim").value_or(0);
             auto end_dim = args_.get_optional<int>("--end_dim").value_or(-1);
 
@@ -152,8 +152,8 @@ public:
         }
 
         if (args_.get(0) == "unflatten") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto dim = args_.get_one<int64_t>("--dim");
             auto shape = args_.get_one<Tensor::Shape>("--shape");
 
@@ -165,8 +165,8 @@ public:
         }
 
         if (args_.get(0) == "narrow") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto dim = args_.get_one<int>("--dim");
             auto start = args_.get_one<int64_t>("--start");
             auto length = args_.get_one<int64_t>("--length");
@@ -179,8 +179,8 @@ public:
         }
 
         if (args_.get(0) == "expand") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto new_shape = args_.get_one<Tensor::Shape>("--new-shape");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -191,8 +191,8 @@ public:
         }
 
         if (args_.get(0) == "repeat") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto repeats = args_.get_one<Tensor::Shape>("--repeats");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -203,8 +203,8 @@ public:
         }
 
         if (args_.get(0) == "chunk") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto n = args_.get_one<int>("--n");
             auto dim = args_.get_optional<int>("--dim").value_or(0);
 
@@ -216,8 +216,8 @@ public:
         }
 
         if (args_.get(0) == "split") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto split_size = args_.get_one<int64_t>("--split_size");
             auto dim = args_.get_optional<int>("--dim").value_or(0);
 
@@ -229,8 +229,8 @@ public:
         }
 
         if (args_.get(0) == "split_with_sizes") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto split_sizes = args_.get_many<int64_t>("--split_size");
             auto dim = args_.get_optional<int>("--dim").value_or(0);
 
@@ -243,8 +243,8 @@ public:
 
         
         if (args_.get(0) == "neg") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return -self;
@@ -254,9 +254,9 @@ public:
         }
 
         if (args_.get(0) == "add") {
-            Computation<Tensor> computation(context);
-            auto lhs = args_.get_one<Tensor>("--lhs", {computation.desc()->state_ctx()});
-            auto rhs = args_.get_one<Tensor>("--rhs", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto lhs = args_.get_one<Tensor>("--lhs", {computation.desc()->context()});
+            auto rhs = args_.get_one<Tensor>("--rhs", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return lhs + rhs;
@@ -266,9 +266,9 @@ public:
         }
 
         if (args_.get(0) == "sub") {
-            Computation<Tensor> computation(context);
-            auto lhs = args_.get_one<Tensor>("--lhs", {computation.desc()->state_ctx()});
-            auto rhs = args_.get_one<Tensor>("--rhs", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto lhs = args_.get_one<Tensor>("--lhs", {computation.desc()->context()});
+            auto rhs = args_.get_one<Tensor>("--rhs", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return lhs - rhs;
@@ -278,9 +278,9 @@ public:
         }
 
         if (args_.get(0) == "mul") {
-            Computation<Tensor> computation(context);
-            auto lhs = args_.get_one<Tensor>("--lhs", {computation.desc()->state_ctx()});
-            auto rhs = args_.get_one<Tensor>("--rhs", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto lhs = args_.get_one<Tensor>("--lhs", {computation.desc()->context()});
+            auto rhs = args_.get_one<Tensor>("--rhs", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return lhs * rhs;
@@ -290,9 +290,9 @@ public:
         }
 
         if (args_.get(0) == "div") {
-            Computation<Tensor> computation(context);
-            auto lhs = args_.get_one<Tensor>("--lhs", {computation.desc()->state_ctx()});
-            auto rhs = args_.get_one<Tensor>("--rhs", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto lhs = args_.get_one<Tensor>("--lhs", {computation.desc()->context()});
+            auto rhs = args_.get_one<Tensor>("--rhs", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return lhs / rhs;
@@ -302,8 +302,8 @@ public:
         }
 
         if (args_.get(0) == "add_scalar") {
-            Computation<Tensor> computation(context);
-            auto lhs = args_.get_one<Tensor>("--lhs", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto lhs = args_.get_one<Tensor>("--lhs", {computation.desc()->context()});
             auto rhs = args_.get_one<float>("--rhs");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -314,8 +314,8 @@ public:
         }
 
         if (args_.get(0) == "sub_scalar") {
-            Computation<Tensor> computation(context);
-            auto lhs = args_.get_one<Tensor>("--lhs", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto lhs = args_.get_one<Tensor>("--lhs", {computation.desc()->context()});
             auto rhs = args_.get_one<float>("--rhs");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -326,8 +326,8 @@ public:
         }
 
         if (args_.get(0) == "mul_scalar") {
-            Computation<Tensor> computation(context);
-            auto lhs = args_.get_one<Tensor>("--lhs", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto lhs = args_.get_one<Tensor>("--lhs", {computation.desc()->context()});
             auto rhs = args_.get_one<float>("--rhs");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -338,8 +338,8 @@ public:
         }
 
         if (args_.get(0) == "div_scalar") {
-            Computation<Tensor> computation(context);
-            auto lhs = args_.get_one<Tensor>("--lhs", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto lhs = args_.get_one<Tensor>("--lhs", {computation.desc()->context()});
             auto rhs = args_.get_one<float>("--rhs");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -351,9 +351,9 @@ public:
 
 
         if (args_.get(0) == "scalar_add") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
             auto lhs = args_.get_one<float>("--lhs");
-            auto rhs = args_.get_one<Tensor>("--rhs", {computation.desc()->state_ctx()});
+            auto rhs = args_.get_one<Tensor>("--rhs", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return lhs + rhs;
@@ -363,9 +363,9 @@ public:
         }
 
         if (args_.get(0) == "scalar_sub") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
             auto lhs = args_.get_one<float>("--lhs");
-            auto rhs = args_.get_one<Tensor>("--rhs", {computation.desc()->state_ctx()});
+            auto rhs = args_.get_one<Tensor>("--rhs", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return lhs - rhs;
@@ -375,9 +375,9 @@ public:
         }
 
         if (args_.get(0) == "scalar_mul") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
             auto lhs = args_.get_one<float>("--lhs");
-            auto rhs = args_.get_one<Tensor>("--rhs", {computation.desc()->state_ctx()});
+            auto rhs = args_.get_one<Tensor>("--rhs", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return lhs * rhs;
@@ -387,9 +387,9 @@ public:
         }
 
         if (args_.get(0) == "scalar_div") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
             auto lhs = args_.get_one<float>("--lhs");
-            auto rhs = args_.get_one<Tensor>("--rhs", {computation.desc()->state_ctx()});
+            auto rhs = args_.get_one<Tensor>("--rhs", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return lhs / rhs;
@@ -399,8 +399,8 @@ public:
         }
 
         if (args_.get(0) == "pow_scalar") {
-            Computation<Tensor> computation(context);
-            auto base = args_.get_one<Tensor>("--base", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto base = args_.get_one<Tensor>("--base", {computation.desc()->context()});
             auto exponent = args_.get_one<float>("--exponent");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -411,9 +411,9 @@ public:
         }
 
         if (args_.get(0) == "scalar_pow") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
             auto base = args_.get_one<float>("--base");
-            auto exponent = args_.get_one<Tensor>("--exponent", {computation.desc()->state_ctx()});
+            auto exponent = args_.get_one<Tensor>("--exponent", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return pow(base, exponent);
@@ -424,8 +424,8 @@ public:
 
         
         if (args_.get(0) == "clamp") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto min = args_.get_one<float>("--min");
             auto max = args_.get_one<float>("--max");
 
@@ -437,8 +437,8 @@ public:
         }
 
         if (args_.get(0) == "sum") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto dim = args_.get_optional<int64_t>("--dim").value_or(-1);
             auto keepdim = args_.get_optional<bool>("--keepdim").value_or(false);
 
@@ -450,8 +450,8 @@ public:
         }
 
         if (args_.get(0) == "mean") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto dim = args_.get_optional<int64_t>("--dim").value_or(-1);
             auto keepdim = args_.get_optional<bool>("--keepdim").value_or(false);
 
@@ -464,8 +464,8 @@ public:
 
 
         if (args_.get(0) == "index") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto index = args_.get_one<size_t>("--index");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -476,8 +476,8 @@ public:
         }
 
         if (args_.get(0) == "slice") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
             auto slice = args_.get_one<std::vector<Tensor::Slice>>("--slice");
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
@@ -489,8 +489,8 @@ public:
 
 
         if (args_.get(0) == "abs") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return abs(self);
@@ -500,8 +500,8 @@ public:
         }
 
         if (args_.get(0) == "sqrt") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return sqrt(self);
@@ -511,8 +511,8 @@ public:
         }
 
         if (args_.get(0) == "exp") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return exp(self);
@@ -522,8 +522,8 @@ public:
         }
 
         if (args_.get(0) == "log") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return log(self);
@@ -533,8 +533,8 @@ public:
         }
 
         if (args_.get(0) == "sin") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return sin(self);
@@ -544,8 +544,8 @@ public:
         }
 
         if (args_.get(0) == "cos") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return cos(self);
@@ -555,8 +555,8 @@ public:
         }
 
         if (args_.get(0) == "rsqrt") {
-            Computation<Tensor> computation(context);
-            auto self = args_.get_one<Tensor>("--this", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto self = args_.get_one<Tensor>("--this", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return rsqrt(self);

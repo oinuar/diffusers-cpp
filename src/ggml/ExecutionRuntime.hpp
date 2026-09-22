@@ -5,15 +5,16 @@
 
 class Allocator;
 class Scheduler;
+class ProgressBar;
 
 class ExecutionRuntime : public Runtime {
 public:
     static ExecutionRuntime Default;
 
     template <class T>
-    T run(Scheduler& scheduler, Allocator& weights_allocator, Allocator& state_allocator, std::mt19937& rng, Computation<T> computation) const {
+    T run(Scheduler& scheduler, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, Computation<T> computation, ProgressBar* progress = nullptr) const {
         auto desc = computation.desc();
-        run(scheduler, weights_allocator, state_allocator, rng, *desc);
+        run(scheduler, pin_allocator, state_allocator, rng, *desc, progress);
         return *computation;
     }
 
@@ -319,5 +320,5 @@ private:
     ggml_cgraph* graph(Scheduler& scheduler, ComputationScope& r) const;
     void bind(std::mt19937& rng, Context& context, bool once_only) const;
     void copy(const Tensor& src, const Tensor& dst) const;
-    void run(Scheduler& scheduler, Allocator& weights_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc) const;
+    void run(Scheduler& scheduler, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc, ProgressBar* progress) const;
 };

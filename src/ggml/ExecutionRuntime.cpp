@@ -4,61 +4,47 @@
 #include "ggml/Allocator.hpp"
 #include "ggml/Scheduler.hpp"
 #include "ggml/Computation.hpp"
+#include "ProgressBar.hpp"
 #include <iostream>
 
 ExecutionRuntime ExecutionRuntime::Default;
 
-static std::string format_bytes(std::size_t bytes) {
-    if (bytes >= 1024 * 1024) {
-        char buf[32];
-        std::snprintf(buf, sizeof buf, "%.2f MB", double(bytes) / (1024.0 * 1024.0));
-        return buf;
-    }
-    if (bytes >= 1024)
-        return std::to_string(bytes / 1024) + " KB";
-    return std::to_string(bytes) + " B";
-}
 
-static std::size_t count_tensors(Context& ctx) {
-    std::size_t n = 0;
-    for (ggml_tensor* t = ggml_get_first_tensor(*ctx); t != nullptr; t = ggml_get_next_tensor(*ctx, t))
-        ++n;
-    return n;
-}
-
-void ExecutionRuntime::run(Scheduler& scheduler, Allocator& weights_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc) const {
+void ExecutionRuntime::run(Scheduler& scheduler, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc, ProgressBar* progress) const {
     // The one-shot allocation point: all the module forwards have been
     // called — all the low-level ggml tensor chains exist. Allocate the
     // long-lived contexts.
 
-    if (desc.weights) {
-        weights_allocator.allocate(*desc.weights);
-        /*std::cerr << "  [weights] buffer: "
-                    << format_bytes(ggml_backend_buffer_get_size(desc.weights->buffer()))
-                    << "  (one-shot, pinned — as today's USAGE_WEIGHTS)\n";*/
-    }
+    for (auto& pin : desc.pinned)
+        pin_allocator.allocate(*pin);
 
-    if (desc.state) {
+    if (desc.state)
         state_allocator.allocate(*desc.state);
-        /*std::cerr << "  [state]   buffer: "
-                    << format_bytes(ggml_backend_buffer_get_size(desc.state->buffer()))
-                    << "  (one-shot, lives for the whole generation)\n";*/
-    }
+
+    if (progress)
+        progress->push("Preparing", desc.pinned.size() + (desc.state ? 1 : 0));
 
     // The weights: the one-shot bindings are streamed once into the
     // weights buffer.
-    if (desc.weights) {
-        std::cerr << "weights: " << count_tensors(*desc.weights) << " tensors" << std::endl;
-        bind(rng, *desc.weights, /*once_only=*/true);
+    for (auto& pin : desc.pinned) {
+        bind(rng, *pin, /*once_only=*/true);
+
+        if (progress)
+            progress->next();
     }
 
     // The state's one-shot bindings.
     if (desc.state) {
-        std::cerr << "state: " << count_tensors(*desc.state) << " tensors" << std::endl;
         bind(rng, desc.state.value(), /*once_only=*/true);
+
+        if (progress)
+            progress->next();
     }
 
-    std::cerr << std::endl;
+    if (progress) {
+        progress->pop();
+        progress->push("Executing", desc.scopes.size());
+    }
 
     for (auto i = 0; i < desc.scopes.size(); ++i) {
         auto& r = desc.scopes[i];
@@ -70,6 +56,9 @@ void ExecutionRuntime::run(Scheduler& scheduler, Allocator& weights_allocator, A
         // and the pre-allocated weights / state tensors).
         auto gf = ggml_new_graph_custom(**r.context, r.context->capacity(), /*grads=*/false);
 
+        if (progress)
+            progress->push("Initializing", r.outputs.size());
+
         // Build graph for every output Tensor.
         for (const auto& out : r.outputs)
             ggml_build_forward_expand(gf, *out);
@@ -80,9 +69,7 @@ void ExecutionRuntime::run(Scheduler& scheduler, Allocator& weights_allocator, A
         // ggml version reserve_size measures without allocating, so it cannot
         // be the only reserve: alloc_graph would then skip the allocation.
         if (!ggml_backend_sched_reserve(*scheduler, gf))
-            throw std::runtime_error("ggml_backend_sched_reserve failed");
-
-        std::cerr << "scope #" << i <<  " graph: " << ggml_graph_n_nodes(gf) << " nodes" << std::endl;
+            throw std::runtime_error("run(): ggml_backend_sched_reserve failed");
 
         // Allocate: the galloc plans the graph's temporary tensors with
         // liveness (the compute buffer is sized to the high-water mark of
@@ -90,46 +77,69 @@ void ExecutionRuntime::run(Scheduler& scheduler, Allocator& weights_allocator, A
         // and skipped. build_graph reserved the buffer; alloc_graph assigns
         // the tensors' addresses in it.
         if (!ggml_backend_sched_alloc_graph(*scheduler, gf))
-            throw std::runtime_error("ggml_backend_sched_alloc_graph failed");
+            throw std::runtime_error("run(): ggml_backend_sched_alloc_graph failed");
 
         // The bound inputs (once): written into the freshly allocated graph
         // tensors (ggml_backend_tensor_set).
         bind(rng, *r.context, /*once_only=*/true);
 
+        if (progress)
+            progress->pop();
+
         // Handle repeating computation with re-binding and state carrying.
-        if (r.loop) {
+        if (r.repeat) {
+            if (progress)
+                progress->push("Computing (" + std::to_string(ggml_graph_n_nodes(gf)) + " graph nodes)", r.repeat->count);
+
             // The graph is a single allocation with multiple computations.
-            for (r.iter = 0; r.iter < r.count; ++r.iter) {
+            for (r.repeat->iter = 0; r.repeat->iter < r.repeat->count; ++r.repeat->iter) {
                 // The re-bindable inputs: rewritten on every (re-)execution —
                 // their providers run through the loop's iter clock.
                 bind(rng, *r.context, /*once_only=*/false);
 
                 if (ggml_backend_sched_graph_compute(*scheduler, gf) != GGML_STATUS_SUCCESS)
-                    throw std::runtime_error("ggml_backend_sched_graph_compute failed");
+                    throw std::runtime_error("run(): ggml_backend_sched_graph_compute failed");
 
                 // The feedback: the next state is written back into the
                 // state cell (on every iteration, including the last — the
                 // cell must hold the final state.
-                for (auto& [src, dst] : r.feedback)
+                for (auto& [src, dst] : r.repeat->feedback)
                     copy(src, dst);
+
+                if (progress)
+                    progress->next();
             }
+
+            if (progress)
+                progress->pop();
         }
         
         // Otherwise, handle singular computation.
         else {
+            if (progress)
+                progress->push("Computing (" + std::to_string(ggml_graph_n_nodes(gf)) + " graph nodes)", 1);
+
             // The re-bindable inputs of a single-execution scope have no
             // iter clock to read, so they are written once, right before the
             // (only) execution.
             bind(rng, *r.context, /*once_only=*/false);
 
             if (ggml_backend_sched_graph_compute(*scheduler, gf) != GGML_STATUS_SUCCESS)
-                throw std::runtime_error("ggml_backend_sched_graph_compute failed");
+                throw std::runtime_error("run(): ggml_backend_sched_graph_compute failed");
+
+            if (progress) {
+                progress->next();
+                progress->pop();
+            }
         }
 
         // Copy output values into state variables.
         for (auto& [src, dst] : r.saves)
             copy(src, dst);
     }
+
+    if (progress) 
+        progress->pop();
 }
 
 void ExecutionRuntime::bind(std::mt19937& rng, Context& context, bool once_only) const {

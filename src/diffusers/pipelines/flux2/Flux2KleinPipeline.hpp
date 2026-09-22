@@ -2,6 +2,7 @@
 
 #include "ggml/Tensor.hpp"
 #include "Image.hpp"
+#include "ggml/Computation.hpp"
 #include "transformers/models/qwen3/Qwen3ForCausalLM.hpp"
 #include "transformers/models/qwen2/Qwen2TokenizerFast.hpp"
 #include "diffusers/models/autoencoders/AutoencoderKLFlux2.hpp"
@@ -37,14 +38,20 @@ public:
         size_t max_sequence_length = 512;
     };
 
-    #if 0
     static Flux2KleinPipeline from_pretrained(Context& vae_context, Context& text_encoder_context, Context& transformer_context, const std::filesystem::path& path);
 
     Flux2KleinPipeline(Flux2Transformer2DModel&& transformer,
                        AutoencoderKLFlux2&& vae,
                        Qwen3ForCausalLM&& text_encoder,
                        Qwen2TokenizerFast&& tokenizer);
+    
+    Computation<Tensor> operator()(
+        Context& vae_context,
+        Context& text_encoder_context,
+        Context& transformer_context,
+        GenerationOptions&& options);
 
+    #if 0
     
     std::vector<Image> operator ()(
         Allocator& allocator,

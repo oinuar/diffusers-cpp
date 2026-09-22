@@ -26,9 +26,9 @@ public:
     virtual Computation<std::vector<Tensor>> compute(Context& context) {
 
         if (args_.get(0) == "Flux2SwiGLU") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
-            auto x = args_.get_one<Tensor>("--x", {computation.desc()->state_ctx()});
+            auto x = args_.get_one<Tensor>("--x", {computation.desc()->context()});
 
             Flux2SwiGLU model;
 
@@ -40,14 +40,14 @@ public:
         }
 
         if (args_.get(0) == "Flux2FeedForward") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             auto dim = args_.get_one<int64_t>("--dim");
             auto dim_out = args_.get_optional<int64_t>("--dim_out");
             auto mult = args_.get_optional<float>("--mult").value_or(3.0);
             auto inner_dim = args_.get_optional<int64_t>("--inner_dim");
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto x = args_.get_one<Tensor>("--x", {computation.desc()->state_ctx()});
+            auto x = args_.get_one<Tensor>("--x", {computation.desc()->context()});
 
             Flux2FeedForward model(dim, dim_out, mult, inner_dim, bias);
 
@@ -64,12 +64,12 @@ public:
         }
 
         if (args_.get(0) == "Flux2Modulation") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             auto dim = args_.get_one<int64_t>("--dim");
             auto mod_param_sets = args_.get_optional<int64_t>("--mod_param_sets").value_or(2);
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto temb = args_.get_one<Tensor>("--temb", {computation.desc()->state_ctx()});
+            auto temb = args_.get_one<Tensor>("--temb", {computation.desc()->context()});
 
             Flux2Modulation model(dim, mod_param_sets, bias);
 
@@ -86,14 +86,14 @@ public:
         }
 
         if (args_.get(0) == "Flux2TimestepGuidanceEmbeddings") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             auto in_channels = args_.get_one<int64_t>("--in_channels");
             auto embedding_dim = args_.get_one<int64_t>("--embedding_dim");
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
             auto guidance_embeds = args_.get_optional<bool>("--guidance_embeds").value_or(true);
-            auto timestep = args_.get_one<Tensor>("--timestep", {computation.desc()->state_ctx()});
-            auto guidance = args_.get_optional<Tensor>("--guidance", {computation.desc()->state_ctx()});
+            auto timestep = args_.get_one<Tensor>("--timestep", {computation.desc()->context()});
+            auto guidance = args_.get_optional<Tensor>("--guidance", {computation.desc()->context()});
 
             Flux2TimestepGuidanceEmbeddings model(in_channels, embedding_dim, bias, guidance_embeds);
 
@@ -110,12 +110,12 @@ public:
         }
 
         if (args_.get(0) == "Flux2PosEmbed") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             auto theta = args_.get_one<int64_t>("--theta");
             auto axes_dim = args_.get_many<int64_t>("--axes_dim");
-            auto x = args_.get_one<Tensor>("--x", {computation.desc()->state_ctx()});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
+            auto x = args_.get_one<Tensor>("--x", {computation.desc()->context()});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
 
             Flux2PosEmbed model(theta, axes_dim);
 
@@ -132,7 +132,7 @@ public:
         }
 
         if (args_.get(0) == "Flux2Attention") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             auto query_dim = args_.get_one<int64_t>("--query_dim");
             auto heads = args_.get_optional<int64_t>("--heads").value_or(8);
@@ -145,12 +145,12 @@ public:
             auto eps = args_.get_optional<float>("--eps").value_or(1e-5);
             auto out_dim = args_.get_optional<int64_t>("--out_dim");
             auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->state_ctx()});
-            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {computation.desc()->state_ctx()});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {computation.desc()->state_ctx()});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->context()});
+            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {computation.desc()->context()});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {computation.desc()->context()});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -192,7 +192,7 @@ public:
         }
 
         if (args_.get(0) == "Flux2ParallelSelfAttention") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             auto query_dim = args_.get_one<int64_t>("--query_dim");
             auto heads = args_.get_optional<int64_t>("--heads").value_or(8);
@@ -205,11 +205,11 @@ public:
             auto elementwise_affine = args_.get_optional<bool>("--elementwise_affine").value_or(true);
             auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(4.0);
             auto mlp_mult_factor = args_.get_optional<int64_t>("--mlp_mult_factor").value_or(2);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->state_ctx()});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {computation.desc()->state_ctx()});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->context()});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {computation.desc()->context()});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -243,7 +243,7 @@ public:
         }
 
         if (args_.get(0) == "Flux2SingleTransformerBlock") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             auto dim = args_.get_one<int64_t>("--dim");
             auto num_attention_heads = args_.get_one<int64_t>("--num_attention_heads");
@@ -251,14 +251,14 @@ public:
             auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(3.0);
             auto eps = args_.get_optional<float>("--eps").value_or(1e-6);
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->state_ctx()});
-            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {computation.desc()->state_ctx()});
-            auto temb_mod = args_.get_one<Tensor>("--temb_mod", {computation.desc()->state_ctx()});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->context()});
+            auto encoder_hidden_states = args_.get_optional<Tensor>("--encoder_hidden_states", {computation.desc()->context()});
+            auto temb_mod = args_.get_one<Tensor>("--temb_mod", {computation.desc()->context()});
             auto split_hidden_states = args_.get_optional<bool>("--split_hidden_states").value_or(false);
             auto text_seq_len = args_.get_optional<int64_t>("--text_seq_len");
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -304,7 +304,7 @@ public:
         }
 
         if (args_.get(0) == "Flux2TransformerBlock") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             auto dim = args_.get_one<int64_t>("--dim");
             auto num_attention_heads = args_.get_one<int64_t>("--num_attention_heads");
@@ -312,13 +312,13 @@ public:
             auto mlp_ratio = args_.get_optional<float>("--mlp_ratio").value_or(3.0);
             auto eps = args_.get_optional<float>("--eps").value_or(1e-6);
             auto bias = args_.get_optional<bool>("--bias").value_or(false);
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->state_ctx()});
-            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {computation.desc()->state_ctx()});
-            auto temb_mod_img = args_.get_one<Tensor>("--temb_mod_img", {computation.desc()->state_ctx()});
-            auto temb_mod_txt = args_.get_one<Tensor>("--temb_mod_txt", {computation.desc()->state_ctx()});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->context()});
+            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {computation.desc()->context()});
+            auto temb_mod_img = args_.get_one<Tensor>("--temb_mod_img", {computation.desc()->context()});
+            auto temb_mod_txt = args_.get_one<Tensor>("--temb_mod_txt", {computation.desc()->context()});
             auto theta = args_.get_optional<int64_t>("--image_rotary_emb-theta");
             auto axes_dim = args_.get_many<int64_t>("--image_rotary_emb-axes_dim");
-            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
+            auto position_ids = args_.get_optional<Tensor>("--image_rotary_emb-position_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
 
             auto image_rotary_emb = theta && position_ids && !axes_dim.empty() ? std::make_optional(std::make_pair(
                 std::make_shared<Flux2PosEmbed>(*theta, axes_dim),
@@ -356,7 +356,7 @@ public:
         }
 
         if (args_.get(0) == "Flux2Transformer2DModel") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             Flux2Transformer2DModel::Config config;
 
@@ -375,12 +375,12 @@ public:
             config.eps = args_.get_optional<float>("--eps").value_or(config.eps);
             config.guidance_embeds = args_.get_optional<bool>("--guidance_embeds").value_or(config.guidance_embeds);
 
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->state_ctx()});
-            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {computation.desc()->state_ctx()});
-            auto timestep = args_.get_one<Tensor>("--timestep", {computation.desc()->state_ctx()});
-            auto img_ids = args_.get_one<Tensor>("--img_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
-            auto txt_ids = args_.get_one<Tensor>("--txt_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
-            auto guidance = args_.get_optional<Tensor>("--guidance", {computation.desc()->state_ctx()});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->context()});
+            auto encoder_hidden_states = args_.get_one<Tensor>("--encoder_hidden_states", {computation.desc()->context()});
+            auto timestep = args_.get_one<Tensor>("--timestep", {computation.desc()->context()});
+            auto img_ids = args_.get_one<Tensor>("--img_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
+            auto txt_ids = args_.get_one<Tensor>("--txt_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
+            auto guidance = args_.get_optional<Tensor>("--guidance", {computation.desc()->context()});
             auto num_ref_tokens = args_.get_optional<int64_t>("--num_ref_tokens").value_or(0);
             auto ref_fixed_timestep = args_.get_optional<float>("--ref_fixed_timestep").value_or(0.0f);
 
@@ -417,8 +417,8 @@ public:
             args_.get(0) == "Flux2KleinPipeline_unpack_latents" ||
             args_.get(0) == "Flux2KleinPipeline_patchify_latents" ||
             args_.get(0) == "Flux2KleinPipeline_unpatchify_latents") {
-            Computation<Tensor> computation(context);
-            auto latents = args_.get_one<Tensor>("--latents", {computation.desc()->state_ctx()});
+            Computation<void> computation({&context});
+            auto latents = args_.get_one<Tensor>("--latents", {computation.desc()->context()});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 if (args_.get(0) == "Flux2KleinPipeline_pack_latents")
@@ -508,7 +508,7 @@ public:
             }
 
             auto tokenizer_dir = args_.get_one<std::string>("--tokenizer_dir");
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             Flux2Transformer2DModel transformer(transformer_config);
             {
@@ -544,7 +544,7 @@ public:
             );
 
             if (args_.get(0) == "Flux2KleinPipeline_vae_encode") {
-                Computation<Tensor> computation(context);
+                Computation<void> computation({&context});
 
                 auto batch = args_.get_one<int>("--batch");
                 auto images = args_.get_many<Image>("--images");
@@ -590,9 +590,9 @@ public:
                 auto max_sequence_length = args_.get_one<int>("--max_sequence_length");
                 auto timestep = args_.get_one<float>("--timestep");
                 auto dt = args_.get_one<float>("--dt");
-                auto init_latents = args_.get_one<Tensor>("--init_latents", {computation.desc()->state_ctx()});
-                auto prompt_embeds = args_.get_one<Tensor>("--prompt_embeds", {computation.desc()->state_ctx()});
-                auto image_latents = args_.get_optional<Tensor>("--image_latents", {computation.desc()->state_ctx()});
+                auto init_latents = args_.get_one<Tensor>("--init_latents", {computation.desc()->context()});
+                auto prompt_embeds = args_.get_one<Tensor>("--prompt_embeds", {computation.desc()->context()});
+                auto image_latents = args_.get_optional<Tensor>("--image_latents", {computation.desc()->context()});
                 auto images = args_.get_many<Image>("--images");
 
                 auto graph = std::move(pipeline.make_denoise_graph(
@@ -620,7 +620,7 @@ public:
 
                 auto packed_h = args_.get_one<int>("--packed_h");
                 auto packed_w = args_.get_one<int>("--packed_w");
-                auto latents = args_.get_one<Tensor>("--latents", {computation.desc()->state_ctx()});
+                auto latents = args_.get_one<Tensor>("--latents", {computation.desc()->context()});
 
                 auto graph = std::move(pipeline.make_vae_decode_graph(
                     scope,

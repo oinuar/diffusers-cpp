@@ -19,10 +19,10 @@ public:
 
     virtual Computation<std::vector<Tensor>> compute(Context& context) {
         if (args_.get(0) == "Qwen3RMSNorm") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             auto hidden_size = args_.get_one<int64_t>("--hidden_size");
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->state_ctx()});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->context()});
 
             Qwen3RMSNorm model(hidden_size);
 
@@ -39,13 +39,13 @@ public:
         }
 
         if (args_.get(0) == "Qwen3MLP") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             Qwen3Config config;
             config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
             config.intermediate_size = args_.get_optional<int64_t>("--intermediate_size").value_or(config.intermediate_size);
 
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->state_ctx()});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->context()});
 
             Qwen3MLP model(config);
 
@@ -62,14 +62,14 @@ public:
         }
 
         if (args_.get(0) == "Qwen3RotaryEmbedding") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             Qwen3Config config;
             config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
             config.rope_theta = args_.get_optional<int64_t>("--rope_theta").value_or(config.rope_theta);
 
-            auto x = args_.get_one<Tensor>("--x", {computation.desc()->state_ctx()});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
+            auto x = args_.get_one<Tensor>("--x", {computation.desc()->context()});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
 
             Qwen3RotaryEmbedding model(config);
 
@@ -81,7 +81,7 @@ public:
         }
 
         if (args_.get(0) == "Qwen3Attention") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             Qwen3Config config;
             config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
@@ -89,10 +89,10 @@ public:
             config.num_attention_heads = args_.get_optional<int64_t>("--num_attention_heads").value_or(config.num_attention_heads);
             config.num_key_value_heads = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.num_key_value_heads);
 
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->state_ctx()});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {computation.desc()->state_ctx()});
-            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {computation.desc()->state_ctx()});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->context()});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {computation.desc()->context()});
+            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {computation.desc()->context()});
             auto layer_idx = args_.get_one<int>("--layer_idx");
 
             Qwen3Attention<ScaledDotProductAttention<FlashAttentionOp>> model(config, layer_idx);
@@ -111,7 +111,7 @@ public:
         }
 
         if (args_.get(0) == "Qwen3DecoderLayer") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             Qwen3Config config;
             config.hidden_size = args_.get_optional<int64_t>("--hidden_size").value_or(config.hidden_size);
@@ -121,8 +121,8 @@ public:
             config.max_position_embeddings = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.max_position_embeddings);
 
             auto layer_idx = args_.get_one<int>("--layer_idx");
-            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->state_ctx()});
-            auto position_ids = args_.get_one<Tensor>("--position_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
+            auto hidden_states = args_.get_one<Tensor>("--hidden_states", {computation.desc()->context()});
+            auto position_ids = args_.get_one<Tensor>("--position_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
 
             Qwen3DecoderLayer model(config, layer_idx);
             Qwen3RotaryEmbedding rotary_emb(config);
@@ -140,7 +140,7 @@ public:
         }
 
         if (args_.get(0) == "Qwen3Model") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             Qwen3Config config;
             config.vocab_size = args_.get_optional<int64_t>("--vocab_size").value_or(config.vocab_size);
@@ -155,11 +155,11 @@ public:
             config.pad_token_id = args_.get_optional<int64_t>("--pad_token_id");
             config.head_dim = args_.get_optional<int64_t>("--head_dim").value_or(config.head_dim);
 
-            auto input_ids = args_.get_optional<Tensor>("--input_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
-            auto input_embeds = args_.get_optional<Tensor>("--input_embeds", {computation.desc()->state_ctx()});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {computation.desc()->state_ctx()});
-            auto position_ids = args_.get_optional<Tensor>("--position_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
-            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {computation.desc()->state_ctx()});
+            auto input_ids = args_.get_optional<Tensor>("--input_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
+            auto input_embeds = args_.get_optional<Tensor>("--input_embeds", {computation.desc()->context()});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {computation.desc()->context()});
+            auto position_ids = args_.get_optional<Tensor>("--position_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
+            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {computation.desc()->context()});
             auto use_cache = args_.get_optional<bool>("--past_key_values");
             auto output_hidden_states = args_.get_optional<bool>("--output_hidden_states").value_or(false);
 
@@ -193,7 +193,7 @@ public:
         }
 
         if (args_.get(0) == "Qwen3ForCausalLM") {
-            Computation<Tensor> computation(context);
+            Computation<void> computation({&context});
 
             Qwen3Config config;
             config.vocab_size = args_.get_optional<int64_t>("--vocab_size").value_or(config.vocab_size);
@@ -204,12 +204,12 @@ public:
             config.num_key_value_heads = args_.get_optional<int64_t>("--num_key_value_heads").value_or(config.num_key_value_heads);
             config.max_position_embeddings = args_.get_optional<int64_t>("--max_position_embeddings").value_or(config.max_position_embeddings);
 
-            auto input_ids = args_.get_optional<Tensor>("--input_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
-            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {computation.desc()->state_ctx()});
-            auto position_ids = args_.get_optional<Tensor>("--position_ids", {computation.desc()->state_ctx(), Tensor::DType<int32_t>::value});
-            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {computation.desc()->state_ctx()});
-            auto inputs_embeds = args_.get_optional<Tensor>("--inputs_embeds", {computation.desc()->state_ctx()});
-            auto labels = args_.get_optional<Tensor>("--labels", {computation.desc()->state_ctx()});
+            auto input_ids = args_.get_optional<Tensor>("--input_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
+            auto attention_mask = args_.get_optional<Tensor>("--attention_mask", {computation.desc()->context()});
+            auto position_ids = args_.get_optional<Tensor>("--position_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
+            auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {computation.desc()->context()});
+            auto inputs_embeds = args_.get_optional<Tensor>("--inputs_embeds", {computation.desc()->context()});
+            auto labels = args_.get_optional<Tensor>("--labels", {computation.desc()->context()});
             auto use_cache = args_.get_optional<bool>("--use_cache");
             auto logits_to_keep = args_.get_optional<int>("--logits_to_keep").value_or(0);
             

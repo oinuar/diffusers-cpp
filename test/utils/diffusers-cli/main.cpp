@@ -488,7 +488,7 @@ public:
             return Computation<Tensor>::all(result);
         }
 
-        /*if (args_.get(0).rfind("FlowMatchEulerDiscreteScheduler", 0) == 0) {
+        if (args_.get(0) == "FlowMatchEulerDiscreteScheduler_step") {
             auto num_train_timesteps = args_.get_optional<int>("--num_train_timesteps").value_or(1000);
             auto shift = args_.get_optional<float>("--shift").value_or(1.0f);
             auto use_dynamic_shifting = args_.get_optional<bool>("--use_dynamic_shifting").value_or(false);
@@ -510,43 +510,25 @@ public:
 
             auto schedule = flow_match_scheduler.schedule(num_inference_steps, mu);
 
-            if (args_.get(0) == "FlowMatchEulerDiscreteScheduler_schedule") {
-                Computation<void> computation({&context});
+            Computation<void> computation({&context});
 
-                auto timesteps = local_context.value<float>(
-                    {static_cast<int64_t>(schedule.size())},
-                    [&schedule](std::mt19937&) { return schedule.timesteps(); }
-                );
+            auto index = args_.get_one<int>("--index");
+            auto model_output = args_.get_one<Tensor>("--model_output", {computation.desc()->context()});
+            auto sample = args_.get_one<Tensor>("--sample", {computation.desc()->context()});
 
-                auto sigmas = local_context.value<float>(
-                    {static_cast<int64_t>(schedule.sigmas().size())},
-                    [&schedule](std::mt19937&) { return schedule.sigmas(); }
-                );
-
-                Graph graph(scheduler, scope.context(), {timesteps, sigmas});
-                Computation computation(allocator, graph, {&context, &scope.context()});
-                return computation().results();
-            }
-
-            if (args_.get(0) == "FlowMatchEulerDiscreteScheduler_step") {
-                Computation<void> computation({&context});
-
-                auto index = args_.get_one<int>("--index");
-                auto model_output = args_.get_one<Tensor>("--model_output", {computation.desc()->context()});
-                auto sample = args_.get_one<Tensor>("--sample", {computation.desc()->context()});
-
-                auto dt = local_context.value<float>(
+            auto result = computation.scope([&](Scope scope) -> Tensor {
+                auto dt = scope.context().value<float>(
                     {1},
                     [dt = schedule[index].dt](std::mt19937&) { return std::vector<float>{dt}; }
                 );
 
-                auto next_sample = flow_match_scheduler.integrate(local_context, model_output, sample, dt);
+                auto next_sample = flow_match_scheduler.integrate(scope, model_output, sample, dt);
 
-                Graph graph(scheduler, scope.context(), {next_sample});
-                Computation computation(allocator, graph, {&context, &scope.context()});
-                return computation().results();
-            }
-        }*/
+                return next_sample;
+            });
+
+            return Computation<Tensor>::all(result);
+        }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));
     }
@@ -554,5 +536,34 @@ public:
 
 int main(int argc, char** argv) {
     TestDiffusersCLI cli(argc, argv);
+
+    if (cli.args().get(0) == "FlowMatchEulerDiscreteScheduler_schedule") {
+        auto num_train_timesteps = cli.args().get_optional<int>("--num_train_timesteps").value_or(1000);
+        auto shift = cli.args().get_optional<float>("--shift").value_or(1.0f);
+        auto use_dynamic_shifting = cli.args().get_optional<bool>("--use_dynamic_shifting").value_or(false);
+        auto shift_terminal = cli.args().get_optional<float>("--shift_terminal");
+        auto invert_sigmas = cli.args().get_optional<bool>("--invert_sigmas").value_or(false);
+        auto time_shift_type = cli.args().get_optional<std::string>("--time_shift_type").value_or("exponential");
+
+        FlowMatchEulerDiscreteScheduler flow_match_scheduler(
+            num_train_timesteps,
+            shift,
+            use_dynamic_shifting,
+            shift_terminal,
+            invert_sigmas,
+            time_shift_type
+        );
+
+        auto num_inference_steps = cli.args().get_one<int>("--num_inference_steps");
+        auto mu = cli.args().get_one<float>("--mu");
+
+        auto schedule = flow_match_scheduler.schedule(num_inference_steps, mu);
+
+        cli.print_tensor_like(schedule.timesteps(), {(int64_t)schedule.timesteps().size()});
+        cli.print_tensor_like(schedule.sigmas(), {(int64_t)schedule.sigmas().size()});
+
+        return EXIT_SUCCESS;
+    }
+
     return cli.main();
 }

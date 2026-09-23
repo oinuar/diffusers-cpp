@@ -158,8 +158,8 @@ public:
         const ArgumentParser& args_;
         std::string prefix_;
     };
-private:
-    int run(Scheduler& scheduler, Allocator& weights_allocator, Allocator& state_allocator, Computation<std::vector<Tensor>> computation) {
+public:
+    virtual int run(Scheduler& scheduler, Allocator& weights_allocator, Allocator& state_allocator, Computation<std::vector<Tensor>> computation) {
         std::mt19937 rng;
         auto results = ExecutionRuntime::Default.run(scheduler, weights_allocator, state_allocator, rng, computation);
 

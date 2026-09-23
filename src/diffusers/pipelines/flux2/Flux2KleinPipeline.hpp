@@ -51,94 +51,60 @@ public:
         Context& transformer_context,
         GenerationOptions&& options);
 
-    #if 0
-    
-    std::vector<Image> operator ()(
-        Allocator& allocator,
-        Scheduler& scheduler,
-        Context& vae_context,
-        Context& text_encoder_context,
-        Context& transformer_context,
-        GenerationOptions&& options);
-
+    // ---------------------------------------------------------------------
+    // Individual computation stages.
     //
-    // Graph construction.
-    //
-    // Each graph is built on its own graph context: the temporary
-    // (computational) tensors are allocated by the scheduler when the graph
-    // is computed and may be reclaimed by subsequent graphs. Only the state
-    // that crosses graph boundaries is created in the state context, where
-    // the allocator keeps it alive for the whole generation. Computed
-    // outputs that must cross a boundary are copied into the returned state
-    // tensors right after the graph runs (see operator()).
-    //
-    struct VaeEncodeGraph {
-        Graph graph;
-        // State tensors shared with the denoise graph.
-        Tensor image_latents;      // (B, N_ref, 4 * latent_channels)
-        Tensor image_latent_ids;   // (B, N_ref, 4)
-    };
+    // Each stage takes the caller's Scope directly and builds its tensors
+    // in the caller's scope context. They are deliberately decoupled from
+    // the pipeline's own computation chain (operator()), so tests can invoke
+    // them inside the test runner's own computation scope.
+    // ---------------------------------------------------------------------
 
-    struct TextEncoderGraph {
-        Graph graph;
-        // State tensors shared with the denoise graph.
-        Tensor prompt_embeds;      // (B, seq, 3 * hidden)
-        Tensor txt_ids;            // (B, seq, 4)
-    };
+    // Encodes reference images into packed latents (B, N, 4 * C), where N
+    // is the sum of the packed token counts of all images. Returns
+    // std::nullopt when there are no images.
+    std::optional<Tensor> encode_images(Scope scope, const std::vector<Image>& images, int batch);
 
-    // Encodes the reference images into packed, normalized latents
-    // (img2img only). image_latents is computed into the graph context and
-    // the returned state tensor holds the copy the denoise graph reads;
-    // image_latent_ids is created directly in the state context.
-    std::tuple<std::optional<Graph>, std::optional<Tensor>> make_vae_encode_graph(
+    // Encodes the prompt into text embeddings (B, L, 3 * hidden_dim).
+    Tensor encode_prompt(Scope scope, int batch, const std::string& prompt, size_t max_sequence_length);
+
+    // Runs one denoising step: the transformer forward pass followed by the
+    // scheduler integration. When image_latents is provided, the reference
+    // tokens (image_latents + image_latent_ids) are appended to the latents
+    // and noise_pred is sliced back to the latent length.
+    Tensor denoise_step(
         Scope scope,
-        Scheduler& scheduler,
-        const std::vector<Image>& images,
-        int batch
-    );
+        const Tensor& latents,
+        const Tensor& prompt_embeds,
+        const Tensor& img_ids,
+        const Tensor& txt_ids,
+        const std::optional<Tensor>& image_latents,
+        const std::optional<Tensor>& image_latent_ids,
+        const Tensor& timestep,
+        const Tensor& dt);
 
-    // Encodes the prompt into text embeddings and creates the position ids.
-    // prompt_embeds is computed into the graph context and the returned
-    // state tensor holds the copy the denoise graph reads; txt_ids and
-    // img_ids are created directly in the state context.
-    std::tuple<Graph, Tensor> make_text_encoder_graph(
-        Scope scope,
-        Scheduler& scheduler,
-        int batch,
-        const std::string& prompt,
-        size_t max_sequence_length
-    );
+    // Decodes packed latents into pixels (B, 3, H, W).
+    Tensor decode(Scope scope, const Tensor& latents, int packed_h, int packed_w);
 
-    // One denoising step: transformer forward + scheduler integration.
-    // The embeddings, ids and latents are read from the state context;
-    // the next latents are computed into the graph context and copied back
-    // into latents by the caller after each run.
-    Graph make_denoise_graph(
-        Scope scope,
-        Scheduler& scheduler,
-        int batch,
-        int packed_h,
-        int packed_w,
-        size_t max_sequence_length,
-        Tensor latents,
-        Tensor prompt_embeds,
-        std::optional<Tensor> image_latents,
-        const std::vector<Image>& images,
-        float* timestep,
-        float* dt
-    );
+    // 4D txt_ids: (B, L, 4) -> [0, 0, 0, l]
+    static Tensor prepare_txt_ids(Scope scope, int batch, int64_t seq_len);
 
-    // Unpacks, unnormalizes and unpatchifies the latents and runs the VAE
-    // decoder. The latents are read from the state context; the decoded
-    // image is computed into the graph context.
-    Graph make_vae_decode_graph(
-        Scope scope,
-        Scheduler& scheduler,
-        int packed_h,
-        int packed_w,
-        Tensor latents
-    );
-#endif
+    // 4D img_ids: (B, N, 4) -> [0, y, x, 0]
+    static Tensor prepare_img_ids(Scope scope, int batch, int packed_h, int packed_w);
+
+    // Converts the raw decoded values (B, 3, H, W) read back from the
+    // execution result into RGB images in [0, 255]. Computation<Image> is
+    // not supported, so this conversion is performed on the CPU side.
+    static std::vector<Image> to_images(const std::vector<float>& data, int batch, int height, int width);
+    // Normalizes a reference image the same way the Python pipeline's
+    // __call__ prepares condition images: resizes images above the target
+    // area to the target area, then crops to the nearest multiple of the VAE
+    // spatial multiple (vae_scale_factor * 2).
+    static Image preprocess_reference_image(const Image& image, int multiple, double target_area = 1024.0 * 1024.0);
+    int64_t vae_scale_factor() const {
+        return vae_.scale_factor();
+    }
+
     const FlowMatchEulerDiscreteScheduler& scheduler() const {
         return scheduler_;
     }

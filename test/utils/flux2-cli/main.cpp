@@ -450,7 +450,7 @@ public:
             return Computation<Tensor>::all(result);
         }
 
-        /*if (args_.get(0).rfind("Flux2KleinPipeline", 0) == 0) {
+        if (args_.get(0).rfind("Flux2KleinPipeline", 0) == 0) {
             Flux2Transformer2DModel::Config transformer_config;
             {
                 transformer_config.patch_size = args_.get_optional<int64_t>("--transformer-patch_size").value_or(transformer_config.patch_size);
@@ -517,7 +517,7 @@ public:
                 transformer.accept(visitor);
                 visitor.rethrow();
             }
-            
+
             AutoencoderKLFlux2 vae(vae_config);
             {
                 CreateParametersVisitor create_parameters(context, args_, "vae");
@@ -544,226 +544,180 @@ public:
             );
 
             if (args_.get(0) == "Flux2KleinPipeline_vae_encode") {
-                Computation<void> computation({&context});
-
                 auto batch = args_.get_one<int>("--batch");
                 auto images = args_.get_many<Image>("--images");
 
-                auto [graph, image_latents] = pipeline.make_vae_encode_graph(
-                    scope,
-                    scheduler,
-                    images,
-                    batch
-                );
+                // Mirrors the condition-image preprocessing in the Python
+                // pipeline's __call__: resize to the target area and crop
+                // to the VAE's spatial multiple.
+                for (auto& image : images)
+                    image = Flux2KleinPipeline::preprocess_reference_image(image, pipeline.vae_scale_factor() * 2);
 
-                Computation computation(allocator, *graph, {&context, &scope.context()});
+                auto result = computation.scope([&](Scope scope) -> Tensor {
+                    auto image_latents = pipeline.encode_images(scope, images, batch);
 
-                return computation().results();
+                    if (!image_latents)
+                        throw std::runtime_error("Flux2KleinPipeline_vae_encode: expected at least one image");
+
+                    return *image_latents;
+                });
+
+                return Computation<Tensor>::all(result);
             }
 
             if (args_.get(0) == "Flux2KleinPipeline_text_encoder") {
-                Scope scope(local_context);
-
                 auto batch = args_.get_one<int>("--batch");
                 auto prompt = args_.get_one<std::string>("--prompt");
                 auto max_sequence_length = args_.get_one<int>("--max_sequence_length");
 
-                auto [graph, prompt_embeds] = pipeline.make_text_encoder_graph(
-                    scope,
-                    scheduler,
-                    batch,
-                    prompt,
-                    max_sequence_length
-                );
+                auto result = computation.scope([&](Scope scope) -> Tensor {
+                    return pipeline.encode_prompt(scope, batch, prompt, max_sequence_length);
+                });
 
-                Computation computation(allocator, graph, {&context, &scope.context()});
-
-                return computation().results();
+                return Computation<Tensor>::all(result);
             }
 
             if (args_.get(0) == "Flux2KleinPipeline_denoise") {
-                Scope scope(local_context);
-
                 auto batch = args_.get_one<int>("--batch");
-                auto packed_h = args_.get_one<int>("--packed_h");
-                auto packed_w = args_.get_one<int>("--packed_w");
-                auto max_sequence_length = args_.get_one<int>("--max_sequence_length");
                 auto timestep = args_.get_one<float>("--timestep");
                 auto dt = args_.get_one<float>("--dt");
                 auto init_latents = args_.get_one<Tensor>("--init_latents", {computation.desc()->context()});
                 auto prompt_embeds = args_.get_one<Tensor>("--prompt_embeds", {computation.desc()->context()});
-                auto image_latents = args_.get_optional<Tensor>("--image_latents", {computation.desc()->context()});
-                auto images = args_.get_many<Image>("--images");
 
-                auto graph = std::move(pipeline.make_denoise_graph(
-                    scope,
-                    scheduler,
-                    batch,
-                    packed_h,
-                    packed_w,
-                    max_sequence_length,
-                    init_latents,
-                    prompt_embeds,
-                    image_latents,
-                    images,
-                    &timestep,
-                    &dt
-                ));
+                // The reference-image variant provides all ids and the
+                // reference latents as tensors; the plain variant builds the
+                // canonical ids from the packed grid and the sequence length.
+                auto num_ref_tokens = args_.get_optional<int64_t>("--num_ref_tokens");
+                std::optional<Tensor> img_ids;
+                std::optional<Tensor> txt_ids;
+                std::optional<Tensor> image_latents;
+                std::optional<Tensor> image_latent_ids;
 
-                Computation computation(allocator, graph, {&context, &scope.context()});
+                int packed_h = 0, packed_w = 0, max_sequence_length = 0;
 
-                return computation().results();
+                if (num_ref_tokens) {
+                    img_ids = args_.get_one<Tensor>("--img_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
+                    txt_ids = args_.get_one<Tensor>("--txt_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
+                    image_latents = args_.get_one<Tensor>("--image_latents", {computation.desc()->context()});
+                    image_latent_ids = args_.get_one<Tensor>("--image_latent_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
+                } else {
+                    packed_h = args_.get_one<int>("--packed_h");
+                    packed_w = args_.get_one<int>("--packed_w");
+                    max_sequence_length = args_.get_one<int>("--max_sequence_length");
+                }
+
+                auto result = computation.scope([&](Scope scope) -> Tensor {
+                    auto timestep_tensor = scope.context().create<float>({batch}, [batch, timestep](std::mt19937&) {
+                        return std::vector<float>(batch, timestep);
+                    });
+
+                    auto dt_tensor = scope.context().create<float>({}, [dt](std::mt19937&) {
+                        return std::vector<float>{dt};
+                    });
+
+                    Tensor step_img_ids;
+                    Tensor step_txt_ids;
+
+                    if (num_ref_tokens) {
+                        step_img_ids = *img_ids;
+                        step_txt_ids = *txt_ids;
+                    } else {
+                        step_img_ids = Flux2KleinPipeline::prepare_img_ids(scope, batch, packed_h, packed_w);
+                        step_txt_ids = Flux2KleinPipeline::prepare_txt_ids(scope, batch, max_sequence_length);
+                    }
+
+                    return pipeline.denoise_step(
+                        scope,
+                        init_latents,
+                        prompt_embeds,
+                        step_img_ids,
+                        step_txt_ids,
+                        image_latents,
+                        image_latent_ids,
+                        timestep_tensor,
+                        dt_tensor);
+                });
+
+                return Computation<Tensor>::all(result);
             }
 
             if (args_.get(0) == "Flux2KleinPipeline_vae_decode") {
-                Scope scope(local_context);
-
                 auto packed_h = args_.get_one<int>("--packed_h");
                 auto packed_w = args_.get_one<int>("--packed_w");
                 auto latents = args_.get_one<Tensor>("--latents", {computation.desc()->context()});
 
-                auto graph = std::move(pipeline.make_vae_decode_graph(
-                    scope,
-                    scheduler,
-                    packed_h,
-                    packed_w,
-                    latents
-                ));
+                auto result = computation.scope([&](Scope scope) -> Tensor {
+                    return pipeline.decode(scope, latents, packed_h, packed_w);
+                });
 
-                Computation computation(allocator, graph, {&context, &scope.context()});
-
-                return computation().results();
+                return Computation<Tensor>::all(result);
             }
-        }*/
+
+            if (args_.get(0) == "Flux2KleinPipeline_call") {
+                Flux2KleinPipeline::GenerationOptions options;
+
+                options.prompt = args_.get_one<std::string>("--prompt");
+                options.height = args_.get_one<int>("--height");
+                options.width = args_.get_one<int>("--width");
+                options.num_inference_steps = args_.get_one<int>("--num_inference_steps");
+                options.max_sequence_length = args_.get_one<int>("--max_sequence_length");
+
+                if (auto init_latents = args_.get_optional<std::string>("--init_latents"))
+                    options.init_latents = std::move(
+                        ArgumentParser::parser<Tensor>::TensorParser("--init_latents", *init_latents).parse().second);
+
+                // The raw decoded values are converted to RGB images on the
+                // CPU side in run() (Computation<Image> is not supported).
+                return Computation<Tensor>::all(pipeline(context, context, context, std::move(options)));
+            }
+
+            throw std::runtime_error("Unknown command: " + args_.get(0));
+        }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));
     }
 
     virtual size_t get_graph_size() const {
-        if (args_.get(0) == "Flux2KleinPipeline_text_encoder" ||
-            args_.get(0) == "Flux2KleinPipeline_vae_encode" ||
-            args_.get(0) == "Flux2KleinPipeline_call" ||
-            args_.get(0) == "Flux2KleinPipeline_encode_prompt")
+        if (args_.get(0).rfind("Flux2KleinPipeline", 0) == 0)
             return 65536;
         
         return TestCLI::get_graph_size();
     }
 
-    /*int run_pipeline(Allocator& allocator, Scheduler& scheduler, Context& weights_context, const Device& device) {
-        Flux2Transformer2DModel::Config transformer_config;
-        {
-            transformer_config.patch_size = args_.get_optional<int64_t>("--transformer-patch_size").value_or(transformer_config.patch_size);
-            transformer_config.in_channels = args_.get_optional<int64_t>("--transformer-in_channels").value_or(transformer_config.in_channels);
-            transformer_config.out_channels = args_.get_optional<int64_t>("--transformer-out_channels");
-            transformer_config.num_layers = args_.get_optional<int64_t>("--transformer-num_layers").value_or(transformer_config.num_layers);
-            transformer_config.num_single_layers = args_.get_optional<int64_t>("--transformer-num_single_layers").value_or(transformer_config.num_single_layers);
-            transformer_config.attention_head_dim = args_.get_optional<int64_t>("--transformer-attention_head_dim").value_or(transformer_config.attention_head_dim);
-            transformer_config.num_attention_heads = args_.get_optional<int64_t>("--transformer-num_attention_heads").value_or(transformer_config.num_attention_heads);
-            transformer_config.joint_attention_dim = args_.get_optional<int64_t>("--transformer-joint_attention_dim").value_or(transformer_config.joint_attention_dim);
-            transformer_config.timestep_guidance_channels = args_.get_optional<int64_t>("--transformer-timestep_guidance_channels").value_or(transformer_config.timestep_guidance_channels);
-            transformer_config.mlp_ratio = args_.get_optional<float>("--transformer-mlp_ratio").value_or(transformer_config.mlp_ratio);
-            auto axes_dims_rope = args_.get_many<int64_t>("--transformer-axes_dims_rope");
-            transformer_config.rope_theta = args_.get_optional<int64_t>("--transformer-rope_theta").value_or(transformer_config.rope_theta);
-            transformer_config.eps = args_.get_optional<float>("--transformer-eps").value_or(transformer_config.eps);
-            transformer_config.guidance_embeds = args_.get_optional<bool>("--transformer-guidance_embeds").value_or(transformer_config.guidance_embeds);
+    // Flux2KleinPipeline_call returns the raw decoded values (B, 3, H, W).
+    // Computation<Image> is not supported, so the conversion to RGB images
+    // (H, W, 3) is performed on the CPU side after execution.
+    virtual int run(Scheduler& scheduler, Allocator& weights_allocator, Allocator& state_allocator, Computation<std::vector<Tensor>> computation) override {
+        if (args_.get(0) == "Flux2KleinPipeline_call") {
+            std::mt19937 rng;
+            auto results = ExecutionRuntime::Default.run(scheduler, weights_allocator, state_allocator, rng, computation);
 
-            if (!axes_dims_rope.empty())
-                transformer_config.axes_dims_rope = axes_dims_rope;
+            if (results.size() != 1)
+                throw std::runtime_error("Flux2KleinPipeline_call: expected exactly one result tensor");
+
+            auto& decoded = results[0];
+            auto data = ExecutionRuntime::Default.read<float>(decoded);
+
+            auto images = Flux2KleinPipeline::to_images(data, (int)decoded.shape()[0], (int)decoded.shape()[2], (int)decoded.shape()[3]);
+
+            for (const auto& image : images) {
+                std::vector<float> pixels(image.pixels().size());
+
+                for (size_t i = 0; i < pixels.size(); ++i)
+                    pixels[i] = static_cast<float>(image.pixels()[i]);
+
+                print_tensor_like(pixels, {
+                    (int64_t)image.height(),
+                    (int64_t)image.width(),
+                    (int64_t)image.channels()
+                });
+            }
+
+            return EXIT_SUCCESS;
         }
 
-        AutoencoderKLFlux2::Config vae_config;
-        {
-            vae_config.in_channels = args_.get_optional<int64_t>("--vae-in_channels").value_or(vae_config.in_channels);
-            vae_config.out_channels = args_.get_optional<int64_t>("--vae-out_channels").value_or(vae_config.out_channels);
-            auto block_out_channels = args_.get_many<int64_t>("--vae-block_out_channels");
-            vae_config.layers_per_block = args_.get_optional<int64_t>("--vae-layers_per_block").value_or(vae_config.layers_per_block);
-            vae_config.latent_channels = args_.get_optional<int64_t>("--vae-latent_channels").value_or(vae_config.latent_channels);
-            vae_config.norm_num_groups = args_.get_optional<int64_t>("--vae-norm_num_groups").value_or(vae_config.norm_num_groups);
-            vae_config.sample_size = args_.get_optional<int64_t>("--vae-sample_size").value_or(vae_config.sample_size);
-            vae_config.force_upcast = args_.get_optional<bool>("--vae-force_upcast").value_or(vae_config.force_upcast);
-            vae_config.use_quant_conv = args_.get_optional<bool>("--vae-use_quant_conv").value_or(vae_config.use_quant_conv);
-            vae_config.use_post_quant_conv = args_.get_optional<bool>("--vae-use_post_quant_conv").value_or(vae_config.use_post_quant_conv);
-            vae_config.mid_block_add_attention = args_.get_optional<bool>("--vae-mid_block_add_attention").value_or(vae_config.mid_block_add_attention);
-            vae_config.batch_norm_eps = args_.get_optional<float>("--vae-batch_norm_eps").value_or(vae_config.batch_norm_eps);
-            vae_config.batch_norm_momentum = args_.get_optional<float>("--vae-batch_norm_momentum").value_or(vae_config.batch_norm_momentum);
-            vae_config.patch_size = std::make_tuple(
-                args_.get_optional<int64_t>("--vae-patch_size-0").value_or(std::get<0>(vae_config.patch_size)),
-                args_.get_optional<int64_t>("--vae-patch_size-1").value_or(std::get<1>(vae_config.patch_size))
-            );
-
-            if (!block_out_channels.empty())
-                vae_config.block_out_channels = block_out_channels;
-        }
-
-        Qwen3Config qwen_config;
-        {
-            qwen_config.vocab_size = args_.get_optional<int64_t>("--text_encoder-vocab_size").value_or(qwen_config.vocab_size);
-            qwen_config.hidden_size = args_.get_optional<int64_t>("--text_encoder-hidden_size").value_or(qwen_config.hidden_size);
-            qwen_config.intermediate_size = args_.get_optional<int64_t>("--text_encoder-intermediate_size").value_or(qwen_config.intermediate_size);
-            qwen_config.num_hidden_layers = args_.get_optional<int64_t>("--text_encoder-num_hidden_layers").value_or(qwen_config.num_hidden_layers);
-            qwen_config.num_attention_heads = args_.get_optional<int64_t>("--text_encoder-num_attention_heads").value_or(qwen_config.num_attention_heads);
-            qwen_config.num_key_value_heads = args_.get_optional<int64_t>("--text_encoder-num_key_value_heads").value_or(qwen_config.num_key_value_heads);
-            qwen_config.max_position_embeddings = args_.get_optional<int64_t>("--text_encoder-max_position_embeddings").value_or(qwen_config.max_position_embeddings);
-        }
-
-        auto tokenizer_dir = args_.get_one<std::string>("--tokenizer_dir");
-        Scope scope(allocator.runtime());
-
-        Flux2Transformer2DModel transformer(transformer_config);
-        {
-            CreateParametersVisitor create_parameters(weights_context, args_, "transformer");
-            RethrowVisitor visitor(create_parameters);
-            transformer.accept(visitor);
-            visitor.rethrow();
-        }
-        
-        AutoencoderKLFlux2 vae(vae_config);
-        {
-            CreateParametersVisitor create_parameters(weights_context, args_, "vae");
-            RethrowVisitor visitor(create_parameters);
-            vae.accept(visitor);
-            visitor.rethrow();
-        }
-
-        Qwen3ForCausalLM text_encoder(qwen_config);
-        {
-            CreateParametersVisitor create_parameters(weights_context, args_, "text_encoder");
-            RethrowVisitor visitor(create_parameters);
-            text_encoder.accept(visitor);
-            visitor.rethrow();
-        }
-
-        auto tokenizer = Qwen2TokenizerFast::from_pretrained(tokenizer_dir);
-
-        Flux2KleinPipeline pipeline(
-            std::move(transformer),
-            std::move(vae),
-            std::move(text_encoder),
-            std::move(tokenizer)
-        );
-
-        Flux2KleinPipeline::GenerationOptions options;
-
-        options.prompt = args_.get_one<std::string>("--prompt");
-        options.height = args_.get_one<int>("--height");
-        options.width = args_.get_one<int>("--width");
-        options.num_inference_steps = args_.get_one<int>("--num_inference_steps");
-        options.max_sequence_length = args_.get_one<int>("--max_sequence_length");
-
-        if (auto init_latents = args_.get_optional<std::string>("--init_latents"))
-            options.init_latents = std::move(
-                ArgumentParser::parser<Tensor>::TensorParser("--init_latents", *init_latents).parse().second);
-
-        auto images = pipeline(allocator, scheduler, weights_context, weights_context, weights_context, std::move(options));
-        std::vector<Tensor> results;
-
-        for (const auto& image : images) {
-            std::vector<float> pixels(image.pixels().begin(), image.pixels().end());
-            print_tensor_like(pixels, {(int64_t)image.height(), (int64_t)image.width(), (int64_t)image.channels()});
-        }
-
-        return EXIT_SUCCESS;
-    }*/
+        return TestCLI::run(scheduler, weights_allocator, state_allocator, computation);
+    }
 
 private:
     class CreateParametersVisitor : public TestCLI::CreateParametersVisitor {

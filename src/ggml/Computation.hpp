@@ -135,14 +135,14 @@ struct ComputationDescription {
 
     Context& context() {
         if (!state)
-            state.emplace();
+            state.emplace(6000 /*TODO: remove temporary fix to get around context exhaustion problem*/);
         return *state;
     }
 
     ComputationScope& add_scope() {
         scopes.push_back(ComputationScope());
         auto& r = scopes.back();
-        r.context.emplace();
+        r.context.emplace(6000 /*TODO: remove temporary fix to get around context exhaustion problem*/);
         return r;
     }
 

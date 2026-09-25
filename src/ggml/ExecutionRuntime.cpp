@@ -15,11 +15,20 @@ void ExecutionRuntime::run(Scheduler& scheduler, Allocator& pin_allocator, Alloc
     // called — all the low-level ggml tensor chains exist. Allocate the
     // long-lived contexts.
 
+    // Allocate pinned contexts using the pin allocator.
     for (auto& pin : desc.pinned)
         pin_allocator.allocate(*pin);
 
+    // Allocate state context using using the state allocator.
     if (desc.state)
         state_allocator.allocate(*desc.state);
+
+    // Allocate every scope's context that use repeat with the state allocator since scheduler
+    // allocation won't work in that case. Other scopes gets scheduler allocated.
+    for (auto& scope : desc.scopes) {
+        if (scope.repeat && scope.context)
+            state_allocator.allocate(*scope.context);
+    }
 
     if (progress)
         progress->push("Preparing", desc.pinned.size() + (desc.state ? 1 : 0));
@@ -99,10 +108,8 @@ void ExecutionRuntime::run(Scheduler& scheduler, Allocator& pin_allocator, Alloc
 
                 if (ggml_backend_sched_graph_compute(*scheduler, gf) != GGML_STATUS_SUCCESS)
                     throw std::runtime_error("run(): ggml_backend_sched_graph_compute failed");
-
-                // The feedback: the next state is written back into the
-                // state cell (on every iteration, including the last — the
-                // cell must hold the final state.
+    
+                // TODO: use saves instead!
                 for (auto& [src, dst] : r.repeat->feedback)
                     copy(src, dst);
 

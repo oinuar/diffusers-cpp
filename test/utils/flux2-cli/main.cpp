@@ -583,62 +583,34 @@ public:
                 auto dt = args_.get_one<float>("--dt");
                 auto init_latents = args_.get_one<Tensor>("--init_latents", {computation.desc()->context()});
                 auto prompt_embeds = args_.get_one<Tensor>("--prompt_embeds", {computation.desc()->context()});
+                auto img_ids = args_.get_one<Tensor>("--img_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
+                auto txt_ids = args_.get_one<Tensor>("--txt_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
 
-                // The reference-image variant provides all ids and the
-                // reference latents as tensors; the plain variant builds the
-                // canonical ids from the packed grid and the sequence length.
-                auto num_ref_tokens = args_.get_optional<int64_t>("--num_ref_tokens");
-                std::optional<Tensor> img_ids;
-                std::optional<Tensor> txt_ids;
-                std::optional<Tensor> image_latents;
-                std::optional<Tensor> image_latent_ids;
+                auto image_latents = args_.get_optional<Tensor>("--image_latents", {computation.desc()->context()});
+                auto image_latent_ids = args_.get_optional<Tensor>("--image_latent_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
 
-                int packed_h = 0, packed_w = 0, max_sequence_length = 0;
-
-                if (num_ref_tokens) {
-                    img_ids = args_.get_one<Tensor>("--img_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
-                    txt_ids = args_.get_one<Tensor>("--txt_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
-                    image_latents = args_.get_one<Tensor>("--image_latents", {computation.desc()->context()});
-                    image_latent_ids = args_.get_one<Tensor>("--image_latent_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
-                } else {
-                    packed_h = args_.get_one<int>("--packed_h");
-                    packed_w = args_.get_one<int>("--packed_w");
-                    max_sequence_length = args_.get_one<int>("--max_sequence_length");
-                }
-
-                auto result = computation.scope([&](Scope scope) -> Tensor {
+                auto denoised = computation.scope([&](Scope scope) -> Tensor {
                     auto timestep_tensor = scope.context().create<float>({batch}, [batch, timestep](std::mt19937&) {
                         return std::vector<float>(batch, timestep);
                     });
-
-                    auto dt_tensor = scope.context().create<float>({}, [dt](std::mt19937&) {
+    
+                    auto dt_tensor = scope.context().create<float>({}, [batch, dt](std::mt19937&) {
                         return std::vector<float>{dt};
                     });
 
-                    Tensor step_img_ids;
-                    Tensor step_txt_ids;
-
-                    if (num_ref_tokens) {
-                        step_img_ids = *img_ids;
-                        step_txt_ids = *txt_ids;
-                    } else {
-                        step_img_ids = Flux2KleinPipeline::prepare_img_ids(scope, batch, packed_h, packed_w);
-                        step_txt_ids = Flux2KleinPipeline::prepare_txt_ids(scope, batch, max_sequence_length);
-                    }
-
-                    return pipeline.denoise_step(
+                    return pipeline.denoise(
                         scope,
                         init_latents,
                         prompt_embeds,
-                        step_img_ids,
-                        step_txt_ids,
+                        img_ids,
+                        txt_ids,
                         image_latents,
                         image_latent_ids,
                         timestep_tensor,
                         dt_tensor);
                 });
 
-                return Computation<Tensor>::all(result);
+                return Computation<Tensor>::all(denoised);
             }
 
             if (args_.get(0) == "Flux2KleinPipeline_vae_decode") {
@@ -690,15 +662,16 @@ public:
     virtual int run(Scheduler& scheduler, Allocator& weights_allocator, Allocator& state_allocator, Computation<std::vector<Tensor>> computation) override {
         if (args_.get(0) == "Flux2KleinPipeline_call") {
             std::mt19937 rng;
-            auto results = ExecutionRuntime::Default.run(scheduler, weights_allocator, state_allocator, rng, computation);
+            ProgressBar progress("Testing");
+            auto results = ExecutionRuntime::Default.run(scheduler, weights_allocator, state_allocator, rng, computation, &progress);
 
             if (results.size() != 1)
                 throw std::runtime_error("Flux2KleinPipeline_call: expected exactly one result tensor");
 
-            auto& decoded = results[0];
+            auto& decoded = results.front();
             auto data = ExecutionRuntime::Default.read<float>(decoded);
 
-            auto images = Flux2KleinPipeline::to_images(data, (int)decoded.shape()[0], (int)decoded.shape()[2], (int)decoded.shape()[3]);
+            auto images = Flux2KleinPipeline::to_images(decoded.shape(), std::move(data));
 
             for (const auto& image : images) {
                 std::vector<float> pixels(image.pixels().size());
@@ -839,61 +812,5 @@ private:
 
 int main(int argc, char** argv) {
     TestFlux2CLI cli(argc, argv);
-    auto& args_ = cli.args();
-
-    /*if (args_.get(0) == "Flux2KleinPipeline_call") {
-        ggml_time_init();
-        ggml_log_set([](ggml_log_level, const char* text, void*) { std::cerr << text; }, nullptr);
-
-        ggml_backend_load_all();
-
-        // This controls how many fake devices are used to run the tests.
-        auto n_devices = args_.get_optional<size_t>("--runner-n_devices").value_or(1);
-        auto use_gpu = args_.get_optional<bool>("--runner-use_gpu").value_or(false);
-
-        Context weights_context(cli.get_graph_size());
-
-        // If more than one device, use Meta device.
-        if (n_devices > 1) {
-            if (use_gpu)
-                throw std::runtime_error("Multi-GPU tests are not supported");
-
-            Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-            std::vector<ggml_backend_dev_t> devices;
-
-            for (auto i = 0; i < n_devices; ++i)
-                devices.push_back(*cpu);
-
-            MetaDevice meta(std::move(devices));
-            Backend meta_backend(meta);
-            Backend cpu_backend(cpu);
-            Scheduler scheduler({&meta_backend, &cpu_backend}, cli.get_graph_size());
-
-            ShardingAllocator allocator(ExecutionRuntime::Default, meta, 2.0, 1.0, 0.5);
-
-            return cli.run_pipeline(allocator, scheduler, weights_context, meta);
-        }
-
-        if (use_gpu) {
-            Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-            Device gpu(GGML_BACKEND_DEVICE_TYPE_GPU);
-            Backend cpu_backend(cpu);
-            Backend gpu_backend(gpu);
-            Scheduler scheduler({&gpu_backend, &cpu_backend}, cli.get_graph_size());
-
-            Allocator allocator;
-
-            return cli.run_pipeline(allocator, scheduler, weights_context, gpu);
-        }
-
-        Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-        Backend cpu_backend(cpu);
-        Scheduler scheduler({&cpu_backend}, cli.get_graph_size());
-
-        Allocator allocator;
-
-        return cli.run_pipeline(allocator, scheduler, weights_context, cpu);
-    }*/
-
     return cli.main();
 }

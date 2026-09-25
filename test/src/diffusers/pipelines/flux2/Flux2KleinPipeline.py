@@ -452,12 +452,14 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
             "--batch", str(batch),
             "--packed_h", str(packed_h),
             "--packed_w", str(packed_w),
-            "--max_sequence_length", str(max_sequence_length),
+            "--num_ref_tokens", "0",
             "--timestep", str(timestep.tolist()),
             "--dt", str(dt.tolist()),
 
-            "--init_latents", str(init_latents.tolist()),
             "--prompt_embeds", str(prompt_embeds.tolist()),
+            "--txt_ids", str(txt_ids.tolist()),
+            "--img_ids", str(img_ids.tolist()),
+            "--init_latents", str(init_latents.tolist()),
 
             "--transformer-patch_size", "1",
             "--transformer-in_channels", "16",
@@ -682,6 +684,8 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
             "Flux2KleinPipeline_denoise",
 
             "--batch", str(batch),
+            "--packed_h", str(packed_h),
+            "--packed_w", str(packed_w),
             "--num_ref_tokens", str(image_latents.shape[1]),
             "--timestep", str(timestep.tolist()),
             "--dt", str(dt.tolist()),
@@ -946,7 +950,7 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
         batch = 1
         prompt = "hello world"
         max_sequence_length = 16
-        num_inference_steps = 2
+        num_inference_steps = 4
         generator = torch.Generator()
 
         packed_h = 2

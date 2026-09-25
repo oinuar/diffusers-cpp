@@ -579,10 +579,10 @@ public:
 
             if (args_.get(0) == "Flux2KleinPipeline_denoise") {
                 auto batch = args_.get_one<int>("--batch");
-                auto timestep = args_.get_one<float>("--timestep");
-                auto dt = args_.get_one<float>("--dt");
-                auto init_latents = args_.get_one<Tensor>("--init_latents", {computation.desc()->context()});
+                auto timestep = args_.get_many<float>("--timestep");
+                auto dt = args_.get_many<float>("--dt");
                 auto prompt_embeds = args_.get_one<Tensor>("--prompt_embeds", {computation.desc()->context()});
+                auto [latents_shape, latents_data] = ArgumentParser::parser<Tensor>::TensorParser("--init_latents", args_.get_one<std::string>("--init_latents")).parse();
 
                 // The reference-image variant provides all ids and the
                 // reference latents as tensors; the plain variant builds the
@@ -606,13 +606,64 @@ public:
                     max_sequence_length = args_.get_one<int>("--max_sequence_length");
                 }
 
-                auto result = computation.scope([&](Scope scope) -> Tensor {
-                    auto timestep_tensor = scope.context().create<float>({batch}, [batch, timestep](std::mt19937&) {
-                        return std::vector<float>(batch, timestep);
+                auto timesteps = std::make_shared<std::vector<float>>(timestep);
+                auto dts = std::make_shared<std::vector<float>>(dt);
+
+                auto latents = computation.scope([&](Scope scope) {
+                    auto latents = scope.context().create<float>(latents_shape, [data = std::move(latents_data)](std::mt19937&) {
+                        return data;
                     });
 
-                    auto dt_tensor = scope.context().create<float>({}, [dt](std::mt19937&) {
-                        return std::vector<float>{dt};
+                    std::vector<Tensor> timestep_tensors, dt_tensors;
+
+                    for (auto i = 0; i < timesteps->size(); ++i)
+                        timestep_tensors.push_back(scope.context().create<float>({batch}, [batch, i, timesteps](std::mt19937&) {
+                            return std::vector<float>(batch, timesteps->at(i));
+                        }));
+        
+                    for (auto i = 0; i < dts->size(); ++i)
+                        dt_tensors.push_back(scope.context().create<float>({}, [batch, i, dts](std::mt19937&) {
+                            return std::vector<float>{dts->at(i)};
+                        }));
+
+                    Tensor step_img_ids;
+                    Tensor step_txt_ids;
+
+                    if (num_ref_tokens) {
+                        step_img_ids = *img_ids;
+                        step_txt_ids = *txt_ids;
+                    } else {
+                        step_img_ids = Flux2KleinPipeline::prepare_img_ids(scope, batch, packed_h, packed_w);
+                        step_txt_ids = Flux2KleinPipeline::prepare_txt_ids(scope, batch, max_sequence_length);
+                    }
+
+                    for (auto i = 0; i < timesteps->size(); ++i)
+                        latents = pipeline.denoise_step(
+                            scope,
+                            latents,
+                            prompt_embeds,
+                            step_img_ids,
+                            step_txt_ids,
+                            image_latents,
+                            image_latent_ids,
+                            timestep_tensors[i],
+                            dt_tensors[i]);
+                    
+                    return latents;
+                });
+                
+                /*
+                auto latents = computation.state(latents_shape, [data = std::move(latents_data)](std::mt19937&) {
+                    return data;
+                });
+
+                latents = latents.fold(timesteps->size(), [&](Scope scope, size_t& i, Tensor latents) -> Tensor {
+                    auto timestep_tensor = scope.context().value<float>({batch}, [batch, timesteps, &i](std::mt19937&) {
+                        return std::vector<float>(batch, timesteps->at(i));
+                    });
+
+                    auto dt_tensor = scope.context().value<float>({}, [dts, &i](std::mt19937&) {
+                        return std::vector<float>{dts->at(i)};
                     });
 
                     Tensor step_img_ids;
@@ -628,7 +679,7 @@ public:
 
                     return pipeline.denoise_step(
                         scope,
-                        init_latents,
+                        latents,
                         prompt_embeds,
                         step_img_ids,
                         step_txt_ids,
@@ -636,9 +687,9 @@ public:
                         image_latent_ids,
                         timestep_tensor,
                         dt_tensor);
-                });
+                });*/
 
-                return Computation<Tensor>::all(result);
+                return Computation<Tensor>::all(latents);
             }
 
             if (args_.get(0) == "Flux2KleinPipeline_vae_decode") {
@@ -690,7 +741,8 @@ public:
     virtual int run(Scheduler& scheduler, Allocator& weights_allocator, Allocator& state_allocator, Computation<std::vector<Tensor>> computation) override {
         if (args_.get(0) == "Flux2KleinPipeline_call") {
             std::mt19937 rng;
-            auto results = ExecutionRuntime::Default.run(scheduler, weights_allocator, state_allocator, rng, computation);
+            ProgressBar progress("Testing");
+            auto results = ExecutionRuntime::Default.run(scheduler, weights_allocator, state_allocator, rng, computation, &progress);
 
             if (results.size() != 1)
                 throw std::runtime_error("Flux2KleinPipeline_call: expected exactly one result tensor");

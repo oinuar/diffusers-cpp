@@ -141,12 +141,11 @@ static float compute_empirical_mu(int64_t image_seq_len, int num_steps) {
     return a * (float)num_steps + b;
 }
 
-template <class T>
-static Computation<Tensor> make_packed_latents(Computation<T> computation, int batch, int packed_h, int packed_w, int num_latent_channels) {
+static Tensor make_packed_latents(Scope scope, int batch, int packed_h, int packed_w, int num_latent_channels) {
     const int64_t token_dim = int64_t(num_latent_channels) * 4; // C * 4
     const size_t count = size_t(batch) * packed_h * packed_w * token_dim;
 
-    return computation.state({batch, int64_t(packed_h) * packed_w, token_dim},
+    return scope.context().create<float>({batch, int64_t(packed_h) * packed_w, token_dim},
         [=](std::mt19937& rng) {
             std::vector<float> noise(count);
             std::normal_distribution<float> normal(0.0f, 1.0f);
@@ -155,12 +154,10 @@ static Computation<Tensor> make_packed_latents(Computation<T> computation, int b
         });
 }
 
-template <class T>
-static Computation<Tensor> make_init_latents(Computation<T> computation, int batch, int packed_h, int packed_w, int num_latent_channels, std::vector<float>&& init_latents) {
+static Tensor make_init_latents(Scope scope, int batch, int packed_h, int packed_w, int num_latent_channels, std::vector<float>&& init_latents) {
     const int64_t token_dim = int64_t(num_latent_channels) * 4; // C * 4
-    const size_t count = size_t(batch) * packed_h * packed_w * token_dim;
 
-    return computation.state({batch, int64_t(packed_h) * packed_w, token_dim},
+    return scope.context().create<float>({batch, int64_t(packed_h) * packed_w, token_dim},
         [init_latents = std::move(init_latents)](std::mt19937&) {
             return init_latents;
         });
@@ -336,9 +333,9 @@ Computation<Tensor> Flux2KleinPipeline::operator()(
         .state();
 
     // 4. Initial latents.
-    auto latents = options.init_latents
+    /*auto latents = options.init_latents
         ? make_init_latents(computation, batch, packed_h, packed_w, vae_.latent_channels(), std::move(*options.init_latents))
-        : make_packed_latents(computation, batch, packed_h, packed_w, vae_.latent_channels());
+        : make_packed_latents(computation, batch, packed_h, packed_w, vae_.latent_channels());*/
 
     // 5. Denoise in latent space.
     auto mu = compute_empirical_mu(image_seq_len, options.num_inference_steps);
@@ -353,7 +350,47 @@ Computation<Tensor> Flux2KleinPipeline::operator()(
     // during whole computation.
     auto schedule = std::make_shared<Schedule>(scheduler_.schedule(n, mu, std::move(sigmas)));
 
-    latents = latents.fold(schedule->size(), [&, schedule](Scope scope, size_t& i, Tensor latents) -> Tensor {
+    auto latents = computation.scope([&](Scope scope) {
+        auto latents = options.init_latents
+            ? make_init_latents(scope, batch, packed_h, packed_w, vae_.latent_channels(), std::move(*options.init_latents))
+            : make_packed_latents(scope, batch, packed_h, packed_w, vae_.latent_channels());
+
+        std::vector<Tensor> timestep_tensors, dt_tensors;
+
+        for (auto i = 0; i < schedule->size(); ++i) {
+            timestep_tensors.push_back(scope.context().create<float>({batch}, [batch, i, schedule](std::mt19937&) {
+                return std::vector<float>(batch, (*schedule)[i].timestep);
+            }));
+
+            dt_tensors.push_back(scope.context().create<float>({}, [batch, i, schedule](std::mt19937&) {
+                return std::vector<float>{(*schedule)[i].dt};
+            }));
+        }
+
+        auto img_ids = prepare_img_ids(scope, batch, packed_h, packed_w);
+        auto txt_ids = prepare_txt_ids(scope, batch, options.max_sequence_length);
+
+        std::optional<Tensor> image_latent_ids;
+
+        if (!options.images.empty())
+            image_latent_ids = prepare_ref_image_ids(scope, batch, options.images, vae_.scale_factor() * 2);
+
+        for (auto i = 0; i < schedule->size(); ++i)
+            latents = denoise_step(
+                scope,
+                latents,
+                *prompt_embeds,
+                img_ids,
+                txt_ids,
+                *image_latents,
+                image_latent_ids,
+                timestep_tensors[i],
+                dt_tensors[i]);
+        
+        return latents;
+    }).state();
+
+    /*latents = latents.fold(schedule->size(), [&, schedule](Scope scope, size_t& i, Tensor latents) -> Tensor {
         auto img_ids = prepare_img_ids(scope, batch, packed_h, packed_w);
         auto txt_ids = prepare_txt_ids(scope, batch, options.max_sequence_length);
 
@@ -380,7 +417,7 @@ Computation<Tensor> Flux2KleinPipeline::operator()(
             image_latent_ids,
             timestep,
             dt);
-    });
+    });*/
 
     // 6. Decode latents to pixels.
     auto decoded = latents.scope([this, packed_h, packed_w](Scope scope, Tensor latents) -> Tensor {

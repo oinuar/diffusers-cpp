@@ -402,18 +402,10 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
             mu=mu,
         )
 
-        # Exactly the timestep used by the first iteration of __call__.
-        timestep = timesteps[0]
-
-        # Time delta
-        sigma = scheduler.sigmas[0]
-        next_sigma = scheduler.sigmas[1]
-        dt = next_sigma - sigma
-
         # ------------------------------------------------------------
-        # 5. Transformer
+        # 5. Reference denoising loop
         #
-        # This mirrors the actual Klein denoising loop:
+        # This mirrors the actual Klein denoising loop in __call__:
         #
         #   timestep / 1000
         #   guidance=None
@@ -421,30 +413,32 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
         #   encoder_hidden_states=prompt_embeds
         #   img_ids=img_ids
         #   txt_ids=txt_ids
+        #   latents = scheduler.step(noise_pred, t, latents)
         # ------------------------------------------------------------
 
-        timestep_input = timestep.expand(batch)
+        latents = init_latents
 
-        noise_pred = pipe.transformer(
-            hidden_states=init_latents,
-            encoder_hidden_states=prompt_embeds,
-            timestep=timestep_input / 1000.0,
-            img_ids=img_ids,
-            txt_ids=txt_ids,
-            guidance=None,
-            return_dict=False,
-        )[0]
+        for i, t in enumerate(timesteps):
+            timestep_input = t.expand(batch)
 
-        # ------------------------------------------------------------
-        # 6. Actual scheduler transition
-        # ------------------------------------------------------------
+            noise_pred = pipe.transformer(
+                hidden_states=latents,
+                encoder_hidden_states=prompt_embeds,
+                timestep=timestep_input / 1000.0,
+                img_ids=img_ids,
+                txt_ids=txt_ids,
+                guidance=None,
+                return_dict=False,
+            )[0]
 
-        expected_latents = pipe.scheduler.step(
-            noise_pred,
-            timestep,
-            init_latents,
-            return_dict=False,
-        )[0]
+            latents = pipe.scheduler.step(
+                noise_pred,
+                t,
+                latents,
+                return_dict=False,
+            )[0]
+
+        expected_latents = latents
 
         actual = self.cli(
             "Flux2KleinPipeline_denoise",
@@ -453,8 +447,11 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
             "--packed_h", str(packed_h),
             "--packed_w", str(packed_w),
             "--max_sequence_length", str(max_sequence_length),
-            "--timestep", str(timestep.tolist()),
-            "--dt", str(dt.tolist()),
+            # The argument parser collects consecutive occurrences of an
+            # option, so keep all --timestep values together and all --dt
+            # values together.
+            *sum([["--timestep", str(t.tolist())] for t in timesteps], []),
+            *sum([["--dt", str((scheduler.sigmas[i + 1] - scheduler.sigmas[i]).tolist())] for i in range(len(timesteps))], []),
 
             "--init_latents", str(init_latents.tolist()),
             "--prompt_embeds", str(prompt_embeds.tolist()),

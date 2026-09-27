@@ -32,7 +32,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), hidden_states);
+                return model.forward(scope, hidden_states);
             });
 
             return Computation<Tensor>::all(result);
@@ -55,7 +55,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), hidden_states);
+                return model.forward(scope, hidden_states);
             });
 
             return Computation<Tensor>::all(result);
@@ -74,7 +74,7 @@ public:
             Qwen3RotaryEmbedding model(config);
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), x, position_ids);
+                return model.forward(scope, x, position_ids);
             });
 
             return Computation<Tensor>::all(result);
@@ -104,7 +104,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
+                return model.forward(scope, rotary_emb, hidden_states, position_ids, attention_mask, past_key_values);
             });
 
             return Computation<Tensor>::all(result);
@@ -133,7 +133,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), rotary_emb, hidden_states, position_ids);
+                return model.forward(scope, rotary_emb, hidden_states, position_ids);
             });
 
             return Computation<Tensor>::all(result);
@@ -174,7 +174,7 @@ public:
                 std::vector<Tensor> hidden_states;
 
                 auto output = model.forward(
-                    scope.context(),
+                    scope,
                     input_ids,
                     input_embeds,
                     attention_mask,

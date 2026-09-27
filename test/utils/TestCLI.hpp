@@ -25,13 +25,10 @@ public:
 
         ggml_backend_load_all();
 
-        // This controls how many fake devices are used to run the tests.
         auto n_devices = args_.get_optional<size_t>("--runner-n_devices").value_or(1);
         auto use_gpu = args_.get_optional<bool>("--runner-use_gpu").value_or(false);
 
         Context weights_context(get_graph_size());
-
-        auto computation = compute(weights_context);
 
         // If more than one device, use Meta device.
         if (n_devices > 1) {
@@ -51,9 +48,10 @@ public:
             Allocator weights_allocator(meta, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
             Allocator state_allocator(meta, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
 
-            return run(scheduler, weights_allocator, state_allocator, computation);
+            return run(scheduler, weights_allocator, state_allocator, compute(weights_context));
         }
 
+        // Use single GPU device.
         if (use_gpu) {
             Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
             Device gpu(GGML_BACKEND_DEVICE_TYPE_GPU);
@@ -63,7 +61,7 @@ public:
             Allocator weights_allocator(gpu, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
             Allocator state_allocator(gpu, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
 
-            return run(scheduler, weights_allocator, state_allocator, computation);
+            return run(scheduler, weights_allocator, state_allocator, compute(weights_context));
         }
 
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
@@ -72,7 +70,7 @@ public:
         Allocator weights_allocator(cpu, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
         Allocator state_allocator(cpu, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
 
-        return run(scheduler, weights_allocator, state_allocator, computation);
+        return run(scheduler, weights_allocator, state_allocator, compute(weights_context));
     }
 
     virtual Computation<std::vector<Tensor>> compute(Context& weights_context) = 0;

@@ -84,7 +84,7 @@ public:
             SiLU model;
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), x);
+                return model.forward(scope, x);
             });
 
             return Computation<Tensor>::all(result);
@@ -106,7 +106,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), x);
+                return model.forward(scope, x);
             });
 
             return Computation<Tensor>::all(result);
@@ -129,7 +129,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), x);
+                return model.forward(scope, x);
             });
 
             return Computation<Tensor>::all(result);
@@ -153,7 +153,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), input);
+                return model.forward(scope, input);
             });
 
             return Computation<Tensor>::all(result);
@@ -178,7 +178,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), x);
+                return model.forward(scope, x);
             });
 
             return Computation<Tensor>::all(result);
@@ -217,7 +217,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), input);
+                return model.forward(scope, input);
             });
 
             return Computation<Tensor>::all(result);
@@ -237,7 +237,7 @@ public:
             auto x = Tensor::empty<float>(Tensor::Shape{2, 3, 4, 8}).input();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), x);
+                return model.forward(scope, x);
             });
 
             return Computation<Tensor>::all(result);

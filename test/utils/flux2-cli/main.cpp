@@ -33,7 +33,7 @@ public:
             Flux2SwiGLU model;
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), x);
+                return model.forward(scope, x);
             });
 
             return Computation<Tensor>::all(result);
@@ -57,7 +57,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), x);
+                return model.forward(scope, x);
             });
 
             return Computation<Tensor>::all(result);
@@ -79,7 +79,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), temb);
+                return model.forward(scope, temb);
             });
 
             return Computation<Tensor>::all(result);
@@ -103,7 +103,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), timestep, guidance);
+                return model.forward(scope, timestep, guidance);
             });
 
             return Computation<Tensor>::all(result);
@@ -125,7 +125,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), x, position_ids);
+                return model.forward(scope, x, position_ids);
             });
 
             return Computation<Tensor>::all(result);
@@ -177,7 +177,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> std::vector<Tensor> {
-                auto [y1, y2] = model.forward(scope.context(), hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb);
+                auto [y1, y2] = model.forward(scope, hidden_states, encoder_hidden_states, attention_mask, image_rotary_emb);
                 std::vector<Tensor> results;
 
                 results.push_back(y1);
@@ -236,7 +236,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), hidden_states, attention_mask, image_rotary_emb);
+                return model.forward(scope, hidden_states, attention_mask, image_rotary_emb);
             });
 
             return Computation<Tensor>::all(result);
@@ -281,7 +281,7 @@ public:
 
             auto result = computation.scope([&](Scope scope) -> std::vector<Tensor> {
                 auto [y1, y2] = model.forward(
-                    scope.context(),
+                    scope,
                     hidden_states,
                     encoder_hidden_states,
                     temb_mod,
@@ -341,7 +341,7 @@ public:
 
             auto result = computation.scope([&](Scope scope) -> std::vector<Tensor> {
                 auto [y1, y2] = model.forward(
-                    scope.context(),
+                    scope,
                     hidden_states,
                     encoder_hidden_states,
                     temb_mod_img,
@@ -396,7 +396,7 @@ public:
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
                 return model.forward(
-                    scope.context(),
+                    scope,
                     hidden_states,
                     encoder_hidden_states,
                     timestep,

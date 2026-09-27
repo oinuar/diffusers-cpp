@@ -49,7 +49,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), hidden_states, conditioning_embedding);
+                return model.forward(scope, hidden_states, conditioning_embedding);
             });
 
             return Computation<Tensor>::all(result);
@@ -71,7 +71,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), f, zq);
+                return model.forward(scope, f, zq);
             });
 
             return Computation<Tensor>::all(result);
@@ -94,7 +94,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), hidden_states);
+                return model.forward(scope, hidden_states);
             });
 
             return Computation<Tensor>::all(result);
@@ -117,7 +117,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), hidden_states);
+                return model.forward(scope, hidden_states);
             });
 
             return Computation<Tensor>::all(result);
@@ -167,7 +167,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), hidden_states, temb);
+                return model.forward(scope, hidden_states, temb);
             });
 
             return Computation<Tensor>::all(result);
@@ -201,7 +201,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), sample, latent_embeds);
+                return model.forward(scope, sample, latent_embeds);
             });
 
             return Computation<Tensor>::all(result);
@@ -235,7 +235,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), sample);
+                return model.forward(scope, sample);
             });
 
             return Computation<Tensor>::all(result);
@@ -277,7 +277,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), sample, sample_posterior);
+                return model.forward(scope, sample, sample_posterior);
             });
 
             return Computation<Tensor>::all(result);
@@ -302,7 +302,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), sample, condition);
+                return model.forward(scope, sample, condition);
             });
 
             return Computation<Tensor>::all(result);
@@ -325,7 +325,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), timesteps);
+                return model.forward(scope, timesteps);
             });
 
             return Computation<Tensor>::all(result);
@@ -365,7 +365,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), hidden_states);
+                return model.forward(scope, hidden_states);
             });
 
             return Computation<Tensor>::all(result);
@@ -406,7 +406,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), sample, temb);
+                return model.forward(scope, sample, temb);
             });
 
             return Computation<Tensor>::all(result);
@@ -443,7 +443,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), hidden_states);
+                return model.forward(scope, hidden_states);
             });
 
             return Computation<Tensor>::all(result);
@@ -482,7 +482,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope.context(), hidden_states, temb);
+                return model.forward(scope, hidden_states, temb);
             });
 
             return Computation<Tensor>::all(result);

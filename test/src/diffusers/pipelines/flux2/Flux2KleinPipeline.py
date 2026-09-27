@@ -402,10 +402,18 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
             mu=mu,
         )
 
+        # Exactly the timestep used by the first iteration of __call__.
+        timestep = timesteps[0]
+
+        # Time delta
+        sigma = scheduler.sigmas[0]
+        next_sigma = scheduler.sigmas[1]
+        dt = next_sigma - sigma
+
         # ------------------------------------------------------------
-        # 5. Reference denoising loop
+        # 5. Transformer
         #
-        # This mirrors the actual Klein denoising loop in __call__:
+        # This mirrors the actual Klein denoising loop:
         #
         #   timestep / 1000
         #   guidance=None
@@ -413,32 +421,30 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
         #   encoder_hidden_states=prompt_embeds
         #   img_ids=img_ids
         #   txt_ids=txt_ids
-        #   latents = scheduler.step(noise_pred, t, latents)
         # ------------------------------------------------------------
 
-        latents = init_latents
+        timestep_input = timestep.expand(batch)
 
-        for i, t in enumerate(timesteps):
-            timestep_input = t.expand(batch)
+        noise_pred = pipe.transformer(
+            hidden_states=init_latents,
+            encoder_hidden_states=prompt_embeds,
+            timestep=timestep_input / 1000.0,
+            img_ids=img_ids,
+            txt_ids=txt_ids,
+            guidance=None,
+            return_dict=False,
+        )[0]
 
-            noise_pred = pipe.transformer(
-                hidden_states=latents,
-                encoder_hidden_states=prompt_embeds,
-                timestep=timestep_input / 1000.0,
-                img_ids=img_ids,
-                txt_ids=txt_ids,
-                guidance=None,
-                return_dict=False,
-            )[0]
+        # ------------------------------------------------------------
+        # 6. Actual scheduler transition
+        # ------------------------------------------------------------
 
-            latents = pipe.scheduler.step(
-                noise_pred,
-                t,
-                latents,
-                return_dict=False,
-            )[0]
-
-        expected_latents = latents
+        expected_latents = pipe.scheduler.step(
+            noise_pred,
+            timestep,
+            init_latents,
+            return_dict=False,
+        )[0]
 
         actual = self.cli(
             "Flux2KleinPipeline_denoise",
@@ -446,15 +452,14 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
             "--batch", str(batch),
             "--packed_h", str(packed_h),
             "--packed_w", str(packed_w),
-            "--max_sequence_length", str(max_sequence_length),
-            # The argument parser collects consecutive occurrences of an
-            # option, so keep all --timestep values together and all --dt
-            # values together.
-            *sum([["--timestep", str(t.tolist())] for t in timesteps], []),
-            *sum([["--dt", str((scheduler.sigmas[i + 1] - scheduler.sigmas[i]).tolist())] for i in range(len(timesteps))], []),
+            "--num_ref_tokens", "0",
+            "--timestep", str(timestep.tolist()),
+            "--dt", str(dt.tolist()),
 
-            "--init_latents", str(init_latents.tolist()),
             "--prompt_embeds", str(prompt_embeds.tolist()),
+            "--txt_ids", str(txt_ids.tolist()),
+            "--img_ids", str(img_ids.tolist()),
+            "--init_latents", str(init_latents.tolist()),
 
             "--transformer-patch_size", "1",
             "--transformer-in_channels", "16",
@@ -679,6 +684,8 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
             "Flux2KleinPipeline_denoise",
 
             "--batch", str(batch),
+            "--packed_h", str(packed_h),
+            "--packed_w", str(packed_w),
             "--num_ref_tokens", str(image_latents.shape[1]),
             "--timestep", str(timestep.tolist()),
             "--dt", str(dt.tolist()),
@@ -943,7 +950,7 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
         batch = 1
         prompt = "hello world"
         max_sequence_length = 16
-        num_inference_steps = 2
+        num_inference_steps = 4
         generator = torch.Generator()
 
         packed_h = 2

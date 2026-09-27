@@ -51,15 +51,6 @@ public:
         Context& transformer_context,
         GenerationOptions&& options);
 
-    // ---------------------------------------------------------------------
-    // Individual computation stages.
-    //
-    // Each stage takes the caller's Scope directly and builds its tensors
-    // in the caller's scope context. They are deliberately decoupled from
-    // the pipeline's own computation chain (operator()), so tests can invoke
-    // them inside the test runner's own computation scope.
-    // ---------------------------------------------------------------------
-
     // Encodes reference images into packed latents (B, N, 4 * C), where N
     // is the sum of the packed token counts of all images. Returns
     // std::nullopt when there are no images.
@@ -72,7 +63,7 @@ public:
     // scheduler integration. When image_latents is provided, the reference
     // tokens (image_latents + image_latent_ids) are appended to the latents
     // and noise_pred is sliced back to the latent length.
-    Tensor denoise_step(
+    Tensor denoise(
         Scope scope,
         const Tensor& latents,
         const Tensor& prompt_embeds,
@@ -86,21 +77,6 @@ public:
     // Decodes packed latents into pixels (B, 3, H, W).
     Tensor decode(Scope scope, const Tensor& latents, int packed_h, int packed_w);
 
-    // 4D txt_ids: (B, L, 4) -> [0, 0, 0, l]
-    static Tensor prepare_txt_ids(Scope scope, int batch, int64_t seq_len);
-
-    // 4D img_ids: (B, N, 4) -> [0, y, x, 0]
-    static Tensor prepare_img_ids(Scope scope, int batch, int packed_h, int packed_w);
-
-    // Converts the raw decoded values (B, 3, H, W) read back from the
-    // execution result into RGB images in [0, 255]. Computation<Image> is
-    // not supported, so this conversion is performed on the CPU side.
-    static std::vector<Image> to_images(const std::vector<float>& data, int batch, int height, int width);
-    // Normalizes a reference image the same way the Python pipeline's
-    // __call__ prepares condition images: resizes images above the target
-    // area to the target area, then crops to the nearest multiple of the VAE
-    // spatial multiple (vae_scale_factor * 2).
-    static Image preprocess_reference_image(const Image& image, int multiple, double target_area = 1024.0 * 1024.0);
     int64_t vae_scale_factor() const {
         return vae_.scale_factor();
     }
@@ -108,6 +84,17 @@ public:
     const FlowMatchEulerDiscreteScheduler& scheduler() const {
         return scheduler_;
     }
+
+    // Converts the raw decoded values (B, 3, H, W) read back from the
+    // execution result into RGB images in [0, 255]. Computation<Image> is
+    // not supported, so this conversion is done after computation.
+    static std::vector<Image> to_images(const Tensor::Shape& shape, std::vector<float>&& data);
+
+    // Normalizes a reference image the same way the Python pipeline's
+    // __call__ prepares condition images: resizes images above the target
+    // area to the target area, then crops to the nearest multiple of the VAE
+    // spatial multiple (vae_scale_factor * 2).
+    static Image preprocess_reference_image(const Image& image, int multiple, double target_area = 1024.0 * 1024.0);
 
     // Latent shape conversions mirroring the static methods of the Python
     // Flux2KleinPipeline. Pure tensor ops with no model state.

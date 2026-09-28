@@ -17,6 +17,10 @@ public:
 
     virtual void allocate(Context& context);
 
+    const Device& device() const {
+        return device_;
+    }
+
 private:
     Device& device_;
     std::optional<ggml_backend_buffer_usage> usage_;

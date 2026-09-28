@@ -6,6 +6,7 @@
 #include "ggml/MetaDevice.hpp"
 #include "ggml/Scheduler.hpp"
 #include "ggml/Allocator.hpp"
+#include "ggml/ShardingRuntime.hpp"
 #include "ggml/ShardingAllocator.hpp"
 #include "ggml/ExecutionRuntime.hpp"
 #include "nn/Visitor.hpp"
@@ -45,8 +46,16 @@ public:
             Backend meta_backend(meta);
             Backend cpu_backend(cpu);
             Scheduler scheduler({&meta_backend, &cpu_backend}, get_graph_size());
-            Allocator weights_allocator(meta, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-            Allocator state_allocator(meta, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
+
+            // Sharding is only relevant for the Meta device: the other modes
+            // of execution run the whole graph on one device and skip the
+            // sharding entirely.
+            ShardingRuntime runtime(ExecutionRuntime::Default, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
+            ShardingAllocator weights_allocator(runtime, meta, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+            ShardingAllocator state_allocator(runtime, meta, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
+
+            // Activate sharding runtime for all subsequent scopes.
+            Scope scope(runtime);
 
             return run(scheduler, weights_allocator, state_allocator, compute(weights_context));
         }
@@ -58,6 +67,7 @@ public:
             Backend cpu_backend(cpu);
             Backend gpu_backend(gpu);
             Scheduler scheduler({&gpu_backend, &cpu_backend}, get_graph_size());
+
             Allocator weights_allocator(gpu, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
             Allocator state_allocator(gpu, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
 
@@ -67,6 +77,7 @@ public:
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
         Backend cpu_backend(cpu);
         Scheduler scheduler({&cpu_backend}, get_graph_size());
+
         Allocator weights_allocator(cpu, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
         Allocator state_allocator(cpu, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
 

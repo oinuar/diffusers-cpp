@@ -72,6 +72,10 @@ void ExecutionRuntime::run(Scheduler& scheduler, Allocator& pin_allocator, Alloc
         for (const auto& out : r.outputs)
             ggml_build_forward_expand(gf, *out);
 
+        // Pin scope tensors first before reserve to get buffer measures correct. See below.
+        if (r.context && !r.repeat)
+            pin(scheduler, pin_allocator.device(), *r.context);
+
         // Reserve the compute buffer for this graph (it persists on the
         // scheduler and is reused — and grown — for later graphs; in the
         // project this is done once, with a max-size measure graph). In this
@@ -79,6 +83,17 @@ void ExecutionRuntime::run(Scheduler& scheduler, Allocator& pin_allocator, Alloc
         // be the only reserve: alloc_graph would then skip the allocation.
         if (!ggml_backend_sched_reserve(*scheduler, gf))
             throw std::runtime_error("run(): ggml_backend_sched_reserve failed");
+
+        // Reset the graph before allocating.
+        ggml_backend_sched_reset(*scheduler);
+
+        // Pin scope tensors again to pin allocator device. Pinning is a user assignment, which
+        // the scheduler honors in split_graph; it must happen after the reset above (a reset
+        // wipes user assignments) and before ggml_backend_sched_alloc_graph below. The graph's
+        // tensors live in the graph context (inputs and compute nodes). Repeat scopes don't need
+        // pinning since they are already state allocator allocated.
+        if (r.context && !r.repeat)
+            pin(scheduler, pin_allocator.device(), *r.context);
 
         // Allocate: the galloc plans the graph's temporary tensors with
         // liveness (the compute buffer is sized to the high-water mark of
@@ -102,8 +117,7 @@ void ExecutionRuntime::run(Scheduler& scheduler, Allocator& pin_allocator, Alloc
 
             // The graph is a single allocation with multiple computations.
             for (r.repeat->iter = 0; r.repeat->iter < r.repeat->count; ++r.repeat->iter) {
-                // The re-bindable inputs: rewritten on every (re-)execution —
-                // their providers run through the loop's iter clock.
+                // The re-bindable inputs: rewritten on every (re-)execution.
                 bind(rng, *r.context, /*once_only=*/false);
 
                 if (ggml_backend_sched_graph_compute(*scheduler, gf) != GGML_STATUS_SUCCESS)
@@ -164,11 +178,24 @@ void ExecutionRuntime::bind(std::mt19937& rng, Context& context, bool once_only)
 }
 
 void ExecutionRuntime::copy(const Tensor& src, const Tensor& dst) const {
-    // A tensor in a temporary context is copied into the state context
-    // (ggml_backend_tensor_copy — the project's Context::copy).
+    // A tensor in a temporary context is copied into the state context.
     ggml_backend_tensor_copy(*src, *dst);
 }
 
+void ExecutionRuntime::pin(Scheduler& scheduler, const Device& device, Context& context) const {
+    for (auto& backend : scheduler.backends()) {
+
+        // Assign all input tensors that would be scheduler allocated to a given device.
+        if (backend && *backend->device() == *device) {
+            for (auto tensor = ggml_get_first_tensor(*context); tensor != nullptr; tensor = ggml_get_next_tensor(*context, tensor)) {
+                if (tensor->flags & GGML_TENSOR_FLAG_INPUT && tensor->buffer == nullptr)
+                    ggml_backend_sched_set_tensor_backend(*scheduler, tensor, **backend);
+            }
+
+            break;
+        }
+    }
+}
 
 // -------------------------------------------------------------------------
 // Tensor creation / initialization

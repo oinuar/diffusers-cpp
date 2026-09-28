@@ -163,6 +163,19 @@ public:
     typedef std::conditional_t<std::is_void_v<T>, VoidRef, T> Ref;
 
     template <class Body, bool Void = std::is_void_v<T>>
+    struct BindResult;
+
+    template <class Body>
+    struct BindResult<Body, true> {
+        using type = std::invoke_result_t<Body&>;
+    };
+
+    template <class Body>
+    struct BindResult<Body, false> {
+        using type = std::invoke_result_t<Body&, T&>;
+    };
+
+    template <class Body, bool Void = std::is_void_v<T>>
     struct ScopeResult;
 
     template <class Body>
@@ -238,13 +251,17 @@ public:
 
     // Sequences this computation with a function that produces the next 
     // value from the current value. 
-    // 
-    // Because this is a build-phase monad, `f` is evaluated immediately 
-    // at build time. The function `f` takes the underlying value (e.g., a 
-    // Tensor or std::vector<Tensor>) and must return a new value.
-    template <class F>
-    auto bind(F&& f) {
-        auto next = std::forward<F>(f)(ref_);
+    template <class Body>
+    auto bind(Body&& body) -> Computation<typename BindResult<Body>::type> {
+        using U = typename BindResult<Body>::type;
+
+        U next;
+
+        if constexpr (std::is_void_v<T>) {
+            next = body();
+        } else {
+            next = body(**this);
+        }
 
         return {next, desc_};
     }

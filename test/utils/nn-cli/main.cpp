@@ -34,9 +34,9 @@ public:
     };
 
     // random models; the planner does not care about values.)
-    class CreateRandomParametersVisitor : public Visitor {
+    class CreateEmptyParametersVisitor : public Visitor {
     public:
-        CreateRandomParametersVisitor(Scope scope) : scope_(scope) {}
+        CreateEmptyParametersVisitor(Scope scope) : scope_(scope) {}
 
         void visit(Parameter& parameter, std::vector<std::string> path) override {
             std::string name;
@@ -227,17 +227,18 @@ public:
             Computation<void> computation({&context});
             MLP<SiLU> model;
 
-            {
-                CreateRandomParametersVisitor create_parameters(context);
-                RethrowVisitor visitor(create_parameters);
-                model.accept(visitor);
-                visitor.rethrow();
-            }
+            CreateEmptyParametersVisitor create_parameters(context);
+            RethrowVisitor visitor(create_parameters);
+            model.accept(visitor);
+            visitor.rethrow();
 
-            auto x = Tensor::empty<float>(Tensor::Shape{2, 3, 4, 8}).input();
+            auto x = computation.bind([&]() {
+                Scope scope(context);
+                return Tensor::empty<float>(Tensor::Shape{2, 3, 4, 8}).input();
+            });
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope, x);
+                return model.forward(scope, *x);
             });
 
             return Computation<Tensor>::all(result);

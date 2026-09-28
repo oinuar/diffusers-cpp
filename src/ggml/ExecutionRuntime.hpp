@@ -3,6 +3,7 @@
 #include "ggml/Runtime.hpp"
 #include "ggml/Computation.hpp"
 
+class Device;
 class Allocator;
 class Scheduler;
 class ProgressBar;
@@ -317,8 +318,8 @@ public:
         ggml_scale_mode mode) override;
 
 private:
-    ggml_cgraph* graph(Scheduler& scheduler, ComputationScope& r) const;
     void bind(std::mt19937& rng, Context& context, bool once_only) const;
     void copy(const Tensor& src, const Tensor& dst) const;
+    void pin(Scheduler& scheduler, const Device& device, Context& context) const;
     void run(Scheduler& scheduler, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc, ProgressBar* progress) const;
 };

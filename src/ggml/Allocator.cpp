@@ -40,12 +40,18 @@ void Allocator::allocate(Context& context) {
 
     auto& buffer = buffers_.emplace_back(buff, usage_);
 
+    const char* usages[] = {
+        " (any)",
+        " (weights)",
+        " (compute)"
+    };
+
     std::cerr << "allocated "
             << count_tensors(*context, *buffer)
             << " tensors to a "
             << ggml_backend_dev_name(*device_)
             << " buffer of size "
             << format_bytes(ggml_backend_buffer_get_size(*buffer))
+            << (usage_ ? usages[*usage_] : "")
             << std::endl;
-
 }

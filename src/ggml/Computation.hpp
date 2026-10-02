@@ -8,6 +8,7 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
+#include <iostream>
 
 // Computation is the build-phase value: a Tensor (a ggml tensor handle in
 // one of the computation's contexts) plus a shared Description of the whole
@@ -356,7 +357,7 @@ public:
         cells.reserve(values.size());
 
         for (auto& value : values)
-            cells.push_back(ComputationValue<Tensor>::empty_like(value));
+            cells.push_back(ComputationValue<Tensor>::empty_like(value).name(value.name() + std::string(" (state)")));
 
         for (auto i = 0; i < values.size(); ++i)
             desc_->scope_of(values[i]).saves.push_back({values[i], cells[i]});

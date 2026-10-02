@@ -5,72 +5,77 @@
 #include "ggml/Scheduler.hpp"
 #include "ggml/Computation.hpp"
 #include "ProgressBar.hpp"
-#include <iostream>
 
 ExecutionRuntime ExecutionRuntime::Default;
 
 
 void ExecutionRuntime::run(Scheduler& scheduler, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc, ProgressBar* progress) const {
-    // The one-shot allocation point: all the module forwards have been
-    // called — all the low-level ggml tensor chains exist. Allocate the
-    // long-lived contexts.
+    // The execution point: all the module forwards have been called —
+    // all the low-level ggml tensor chains exist in their contexts.
 
-    // Allocate pinned contexts using the pin allocator.
+    std::vector<ggml_cgraph*> graphs;
+    graphs.reserve(desc.scopes.size());
+
+    if (progress)
+        progress->push("Initializing", desc.scopes.size());
+
+    // Build one graph per scope, built in the scope's context (its memory
+    // comes from the context's pool): the body's tensor chain was
+    // already recorded there at build time; ggml_build_forward_expand
+    // expands it into the graph (the nodes, and the leaves — the
+    // bound inputs of this context and the pre-allocated weights /
+    // state tensors).
+    //
+    // The graphs must be built BEFORE the long-lived contexts are
+    // allocated: the meta backend is brittle about this order.
+    for (auto& r : desc.scopes) {
+        auto* gf = ggml_new_graph_custom(**r.context, r.context->capacity(), /*grads=*/false);
+
+        // Build graph for every output Tensor.
+        for (const auto& out : r.outputs)
+            ggml_build_forward_expand(gf, *out);
+
+        graphs.push_back(gf);
+
+        if (progress)
+            progress->next();
+    }
+
+    if (progress)
+        progress->pop();
+
+    // Allocate pinned contexts with the pin allocator.
     for (auto& pin : desc.pinned)
         pin_allocator.allocate(*pin);
 
-    // Allocate state context using using the state allocator.
+    // Allocate state context using the state allocator.
     if (desc.state)
         state_allocator.allocate(*desc.state);
 
-    // Allocate every scope's context that use repeat with the state allocator since scheduler
-    // allocation won't work in that case. Other scopes gets scheduler allocated.
+    // Allocate every repeat scope's context with the state allocator.
+    // The SAME graph is re-executed with the SAME allocation, so scheduler
+    // allocation won't work there. Other scopes get scheduler allocated.
     for (auto& scope : desc.scopes) {
         if (scope.repeat && scope.context)
             state_allocator.allocate(*scope.context);
     }
 
     if (progress)
-        progress->push("Preparing", desc.pinned.size() + (desc.state ? 1 : 0));
+        progress->push("Executing", desc.scopes.size());
 
     // The weights: the one-shot bindings are streamed once into the
     // weights buffer.
-    for (auto& pin : desc.pinned) {
+    for (auto& pin : desc.pinned)
         bind(rng, *pin, /*once_only=*/true);
 
-        if (progress)
-            progress->next();
-    }
-
-    // The state's one-shot bindings.
-    if (desc.state) {
-        bind(rng, desc.state.value(), /*once_only=*/true);
-
-        if (progress)
-            progress->next();
-    }
-
-    if (progress) {
-        progress->pop();
-        progress->push("Executing", desc.scopes.size());
-    }
+    // The state's one-shot bindings: written into the allocated state
+    // tensors before any execution reads them.
+    if (desc.state)
+        bind(rng, *desc.state, /*once_only=*/true);
 
     for (auto i = 0; i < desc.scopes.size(); ++i) {
         auto& r = desc.scopes[i];
-
-        // The cgraph is built in the temporary context (its memory comes from
-        // the context's pool): the body's tensor chain was already recorded
-        // there at build time; ggml_build_forward_expand expands it into the
-        // graph (the nodes, and the leaves — the bound inputs of this context
-        // and the pre-allocated weights / state tensors).
-        auto gf = ggml_new_graph_custom(**r.context, r.context->capacity(), /*grads=*/false);
-
-        if (progress)
-            progress->push("Initializing", r.outputs.size());
-
-        // Build graph for every output Tensor.
-        for (const auto& out : r.outputs)
-            ggml_build_forward_expand(gf, *out);
+        auto* gf = graphs[i];
 
         // Pin scope tensors first before reserve to get buffer measures correct. See below.
         if (r.context && !r.repeat)
@@ -107,23 +112,24 @@ void ExecutionRuntime::run(Scheduler& scheduler, Allocator& pin_allocator, Alloc
         // tensors (ggml_backend_tensor_set).
         bind(rng, *r.context, /*once_only=*/true);
 
-        if (progress)
-            progress->pop();
-
         // Handle repeating computation with re-binding and state carrying.
         if (r.repeat) {
             if (progress)
                 progress->push("Computing (" + std::to_string(ggml_graph_n_nodes(gf)) + " graph nodes)", r.repeat->count);
 
-            // The graph is a single allocation with multiple computations.
+            // The graph is a single allocation with multiple computations:
+            // compute the SAME graph repeatedly, feeding every output back
+            // into the loop state of the next execution.
             for (r.repeat->iter = 0; r.repeat->iter < r.repeat->count; ++r.repeat->iter) {
                 // The re-bindable inputs: rewritten on every (re-)execution.
                 bind(rng, *r.context, /*once_only=*/false);
 
                 if (ggml_backend_sched_graph_compute(*scheduler, gf) != GGML_STATUS_SUCCESS)
                     throw std::runtime_error("run(): ggml_backend_sched_graph_compute failed");
-    
+
                 // TODO: use saves instead!
+                // Feed the result back as the input for the next execution
+                // of the SAME graph.
                 for (auto& [src, dst] : r.repeat->feedback)
                     copy(src, dst);
 
@@ -134,7 +140,7 @@ void ExecutionRuntime::run(Scheduler& scheduler, Allocator& pin_allocator, Alloc
             if (progress)
                 progress->pop();
         }
-        
+
         // Otherwise, handle singular computation.
         else {
             if (progress)
@@ -159,7 +165,7 @@ void ExecutionRuntime::run(Scheduler& scheduler, Allocator& pin_allocator, Alloc
             copy(src, dst);
     }
 
-    if (progress) 
+    if (progress)
         progress->pop();
 }
 
@@ -178,8 +184,18 @@ void ExecutionRuntime::bind(std::mt19937& rng, Context& context, bool once_only)
 }
 
 void ExecutionRuntime::copy(const Tensor& src, const Tensor& dst) const {
-    // A tensor in a temporary context is copied into the state context.
-    ggml_backend_tensor_copy(*src, *dst);
+    std::cerr << "copying: " << src.name() << " -> " << dst.name() << std::endl;
+
+    // A tensor in a temporary context is copied into the state context
+    // (a save) or back into the loop state of the same graph (a repeat
+    // feedback): the value is read from the source tensor and written
+    // into the destination tensor.
+    size_t nbytes = ggml_nbytes(*src);
+    std::vector<std::byte> data(nbytes);
+    ggml_backend_tensor_get(*src, data.data(), 0, nbytes);
+    ggml_backend_tensor_set(*dst, data.data(), 0, nbytes);
+
+    std::cerr << "copied: " << src.name() << " -> " << dst.name() << std::endl;
 }
 
 void ExecutionRuntime::pin(Scheduler& scheduler, const Device& device, Context& context) const {

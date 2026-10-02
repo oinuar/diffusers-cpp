@@ -74,7 +74,7 @@ Tensor Tensor::clone() const {
     return Tensor(Scope::runtime().dup(t_), shape_);
 }
 
-Tensor Tensor::input() {
+const Tensor& Tensor::input() {
     Scope::runtime().set_input(t_);
     return *this;
 }

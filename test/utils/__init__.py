@@ -80,7 +80,7 @@ class TestCase(unittest.TestCase):
 
         self.assertEqual(len(actual), len(expected))
         for a, e in zip(actual, expected):
-            self.assertEqual(a.shape, e.shape)
-            self.assertEqual(a.dtype, e.dtype)
+            self.assertEqual(a.shape, e.shape, f'\nActual: {str(a.tolist())}\nExpected: {str(e.tolist())}\nIndex: {index}')
+            self.assertEqual(a.dtype, e.dtype, f'\nActual: {str(a.tolist())}\nExpected: {str(e.tolist())}\nIndex: {index}')
             self.assertTrue(torch.allclose(a, e, **finalKwargs), f'\nActual: {str(a.tolist())}\nExpected: {str(e.tolist())}\nIndex: {index}')
             index += 1

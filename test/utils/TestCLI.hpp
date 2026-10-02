@@ -130,7 +130,7 @@ public:
             
             auto tensor = parser(joined_path, get_param(joined_path));
 
-            parameter.set(tensor, joined_path);
+            parameter.set(tensor.name(joined_path));
         }
 
         std::string get_param(const std::string& path) {

@@ -15,11 +15,14 @@ static std::string format_bytes(size_t bytes) {
     return std::to_string(bytes) + " B";
 }
 
-static size_t count_tensors(ggml_context * ctx, ggml_backend_buffer_t buffer) {
+static size_t count_tensors(ggml_context * ctx, ggml_backend_buffer_t buffer, std::string* names) {
     size_t n = 0;
-    for (auto t = ggml_get_first_tensor(ctx); t != nullptr; t = ggml_get_next_tensor(ctx, t))
-        if (t->buffer == buffer)
+    for (auto t = ggml_get_first_tensor(ctx); t != nullptr; t = ggml_get_next_tensor(ctx, t)) {
+        if (t->buffer == buffer) {
+            *names += "  - " + std::string(ggml_get_name(t)) + "\n";
             ++n;
+        }
+    }
     return n;
 }
 
@@ -46,12 +49,16 @@ void Allocator::allocate(Context& context) {
         " (compute)"
     };
 
+    std::string names;
+
     std::cerr << "allocated "
-            << count_tensors(*context, *buffer)
+            << count_tensors(*context, *buffer, &names)
             << " tensors to a "
             << ggml_backend_dev_name(*device_)
             << " buffer of size "
             << format_bytes(ggml_backend_buffer_get_size(*buffer))
             << (usage_ ? usages[*usage_] : "")
+            //<< ':'
             << std::endl;
+            //<< names;
 }

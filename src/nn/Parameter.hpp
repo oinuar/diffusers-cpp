@@ -22,11 +22,8 @@ public:
         return tensor_;
     }
     
-    void set(Tensor tensor, std::optional<std::string> name = std::nullopt) {
+    void set(Tensor tensor) {
         tensor_ = tensor;
-
-        if (name)
-            tensor_.name(name->c_str());
     }
 
     Tensor operator *() const {

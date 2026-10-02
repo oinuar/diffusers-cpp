@@ -662,8 +662,8 @@ public:
     virtual int run(Scheduler& scheduler, Allocator& weights_allocator, Allocator& state_allocator, Computation<std::vector<Tensor>> computation) override {
         if (args_.get(0) == "Flux2KleinPipeline_call") {
             std::mt19937 rng;
-            ProgressBar progress("Testing");
-            auto results = ExecutionRuntime::Default.run(scheduler, weights_allocator, state_allocator, rng, computation, &progress);
+            //ProgressBar progress("Testing");
+            auto results = ExecutionRuntime::Default.run(scheduler, weights_allocator, state_allocator, rng, computation);
 
             if (results.size() != 1)
                 throw std::runtime_error("Flux2KleinPipeline_call: expected exactly one result tensor");
@@ -717,19 +717,19 @@ private:
             
             q_weight->set(context().create<float>(q_weight->shape(), [=](std::mt19937&) {
                 return slice_rows(data, inner, 0, inner);
-            }));
+            }).name(weight_path + "-q-weight"));
 
             k_weight->set(context().create<float>(k_weight->shape(), [=](std::mt19937&) {
                 return slice_rows(data, inner, inner, 2 * inner);
-            }));
+            }).name(weight_path + "-k-weight"));
 
             v_weight->set(context().create<float>(v_weight->shape(), [=](std::mt19937&) {
                 return slice_rows(data, inner, 2 * inner, 3 * inner);
-            }));
+            }).name(weight_path + "-v-weight"));
 
             mlp_in_weight->set(context().create<float>(mlp_in_weight->shape(), [=](std::mt19937&) {
                 return slice_rows(data, inner, 3 * inner, 3 * inner + mlp_out);
-            }));
+            }).name(weight_path + "-mlp_in-weight"));
         }
 
         void visit(Flux2FusedAttentionOutput& to_out, std::vector<std::string> path) override {
@@ -749,11 +749,11 @@ private:
 
             attn_weight->set(context().create<float>(attn_weight->shape(), [=](std::mt19937&) {
                 return slice_cols(weight_data, inner, inner + mlp_hidden, 0, inner);
-            }));
+            }).name(weight_path + "-attn-weight"));
 
             mlp_weight->set(context().create<float>(mlp_weight->shape(), [=](std::mt19937&) {
                 return slice_cols(weight_data, inner, inner + mlp_hidden, inner, inner + mlp_hidden);
-            }));
+            }).name(weight_path + "-mlp-weight"));
 
             auto attn_bias = to_out.attn()->bias();
 
@@ -766,7 +766,7 @@ private:
 
                 attn_bias->set(context().create<float>(attn_bias->shape(), [=](std::mt19937&) {
                     return bias_data;
-                }));
+                }).name(bias_path));
             }
         }
 

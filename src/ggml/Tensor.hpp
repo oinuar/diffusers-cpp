@@ -187,8 +187,9 @@ public:
     }
 
     /** @brief Sets the name of this tensor. */
-    void name(const char* value) const {
-        ggml_set_name(t_, value);
+    const Tensor& name(const std::string& value) const {
+        ggml_set_name(t_, value.c_str());
+        return *this;
     }
 
     /** @brief Returns a contiguous copy of this tensor.
@@ -218,7 +219,7 @@ public:
     Tensor clone() const;
 
     /** @brief Return an input Tensor. */
-    Tensor input();
+    const Tensor& input();
 
     /** @brief Scales a tensor with a constant. */
     Tensor scale(float value) const;

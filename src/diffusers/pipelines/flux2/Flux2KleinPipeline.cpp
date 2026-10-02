@@ -324,14 +324,14 @@ Computation<Tensor> Flux2KleinPipeline::operator()(
 
     // 2. Encode images to latents.
     auto image_latents = computation
-        .scope([this, &options, batch](Scope scope) -> std::optional<Tensor> {
+        .scope([&](Scope scope) -> std::optional<Tensor> {
             return encode_images(scope, options.images, batch);
         })
         .state();
 
     // 3. Encode the prompt into text embeddings.
     auto prompt_embeds = computation
-        .scope([this, &options, batch](Scope scope) -> Tensor {
+        .scope([&](Scope scope) -> Tensor {
             return encode_prompt(scope, batch, options.prompt, options.max_sequence_length);
         })
         .state();

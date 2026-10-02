@@ -4,7 +4,6 @@
 #include "nn/modules/BatchNorm2d.hpp"
 #include "ggml/GGUFLoaderVisitor.hpp"
 #include "ggml/Context.hpp"
-#include "ggml/Scheduler.hpp"
 #include "ggml/Computation.hpp"
 #include "transformers/models/qwen3/Qwen3Config.hpp"
 #include "ProgressBar.hpp"

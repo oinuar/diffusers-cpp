@@ -2,14 +2,14 @@
 #include "ggml/Scope.hpp"
 #include "ggml/Context.hpp"
 #include "ggml/Allocator.hpp"
-#include "ggml/Scheduler.hpp"
+#include "ggml/Backend.hpp"
 #include "ggml/Computation.hpp"
 #include "ProgressBar.hpp"
 
 ExecutionRuntime ExecutionRuntime::Default;
 
 
-void ExecutionRuntime::run(Scheduler& scheduler, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc, ProgressBar* progress) const {
+void ExecutionRuntime::run(Backend& backend, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc, ProgressBar* progress) const {
     // The execution point: all the module forwards have been called —
     // all the low-level ggml tensor chains exist in their contexts.
 
@@ -52,11 +52,9 @@ void ExecutionRuntime::run(Scheduler& scheduler, Allocator& pin_allocator, Alloc
     if (desc.state)
         state_allocator.allocate(*desc.state);
 
-    // Allocate every repeat scope's context with the state allocator.
-    // The SAME graph is re-executed with the SAME allocation, so scheduler
-    // allocation won't work there. Other scopes get scheduler allocated.
+    // Allocate all scopes using the state allocator.
     for (auto& scope : desc.scopes) {
-        if (scope.repeat && scope.context)
+        if (scope.context)
             state_allocator.allocate(*scope.context);
     }
 
@@ -77,37 +75,6 @@ void ExecutionRuntime::run(Scheduler& scheduler, Allocator& pin_allocator, Alloc
         auto& r = desc.scopes[i];
         auto* gf = graphs[i];
 
-        // Pin scope tensors first before reserve to get buffer measures correct. See below.
-        if (r.context && !r.repeat)
-            pin(scheduler, pin_allocator.device(), *r.context);
-
-        // Reserve the compute buffer for this graph (it persists on the
-        // scheduler and is reused — and grown — for later graphs; in the
-        // project this is done once, with a max-size measure graph). In this
-        // ggml version reserve_size measures without allocating, so it cannot
-        // be the only reserve: alloc_graph would then skip the allocation.
-        if (!ggml_backend_sched_reserve(*scheduler, gf))
-            throw std::runtime_error("run(): ggml_backend_sched_reserve failed");
-
-        // Reset the graph before allocating.
-        ggml_backend_sched_reset(*scheduler);
-
-        // Pin scope tensors again to pin allocator device. Pinning is a user assignment, which
-        // the scheduler honors in split_graph; it must happen after the reset above (a reset
-        // wipes user assignments) and before ggml_backend_sched_alloc_graph below. The graph's
-        // tensors live in the graph context (inputs and compute nodes). Repeat scopes don't need
-        // pinning since they are already state allocator allocated.
-        if (r.context && !r.repeat)
-            pin(scheduler, pin_allocator.device(), *r.context);
-
-        // Allocate: the galloc plans the graph's temporary tensors with
-        // liveness (the compute buffer is sized to the high-water mark of
-        // the live set); the weights / state tensors are already allocated
-        // and skipped. build_graph reserved the buffer; alloc_graph assigns
-        // the tensors' addresses in it.
-        if (!ggml_backend_sched_alloc_graph(*scheduler, gf))
-            throw std::runtime_error("run(): ggml_backend_sched_alloc_graph failed");
-
         // The bound inputs (once): written into the freshly allocated graph
         // tensors (ggml_backend_tensor_set).
         bind(rng, *r.context, /*once_only=*/true);
@@ -124,8 +91,8 @@ void ExecutionRuntime::run(Scheduler& scheduler, Allocator& pin_allocator, Alloc
                 // The re-bindable inputs: rewritten on every (re-)execution.
                 bind(rng, *r.context, /*once_only=*/false);
 
-                if (ggml_backend_sched_graph_compute(*scheduler, gf) != GGML_STATUS_SUCCESS)
-                    throw std::runtime_error("run(): ggml_backend_sched_graph_compute failed");
+                if (ggml_backend_graph_compute(*backend, gf) != GGML_STATUS_SUCCESS)
+                    throw std::runtime_error("run(): ggml_backend_graph_compute failed");
 
                 // TODO: use saves instead!
                 // Feed the result back as the input for the next execution
@@ -151,8 +118,8 @@ void ExecutionRuntime::run(Scheduler& scheduler, Allocator& pin_allocator, Alloc
             // (only) execution.
             bind(rng, *r.context, /*once_only=*/false);
 
-            if (ggml_backend_sched_graph_compute(*scheduler, gf) != GGML_STATUS_SUCCESS)
-                throw std::runtime_error("run(): ggml_backend_sched_graph_compute failed");
+            if (ggml_backend_graph_compute(*backend, gf) != GGML_STATUS_SUCCESS)
+                throw std::runtime_error("run(): ggml_backend_graph_compute failed");
 
             if (progress) {
                 progress->next();
@@ -196,21 +163,6 @@ void ExecutionRuntime::copy(const Tensor& src, const Tensor& dst) const {
     ggml_backend_tensor_set(*dst, data.data(), 0, nbytes);
 
     std::cerr << "copied: " << src.name() << " -> " << dst.name() << std::endl;
-}
-
-void ExecutionRuntime::pin(Scheduler& scheduler, const Device& device, Context& context) const {
-    for (auto& backend : scheduler.backends()) {
-
-        // Assign all input tensors that would be scheduler allocated to a given device.
-        if (backend && *backend->device() == *device) {
-            for (auto tensor = ggml_get_first_tensor(*context); tensor != nullptr; tensor = ggml_get_next_tensor(*context, tensor)) {
-                if (tensor->flags & GGML_TENSOR_FLAG_INPUT && tensor->buffer == nullptr)
-                    ggml_backend_sched_set_tensor_backend(*scheduler, tensor, **backend);
-            }
-
-            break;
-        }
-    }
 }
 
 // -------------------------------------------------------------------------

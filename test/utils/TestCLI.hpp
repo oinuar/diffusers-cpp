@@ -4,7 +4,6 @@
 #include "ggml/Computation.hpp"
 #include "ggml/Backend.hpp"
 #include "ggml/MetaDevice.hpp"
-#include "ggml/Scheduler.hpp"
 #include "ggml/Allocator.hpp"
 #include "ggml/ShardingRuntime.hpp"
 #include "ggml/ShardingAllocator.hpp"
@@ -43,9 +42,7 @@ public:
                 devices.push_back(*cpu);
 
             MetaDevice meta(std::move(devices));
-            Backend meta_backend(meta);
-            Backend cpu_backend(cpu);
-            Scheduler scheduler({&meta_backend, &cpu_backend}, get_graph_size());
+            Backend backend(meta);
 
             // Sharding is only relevant for the Meta device: the other modes
             // of execution run the whole graph on one device and skip the
@@ -57,31 +54,27 @@ public:
             // Activate sharding runtime for all subsequent scopes.
             Scope scope(runtime);
 
-            return run(scheduler, weights_allocator, state_allocator, compute(weights_context));
+            return run(backend, weights_allocator, state_allocator, compute(weights_context));
         }
 
         // Use single GPU device.
         if (use_gpu) {
-            Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
             Device gpu(GGML_BACKEND_DEVICE_TYPE_GPU);
-            Backend cpu_backend(cpu);
-            Backend gpu_backend(gpu);
-            Scheduler scheduler({&gpu_backend, &cpu_backend}, get_graph_size());
+            Backend backend(gpu);
 
             Allocator weights_allocator(gpu, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
             Allocator state_allocator(gpu, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
 
-            return run(scheduler, weights_allocator, state_allocator, compute(weights_context));
+            return run(backend, weights_allocator, state_allocator, compute(weights_context));
         }
 
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-        Backend cpu_backend(cpu);
-        Scheduler scheduler({&cpu_backend}, get_graph_size());
+        Backend backend(cpu);
 
         Allocator weights_allocator(cpu, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
         Allocator state_allocator(cpu, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
 
-        return run(scheduler, weights_allocator, state_allocator, compute(weights_context));
+        return run(backend, weights_allocator, state_allocator, compute(weights_context));
     }
 
     virtual Computation<std::vector<Tensor>> compute(Context& weights_context) = 0;
@@ -168,9 +161,9 @@ public:
         std::string prefix_;
     };
 public:
-    virtual int run(Scheduler& scheduler, Allocator& weights_allocator, Allocator& state_allocator, Computation<std::vector<Tensor>> computation) {
+    virtual int run(Backend& backend, Allocator& weights_allocator, Allocator& state_allocator, Computation<std::vector<Tensor>> computation) {
         std::mt19937 rng;
-        auto results = ExecutionRuntime::Default.run(scheduler, weights_allocator, state_allocator, rng, computation);
+        auto results = ExecutionRuntime::Default.run(backend, weights_allocator, state_allocator, rng, computation);
 
         for (auto& tensor : results) {
             switch (tensor.dtype()) {

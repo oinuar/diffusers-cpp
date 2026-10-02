@@ -659,11 +659,11 @@ public:
     // Flux2KleinPipeline_call returns the raw decoded values (B, 3, H, W).
     // Computation<Image> is not supported, so the conversion to RGB images
     // (H, W, 3) is performed on the CPU side after execution.
-    virtual int run(Scheduler& scheduler, Allocator& weights_allocator, Allocator& state_allocator, Computation<std::vector<Tensor>> computation) override {
+    virtual int run(Backend& backend, Allocator& weights_allocator, Allocator& state_allocator, Computation<std::vector<Tensor>> computation) override {
         if (args_.get(0) == "Flux2KleinPipeline_call") {
             std::mt19937 rng;
             //ProgressBar progress("Testing");
-            auto results = ExecutionRuntime::Default.run(scheduler, weights_allocator, state_allocator, rng, computation);
+            auto results = ExecutionRuntime::Default.run(backend, weights_allocator, state_allocator, rng, computation);
 
             if (results.size() != 1)
                 throw std::runtime_error("Flux2KleinPipeline_call: expected exactly one result tensor");
@@ -689,7 +689,7 @@ public:
             return EXIT_SUCCESS;
         }
 
-        return TestCLI::run(scheduler, weights_allocator, state_allocator, computation);
+        return TestCLI::run(backend, weights_allocator, state_allocator, computation);
     }
 
 private:

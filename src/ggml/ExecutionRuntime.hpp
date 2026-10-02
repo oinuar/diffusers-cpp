@@ -5,7 +5,7 @@
 
 class Device;
 class Allocator;
-class Scheduler;
+class Backend;
 class ProgressBar;
 
 class ExecutionRuntime : public Runtime {
@@ -13,9 +13,9 @@ public:
     static ExecutionRuntime Default;
 
     template <class T>
-    T run(Scheduler& scheduler, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, Computation<T> computation, ProgressBar* progress = nullptr) const {
+    T run(Backend& backend, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, Computation<T> computation, ProgressBar* progress = nullptr) const {
         auto desc = computation.desc();
-        run(scheduler, pin_allocator, state_allocator, rng, *desc, progress);
+        run(backend, pin_allocator, state_allocator, rng, *desc, progress);
         return *computation;
     }
 
@@ -320,6 +320,5 @@ public:
 private:
     void bind(std::mt19937& rng, Context& context, bool once_only) const;
     void copy(const Tensor& src, const Tensor& dst) const;
-    void pin(Scheduler& scheduler, const Device& device, Context& context) const;
-    void run(Scheduler& scheduler, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc, ProgressBar* progress) const;
+    void run(Backend& backend, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc, ProgressBar* progress) const;
 };

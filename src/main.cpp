@@ -1,6 +1,5 @@
 #include "ggml/Backend.hpp"
 #include "ggml/Runtime.hpp"
-#include "ggml/Scheduler.hpp"
 #include "ggml/Allocator.hpp"
 #include "ggml/Computation.hpp"
 #include "ggml/GGUFLoaderVisitor.hpp"
@@ -17,7 +16,6 @@ int main() {
 
     Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
     Backend cpu_backend(cpu);
-    Scheduler scheduler({&cpu_backend}, 65536);
     Context weights_context(65536);
     Context context(65536);
 

@@ -168,7 +168,6 @@ public:
             }
             ss << "=== plan (total cost " << std::fixed << std::setprecision(2) << total_cost << ") ===\n";
 
-            #if 0
             for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
                 const PlanNode& pn = *it;
 
@@ -188,7 +187,6 @@ public:
                 }
                 ss << "\n";
             }
-            #endif
 
             if (!callback_states.empty()) {
                 ss << "meta device callback table (ggml_backend_meta_split_state per static tensor):\n";

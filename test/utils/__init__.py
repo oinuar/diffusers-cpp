@@ -6,20 +6,41 @@ import torch
 
 class TestCase(unittest.TestCase):
     def cli(self, *args: str) -> list:
-        cli_bin = os.environ['CLI']
-
         command = [
             *args,
             '--runner-n_devices', str(self.n_devices()),
             '--runner-use_gpu', str(self.use_gpu()).lower()
         ]
 
-        command_w_args = " ".join([cli_bin] + list(map(lambda x: x if x.startswith("--") else f'"{x}"', command)))
+        command_w_args = " ".join([self.cli_bin()] + list(map(lambda x: x if x.startswith("--") else f'"{x}"', command)))
 
-        result = subprocess.run([cli_bin] + command, capture_output=True, text=True, timeout=30)
+        result = subprocess.run([self.cli_bin()] + command, capture_output=True, text=True, timeout=30)
 
+        # If command failed, write a reproduction script.
         if result.returncode != 0:
-            raise RuntimeError(f'{command_w_args} failed (rc={result.returncode}):\n{result.stderr}')
+            os.makedirs(os.path.dirname(self.repro_script_path()), exist_ok=True)
+
+            with open(self.repro_script_path(), 'w') as f:
+                f.write(f"""
+import os, sys, subprocess
+
+command = [{repr(self.cli_bin())}] + {repr(command)}
+
+env = {{
+    # Put your debbing env variables here
+}}
+
+result = subprocess.run(
+    command,
+    stdin=sys.stdin,
+    stdout=sys.stdout,
+    stderr=sys.stderr,
+    env=env
+)
+
+sys.exit(result.returncode)
+""")
+            raise RuntimeError(f'{self.cli_bin()} failed (rc={result.returncode}):\n{result.stderr}\nRun this command to reproduce the exact failure:\n    uv run {self.repro_script_path()}')
 
         outputs = []
         for line in result.stdout.strip().split('\n'):
@@ -38,6 +59,12 @@ class TestCase(unittest.TestCase):
             print(result.stderr)
 
         return outputs
+
+    def cli_bin(self):
+        return os.environ['CLI']
+
+    def repro_script_path(self):
+        return os.path.join(os.environ['REPRO_DIR'], os.environ['TEST_ID'] + ".py")
 
     def n_devices(self):
         return int(os.environ.get('N_DEVICES', '1'))

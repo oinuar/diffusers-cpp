@@ -3,6 +3,7 @@
 #include "ggml/Device.hpp"
 #include "ggml/ExecutionRuntime.hpp"
 #include <iostream>
+#include <vector>
 
 static std::string format_bytes(size_t bytes) {
     if (bytes >= 1024 * 1024) {
@@ -33,13 +34,59 @@ Allocator::Allocator(Device& device, const std::optional<ggml_backend_buffer_usa
 
 void Allocator::allocate(Context& context) {
     auto buft = device_.buffer_type();
-    auto buff = ggml_backend_alloc_ctx_tensors_from_buft(*context, buft);
+    
+    // Calculate the total size required for unallocated tensors in the context.
+    // This helper function calculates the size without actually allocating memory.
+    size_t size = ggml_backend_alloc_ctx_tensors_from_buft_size(*context, buft);
+    
+    // If size is 0, there might be no tensors to allocate, or only views that need initialization
+    if (size == 0) {
+        for (auto t = ggml_get_first_tensor(*context); t != nullptr; t = ggml_get_next_tensor(*context, t)) {
+            if (t->data == nullptr && t->view_src != nullptr && t->buffer == nullptr) {
+                ggml_backend_view_init(t);
+            }
+        }
+        return;
+    }
 
-    // NULL is returned when every tensor in the context already has a buffer,
-    // e.g. when the graph is built entirely in another context. There is
-    // nothing to allocate in that case.
+    // 1. Manually allocate the buffer
+    auto buff = ggml_backend_buft_alloc_buffer(buft, size);
     if (buff == nullptr)
         return;
+
+    // 2. Set the usage BEFORE initializing the tensors.
+    // This is crucial for the Meta backend to see the correct usage (COMPUTE or WEIGHTS) 
+    // when it initializes the tensors and derives split rules.
+    if (usage_)
+        ggml_backend_buffer_set_usage(buff, *usage_);
+
+    // 3. Use ggml_tallocr to assign and initialize tensors into the pre-allocated buffer
+    auto tallocr = ggml_tallocr_new(buff);
+
+    for (auto t = ggml_get_first_tensor(*context); t != nullptr; t = ggml_get_next_tensor(*context, t)) {
+        if (t->data == nullptr) {
+            if (t->view_src == nullptr) {
+                // Allocate standard tensor
+                if (ggml_tallocr_alloc(&tallocr, t) != GGML_STATUS_SUCCESS) {
+                    std::cerr << "Failed to allocate tensor " << ggml_get_name(t) << std::endl;
+                    return;
+                }
+            } else if (t->buffer == nullptr) {
+                // Initialize view tensor
+                if (ggml_backend_view_init(t) != GGML_STATUS_SUCCESS) {
+                    std::cerr << "Failed to initialize view tensor " << ggml_get_name(t) << std::endl;
+                    return;
+                }
+            }
+        } else {
+            if (t->view_src != nullptr && t->buffer == nullptr) {
+                if (ggml_backend_view_init(t) != GGML_STATUS_SUCCESS) {
+                    std::cerr << "Failed to initialize pre-allocated view tensor " << ggml_get_name(t) << std::endl;
+                    return;
+                }
+            }
+        }
+    }
 
     auto& buffer = buffers_.emplace_back(buff, usage_);
 

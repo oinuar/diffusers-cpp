@@ -364,7 +364,7 @@ for cls in tree.body:
 
                 set_tests_properties("${INDIVIDUAL_TEST_ID}" PROPERTIES
                     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/test"
-                    ENVIRONMENT "CLI=$<TARGET_FILE:${CLI_TARGET}>;PYTHONDONTWRITEBYTECODE=1"
+                    ENVIRONMENT "CLI=$<TARGET_FILE:${CLI_TARGET}>;TEST_ID=${INDIVIDUAL_TEST_ID};REPRO_DIR=${CMAKE_BINARY_DIR}/test-repro;PYTHONDONTWRITEBYTECODE=1"
                 )
             endforeach()
         endif()

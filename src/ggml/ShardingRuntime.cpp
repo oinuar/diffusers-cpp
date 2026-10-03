@@ -52,13 +52,24 @@ std::vector<ShardingRuntime::Candidate> ShardingRuntime::mul_mat_candidates(cons
 // ============================================================================
 bool ShardingRuntime::plan(Plan** plan) {
     // Solves the WHOLE trace in one go: a single DP over every traced
-    // tensor, the goal roots being the outputs the trace marked with
+    // tensor. The goal roots are the outputs the trace marked with
     // set_output() (goal_roots()), each required exactly replicated (R)
     // -- the only state a graph output can be read back in. The roots
     // share the one DP memo, so a tensor shared by several roots (a
     // parameter consumed by several contexts' forwards) is ONE node,
     // planned exactly once, for all of them. The DP is strictly acyclic
     // (topological order), so the memoized recursion terminates.
+    //
+    // The trace's sinks -- the tensors no other traced tensor consumes --
+    // are planned as well: the allocator assigns every tensor of the
+    // context to the meta buffer (not only the ones reachable from the
+    // goal roots), and the meta backend derives a split state for every
+    // tensor it is assigned. A dead end left unplanned keeps its weights
+    // at the default MIRRORED split, and the meta's derivation can reach
+    // a state the op's rules reject (a dead-end flash_attn hard-requires
+    // its q/k/v sharded S(2) -- MIRRORED aborts its assert). Nobody reads
+    // a sink, so it is required in no particular state: any state it can
+    // be produced in is fine, and no bridge is needed.
 
     Plan new_plan;
     new_plan.device_count = device_.count();
@@ -72,10 +83,15 @@ bool ShardingRuntime::plan(Plan** plan) {
         return true;
     }
 
+    // The trace's sinks (see the comment above): they join the goal
+    // roots as planning targets, each producible in any state.
+    const std::set<int> sinks = compute_sinks();
+
     // A re-plan with an unchanged trace and cost model reuses the last
     // plan (the DP is not re-run): repeated allocations with the same
     // trace do not re-solve it.
-    if (last_plan_ && !last_plan_->infeasible && planned_trace_size_ == nodes_.size() && planned_roots_ == roots) {
+    if (last_plan_ && !last_plan_->infeasible && planned_trace_size_ == nodes_.size() &&
+        planned_roots_ == roots && planned_sinks_ == sinks) {
         *plan = &last_plan_.value();
         return false;
     }
@@ -83,9 +99,11 @@ bool ShardingRuntime::plan(Plan** plan) {
     const Dist root_dist = Dist::replicated();
 
     // One DP for the whole trace: the single memo is shared by every goal
-    // root (a shared tensor is planned once, for all of them).
+    // root and sink (a shared tensor is planned once, for all of them).
     exact_memo_.clear();
     best_memo_.clear();
+    sink_memo_.clear();
+    sink_required_.clear();
     for (const int root : roots) {
         const BestState& root_state = best(root, root_dist);   // roots are exact-only (no bridge)
         if (!root_state.feasible) {
@@ -97,12 +115,37 @@ bool ShardingRuntime::plan(Plan** plan) {
         }
     }
 
-    // The plan itself: DFS from every goal root. A tensor is planned
-    // (emitted) exactly once, in the distribution its first consumer
-    // needs, and every later consumer is served from that same state.
+    // The sinks: producible in some state. The chosen production is
+    // recorded so emit() produces it exactly (a sink is never read:
+    // no bridge).
+    for (const int sink : sinks) {
+        if (roots.count(sink))
+            continue;   // planned as a goal root (required exactly R)
+        const SinkState& s = sink_state(sink);
+        if (!s.feasible) {
+            new_plan.infeasible = true;
+            new_plan.infeasible_reason = "a dead-end subgraph (a tensor no output consumes) cannot be produced in any split state; "
+                "the meta backend derives a split state for every tensor of the context, so the dead end must be plannable. " +
+                infeasibility_reason(root_dist);
+            last_plan_ = new_plan;
+            *plan = &last_plan_.value();
+            return true;
+        }
+        sink_required_[sink] = s.produced;
+    }
+
+    // The plan itself: DFS from every goal root and sink. A tensor is
+    // planned (emitted) exactly once, in the distribution its first
+    // consumer needs, and every later consumer is served from that same
+    // state.
     std::set<std::pair<int, Dist>> emitted;
     for (const int root : roots)
         emit(root, root_dist, new_plan, emitted);
+    for (const int sink : sinks) {
+        if (roots.count(sink))
+            continue;
+        emit(sink, sink_required_[sink], new_plan, emitted);
+    }
 
     // The meta backend derives exactly one split state per tensor (its
     // storage layout), so a tensor the plan emitted with two different
@@ -161,6 +204,7 @@ bool ShardingRuntime::plan(Plan** plan) {
 
     planned_trace_size_ = nodes_.size();
     planned_roots_ = roots;
+    planned_sinks_ = sinks;
 
     last_plan_ = new_plan;
     *plan = &last_plan_.value();

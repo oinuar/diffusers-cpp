@@ -127,6 +127,9 @@ public:
         decisions_.clear();
         exact_memo_.clear();
         best_memo_.clear();
+        sink_memo_.clear();
+        sink_required_.clear();
+        planned_sinks_.clear();
         last_plan_.reset();
     }
 
@@ -210,9 +213,20 @@ public:
     };
 
     // Solves the WHOLE trace in one go: a single DP over every traced
-    // tensor, the goal roots being the outputs the trace marked with
-    // set_output() (each required exactly in R; a tensor shared by
-    // several roots is planned exactly once, for all of them). Returns
+    // tensor. The goal roots are the outputs the trace marked with
+    // set_output() (each required exactly in R -- the only state a graph
+    // output can be read back in; a tensor shared by several roots is
+    // planned exactly once, for all of them). The trace's sinks -- the
+    // tensors no other traced tensor consumes -- are planned as well, in
+    // any state they can be produced in: the allocator assigns EVERY
+    // tensor of the context to the meta buffer (not only the ones
+    // reachable from the goal roots), and the meta backend derives a
+    // split state for every tensor it is assigned. A dead end left
+    // unplanned keeps its weights at the default MIRRORED split and can
+    // derive an illegal state (a dead-end flash_attn hard-requires its
+    // q/k/v sharded S(2) -- MIRRORED aborts its assert). Nobody reads a
+    // sink, so it is required in no particular state and needs no bridge.
+    // Returns
     // the plan: the distribution every planned tensor is produced in,
     // the P -> R bridges, and the meta device's callback states for the
     // params -- whose splits are committed to the device's split table,
@@ -937,9 +951,9 @@ private:
     // Dynamic program
     // ---------------------------------------------------------------------
     // Tree DP over the whole trace, solved once per plan() (one go): a
-    // single memo shared by every goal root, so F(node, d) pays every
-    // shared input once per consumer (a sound bound, used only to select
-    // a plan); the plan recomputes the emitted plan's true per-tensor
+    // single memo shared by every goal root and sink, so F(node, d) pays
+    // every shared input once per consumer (a sound bound, used only to
+    // select a plan); the plan recomputes the emitted plan's true per-tensor
     // cost. A tensor shared by several roots (a param consumed by several
     // contexts' forwards) is ONE node here, so its storage is paid exactly
     // once, for all of them, and its split is decided exactly once.
@@ -957,6 +971,17 @@ private:
     struct BestState {
         bool done = false;
         bool feasible = false;   // some producible d' is exact-feasible and bridges to d
+        double cost = kInf;      // min cost over feasible productions (capped)
+        Dist produced;
+    };
+
+    // H(node): a trace sink (no in-trace consumer) is producible in some
+    // state. Nobody reads a sink, so it needs no bridge and no particular
+    // distribution: any exact-feasible production qualifies; the min-cost
+    // one is the production emit() commits to.
+    struct SinkState {
+        bool done = false;
+        bool feasible = false;
         double cost = kInf;      // min cost over feasible productions (capped)
         Dist produced;
     };
@@ -1055,6 +1080,39 @@ private:
         return m;
     }
 
+    // The trace's sinks: the traced tensors no other traced tensor
+    // consumes (goal roots among them included -- plan() plans those as
+    // roots, required exactly R).
+    std::set<int> compute_sinks() const {
+        std::vector<int> consumers(nodes_.size(), 0);
+        for (const TraceNode& n : nodes_)
+            for (const int in : n.inputs)
+                if (in >= 0 && in < (int)consumers.size())
+                    ++consumers[in];
+        std::set<int> sinks;
+        for (int i = 0; i < (int)nodes_.size(); ++i)
+            if (consumers[i] == 0)
+                sinks.insert(i);
+        return sinks;
+    }
+
+    // H(node): the min-cost production of a trace sink (see SinkState).
+    SinkState& sink_state(int node) {
+        auto& m = sink_memo_[node];
+        if (m.done) return m;
+        m.done = true;
+
+        for (const Candidate& cand : nodes_[node].candidates) {
+            const ExactState& e = exact(node, cand.output);
+            if (!e.feasible) continue;
+            if (e.cost < m.cost) {
+                m.feasible = true;
+                m.cost = e.cost;
+                m.produced = cand.output;
+            }
+        }
+        return m;
+    }
     void emit(int node, const Dist& required, Plan& plan, std::set<std::pair<int, Dist>>& emitted) {
         // A tensor consumed several times (even by different roots) in the
         // same distribution is planned once. A tensor needed in two
@@ -1063,20 +1121,32 @@ private:
         // tensor.
         if (!emitted.insert({node, required}).second) return;
 
-        const BestState& b = best(node, required);
-        const Bridge br = bridge(b.produced, required);
+        Dist produced;
+        Bridge br;
+        if (sink_required_.count(node) != 0 && goal_roots_.count(node) == 0) {
+            // A trace sink: produced exactly in the state sink_state()
+            // chose (passed as `required`). Nobody reads it, so there is
+            // no bridge (a bridge would be collective traffic the sink
+            // never pays for).
+            produced = required;
+            br = {"None", 0.0};
+        } else {
+            const BestState& b = best(node, required);
+            produced = b.produced;
+            br = bridge(produced, required);
+        }
 
         PlanNode pn;
         pn.id = node;
         pn.op_name = nodes_[node].op_name;
         pn.tensor_name = nodes_[node].is_param ? param_name(node) : "";
-        pn.produced = b.produced;
+        pn.produced = produced;
         pn.required = required;
         pn.bridge = std::move(br.name);
         pn.bridge_cost = br.cost;
         plan.nodes.push_back(std::move(pn));
 
-        const ExactState& e = exact(node, b.produced);
+        const ExactState& e = exact(node, produced);
         if (e.cand < 0) return;
         const Candidate& cand = nodes_[node].candidates[e.cand];
         const TraceNode& n = nodes_[node];
@@ -1141,6 +1211,9 @@ private:
 
     std::map<int, std::map<Dist, ExactState>> exact_memo_;
     std::map<int, std::map<Dist, BestState>> best_memo_;
+    std::map<int, SinkState> sink_memo_;
+    // The production a sink is emitted in (set by plan() before emit()).
+    std::map<int, Dist> sink_required_;
 
     // The splits this runtime committed to the meta device's split table
     // (retired on re-plan and on reset()).
@@ -1154,4 +1227,5 @@ private:
     // with the same trace).
     size_t planned_trace_size_ = 0;
     std::set<int> planned_roots_;
+    std::set<int> planned_sinks_;
 };

@@ -95,7 +95,7 @@ public:
                 result.scalar = false;
             }
 
-            std::cerr << option_ << ": shape = " << result.shape.to_string() << ", data size = " << result.values.size() << ", dtype = " << ggml_type_name(dtype_) << std::endl;
+            //std::cerr << option_ << ": shape = " << result.shape.to_string() << ", data size = " << result.values.size() << ", dtype = " << ggml_type_name(dtype_) << std::endl;
 
             return {result.shape, std::move(result.values)};
         }

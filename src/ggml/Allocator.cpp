@@ -16,13 +16,11 @@ static std::string format_bytes(size_t bytes) {
     return std::to_string(bytes) + " B";
 }
 
-static size_t count_tensors(ggml_context * ctx, ggml_backend_buffer_t buffer, std::string* names) {
+static size_t count_tensors(ggml_context * ctx, ggml_backend_buffer_t buffer) {
     size_t n = 0;
     for (auto t = ggml_get_first_tensor(ctx); t != nullptr; t = ggml_get_next_tensor(ctx, t)) {
-        if (t->buffer == buffer) {
-            *names += "  - " + std::string(ggml_get_name(t)) + "\n";
+        if (t->buffer == buffer)
             ++n;
-        }
     }
     return n;
 }
@@ -54,6 +52,19 @@ void Allocator::allocate(Context& context) {
     if (buff == nullptr)
         return;
 
+    const char* usages[] = {
+        " (any)",
+        " (weights)",
+        " (compute)"
+    };
+
+    std::cerr << "Allocating total of "
+              << format_bytes(size)
+              << " tensors to "
+              << ggml_backend_dev_name(*device_)
+              << (usage_ ? usages[*usage_] : "")
+              << std::endl;
+
     // 2. Set the usage BEFORE initializing the tensors.
     // This is crucial for the Meta backend to see the correct usage (COMPUTE or WEIGHTS) 
     // when it initializes the tensors and derives split rules.
@@ -62,6 +73,7 @@ void Allocator::allocate(Context& context) {
 
     // 3. Use ggml_tallocr to assign and initialize tensors into the pre-allocated buffer
     auto tallocr = ggml_tallocr_new(buff);
+    size_t count = 0;
 
     for (auto t = ggml_get_first_tensor(*context); t != nullptr; t = ggml_get_next_tensor(*context, t)) {
         if (t->data == nullptr) {
@@ -78,6 +90,9 @@ void Allocator::allocate(Context& context) {
                     return;
                 }
             }
+
+            //std::cerr << "   - Allocated " << ggml_get_name(t) << ' ' << format_bytes(ggml_nbytes(t)) << std::endl;
+            ++count;
         } else {
             if (t->view_src != nullptr && t->buffer == nullptr) {
                 if (ggml_backend_view_init(t) != GGML_STATUS_SUCCESS) {
@@ -90,22 +105,12 @@ void Allocator::allocate(Context& context) {
 
     auto& buffer = buffers_.emplace_back(buff, usage_);
 
-    const char* usages[] = {
-        " (any)",
-        " (weights)",
-        " (compute)"
-    };
-
-    std::string names;
-
-    std::cerr << "allocated "
-            << count_tensors(*context, *buffer, &names)
+    std::cerr << "Allocated "
+            << count
             << " tensors to a "
             << ggml_backend_dev_name(*device_)
             << " buffer of size "
             << format_bytes(ggml_backend_buffer_get_size(*buffer))
             << (usage_ ? usages[*usage_] : "")
-            //<< ':'
             << std::endl;
-            //<< names;
 }

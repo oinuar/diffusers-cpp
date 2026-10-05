@@ -16,9 +16,12 @@ Tensor FlashAttentionOp::operator ()(
     /*
      * ggml_flash_attn_ext() requires the mask to:
      *
-     *   1. Have the full attention score shape:
+     *   1. Have the shape:
      *
-     *          (B, H, Q, K)
+     *          (B, 1, Q, K)
+     *
+     *      The head dimension must be exactly 1: the flash attention
+     *      kernels broadcast the mask across attention heads themselves.
      *
      *      PyTorch allows broadcasting, for example:
      *
@@ -37,7 +40,7 @@ Tensor FlashAttentionOp::operator ()(
     if (mask) {
         auto attention_shape = Tensor::Shape({
             q.shape()[0], // B: batch size
-            q.shape()[1], // H: number of heads
+            1,            // H: 1 (the kernel broadcasts across heads)
             q.shape()[2], // Q: query sequence length
             k.shape()[2], // K: key sequence length
         });

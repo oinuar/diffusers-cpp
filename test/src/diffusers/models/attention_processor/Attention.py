@@ -7,7 +7,7 @@ class TestNN_Attention(TestCase):
         model = Attention(
             query_dim=8,
             heads=2,
-            dim_head=8
+            dim_head=40
         )
 
         hidden_states = torch.randn(
@@ -22,7 +22,7 @@ class TestNN_Attention(TestCase):
             "Attention",
             "--query_dim", "8",
             "--heads", "2",
-            "--dim_head", "8",
+            "--dim_head", "40",
             "--hidden_states", str(hidden_states.tolist()),
             *self.params(model),
         )
@@ -33,7 +33,7 @@ class TestNN_Attention(TestCase):
         model = Attention(
             query_dim=16,
             heads=4,
-            dim_head=4,
+            dim_head=40,
         )
 
         hidden_states = torch.randn(
@@ -48,7 +48,7 @@ class TestNN_Attention(TestCase):
             "Attention",
             "--query_dim", "16",
             "--heads", "4",
-            "--dim_head", "4",
+            "--dim_head", "40",
             "--hidden_states", str(hidden_states.tolist()),
             *self.params(model),
         )
@@ -59,7 +59,7 @@ class TestNN_Attention(TestCase):
         model = Attention(
             query_dim=4,
             heads=2,
-            dim_head=4,
+            dim_head=40,
         )
 
         hidden_states = torch.randn(
@@ -74,7 +74,7 @@ class TestNN_Attention(TestCase):
             "Attention",
             "--query_dim", "4",
             "--heads", "2",
-            "--dim_head", "4",
+            "--dim_head", "40",
             "--hidden_states", str(hidden_states.tolist()),
             *self.params(model),
        )
@@ -85,7 +85,7 @@ class TestNN_Attention(TestCase):
         model = Attention(
             query_dim=8,
             heads=2,
-            dim_head=8,
+            dim_head=40,
         )
 
         hidden_states = torch.randn(
@@ -101,7 +101,7 @@ class TestNN_Attention(TestCase):
             "Attention",
             "--query_dim", "8",
             "--heads", "2",
-            "--dim_head", "8",
+            "--dim_head", "40",
             "--hidden_states", str(hidden_states.tolist()),
             *self.params(model),
         )
@@ -112,7 +112,7 @@ class TestNN_Attention(TestCase):
         model = Attention(
             query_dim=8,
             heads=2,
-            dim_head=8,
+            dim_head=40,
             residual_connection=True
         )
 
@@ -129,7 +129,7 @@ class TestNN_Attention(TestCase):
             "Attention",
             "--query_dim", "8",
             "--heads", "2",
-            "--dim_head", "8",
+            "--dim_head", "40",
             "--residual_connection", "true",
             "--hidden_states", str(hidden_states.tolist()),
             *self.params(model),
@@ -141,7 +141,7 @@ class TestNN_Attention(TestCase):
         model = Attention(
             query_dim=8,
             heads=2,
-            dim_head=8,
+            dim_head=40,
             bias=True,
             out_bias=True
         )
@@ -159,7 +159,7 @@ class TestNN_Attention(TestCase):
             "Attention",
             "--query_dim", "8",
             "--heads", "2",
-            "--dim_head", "8",
+            "--dim_head", "40",
             "--bias", "true",
             "--out_bias", "true",
             "--hidden_states", str(hidden_states.tolist()),
@@ -172,7 +172,7 @@ class TestNN_Attention(TestCase):
         model = Attention(
             query_dim=8,
             heads=2,
-            dim_head=8,
+            dim_head=40,
             bias=True,
             out_bias=True
         )
@@ -190,7 +190,7 @@ class TestNN_Attention(TestCase):
             "Attention",
             "--query_dim", "8",
             "--heads", "2",
-            "--dim_head", "8",
+            "--dim_head", "40",
             "--bias", "true",
             "--out_bias", "true",
             "--hidden_states", str(hidden_states.tolist()),

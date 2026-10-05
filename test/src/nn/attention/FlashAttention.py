@@ -12,9 +12,9 @@ class TestFlashAttention(TestCase):
             print("Skipped because N_DEVICES > 1")
             return
 
-        q = torch.randn(1, 2, 2, 4)
-        k = torch.randn(1, 2, 2, 4)
-        v = torch.randn(1, 2, 2, 4)
+        q = torch.randn(1, 2, 2, 40)
+        k = torch.randn(1, 2, 2, 40)
+        v = torch.randn(1, 2, 2, 40)
 
         with sdpa_kernel(backends=[SDPBackend.FLASH_ATTENTION]):
             expected = F.scaled_dot_product_attention(q, k, v)

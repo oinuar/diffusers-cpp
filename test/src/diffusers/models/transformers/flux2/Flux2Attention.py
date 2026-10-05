@@ -8,7 +8,7 @@ class TestFlux2Attention(TestCase):
         model = Flux2Attention(
             query_dim=8,
             heads=2,
-            dim_head=4,
+            dim_head=40,
         )
 
         hidden_states = torch.randn(1, 3, 8)
@@ -20,7 +20,7 @@ class TestFlux2Attention(TestCase):
             "Flux2Attention",
             "--query_dim", "8",
             "--heads", "2",
-            "--dim_head", "4",
+            "--dim_head", "40",
             "--hidden_states", str(hidden_states.tolist()),
             *self.params(model),
         )
@@ -31,7 +31,7 @@ class TestFlux2Attention(TestCase):
         model = Flux2Attention(
             query_dim=16,
             heads=2,
-            dim_head=8,
+            dim_head=40,
         )
 
         head_dim = model.inner_dim // model.heads
@@ -58,7 +58,7 @@ class TestFlux2Attention(TestCase):
             "Flux2Attention",
             "--query_dim", "16",
             "--heads", "2",
-            "--dim_head", "8",
+            "--dim_head", "40",
             "--hidden_states", str(hidden_states.tolist()),
             "--image_rotary_emb-theta", "10000",
             "--image_rotary_emb-axes_dim", str(axes_dim[0]),

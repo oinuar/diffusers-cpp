@@ -1,8 +1,13 @@
+import tempfile
 from utils import TestCase
 import torch
 from diffusers.models.transformers.transformer_flux2 import Flux2Transformer2DModel
 
 class TestNNFlux2Transformer2DModel(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmpdir = tempfile.TemporaryDirectory(delete=False)
+
     def test_minimal(self):
         model = Flux2Transformer2DModel(
             patch_size=1,
@@ -10,11 +15,11 @@ class TestNNFlux2Transformer2DModel(TestCase):
             out_channels=8,
             num_layers=1,
             num_single_layers=1,
-            attention_head_dim=4,
-            num_attention_heads=2,          # inner_dim = 8
+            attention_head_dim=40,
+            num_attention_heads=2,          # inner_dim = 80
             joint_attention_dim=16,
             timestep_guidance_channels=8,
-            axes_dims_rope=(2, 2),    # sums to head_dim (=4)
+            axes_dims_rope=(20, 20),    # sums to head_dim (=40)
             guidance_embeds=False,
         )
 
@@ -53,19 +58,19 @@ class TestNNFlux2Transformer2DModel(TestCase):
             "--out_channels", "8",
             "--num_layers", "1",
             "--num_single_layers", "1",
-            "--attention_head_dim", "4",
+            "--attention_head_dim", "40",
             "--num_attention_heads", "2",
             "--joint_attention_dim", "16",
             "--timestep_guidance_channels", "8",
-            "--axes_dims_rope", "2",
-            "--axes_dims_rope", "2",
+            "--axes_dims_rope", "20",
+            "--axes_dims_rope", "20",
             "--guidance_embeds", "false",
             "--hidden_states", str(hidden_states.tolist()),
             "--encoder_hidden_states", str(encoder_hidden_states.tolist()),
             "--timestep", str(timestep.tolist()),
             "--img_ids", str(img_ids.tolist()),
             "--txt_ids", str(txt_ids.tolist()),
-            *self.params(model),
+            *self.params(model, self.tmpdir.name),
         )
 
         self.assertTensors(actual, [expected])
@@ -77,11 +82,11 @@ class TestNNFlux2Transformer2DModel(TestCase):
             out_channels=8,
             num_layers=1,
             num_single_layers=1,
-            attention_head_dim=4,
+            attention_head_dim=40,
             num_attention_heads=2,
             joint_attention_dim=16,
             timestep_guidance_channels=8,
-            axes_dims_rope=(2, 2),
+            axes_dims_rope=(20, 20),
             guidance_embeds=True,
         )
 
@@ -123,12 +128,12 @@ class TestNNFlux2Transformer2DModel(TestCase):
             "--out_channels", "8",
             "--num_layers", "1",
             "--num_single_layers", "1",
-            "--attention_head_dim", "4",
+            "--attention_head_dim", "40",
             "--num_attention_heads", "2",
             "--joint_attention_dim", "16",
             "--timestep_guidance_channels", "8",
-            "--axes_dims_rope", "2",
-            "--axes_dims_rope", "2",
+            "--axes_dims_rope", "20",
+            "--axes_dims_rope", "20",
             "--guidance_embeds", "true",
             "--hidden_states", str(hidden_states.tolist()),
             "--encoder_hidden_states", str(encoder_hidden_states.tolist()),
@@ -136,7 +141,7 @@ class TestNNFlux2Transformer2DModel(TestCase):
             "--guidance", str(guidance.tolist()),
             "--img_ids", str(img_ids.tolist()),
             "--txt_ids", str(txt_ids.tolist()),
-            *self.params(model),
+            *self.params(model, self.tmpdir.name),
         )
 
         self.assertTensors(actual, [expected])
@@ -148,11 +153,11 @@ class TestNNFlux2Transformer2DModel(TestCase):
             out_channels=8,
             num_layers=2,
             num_single_layers=2,
-            attention_head_dim=4,
-            num_attention_heads=2,          # inner_dim = 8
+            attention_head_dim=40,
+            num_attention_heads=2,          # inner_dim = 80
             joint_attention_dim=16,
             timestep_guidance_channels=8,
-            axes_dims_rope=(2, 2),    # sums to head_dim (=4)
+            axes_dims_rope=(20, 20),    # sums to head_dim (=40)
             guidance_embeds=False,
         )
 
@@ -191,19 +196,19 @@ class TestNNFlux2Transformer2DModel(TestCase):
             "--out_channels", "8",
             "--num_layers", "2",
             "--num_single_layers", "2",
-            "--attention_head_dim", "4",
+            "--attention_head_dim", "40",
             "--num_attention_heads", "2",
             "--joint_attention_dim", "16",
             "--timestep_guidance_channels", "8",
-            "--axes_dims_rope", "2",
-            "--axes_dims_rope", "2",
+            "--axes_dims_rope", "20",
+            "--axes_dims_rope", "20",
             "--guidance_embeds", "false",
             "--hidden_states", str(hidden_states.tolist()),
             "--encoder_hidden_states", str(encoder_hidden_states.tolist()),
             "--timestep", str(timestep.tolist()),
             "--img_ids", str(img_ids.tolist()),
             "--txt_ids", str(txt_ids.tolist()),
-            *self.params(model),
+            *self.params(model, self.tmpdir.name),
         )
 
         self.assertTensors(actual, [expected])

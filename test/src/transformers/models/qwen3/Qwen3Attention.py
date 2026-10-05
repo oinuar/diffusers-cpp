@@ -9,7 +9,7 @@ class TestTransformersQwen3Attention(TestCase):
             hidden_size=16,
             num_attention_heads=4,
             num_key_value_heads=2,
-            head_dim=4,
+            head_dim=40,
             max_position_embeddings=128,
             attention_dropout=0.0,
             _attn_implementation="sdpa"
@@ -40,7 +40,7 @@ class TestTransformersQwen3Attention(TestCase):
             "--hidden_size", "16",
             "--num_attention_heads", "4",
             "--num_key_value_heads", "2",
-            "--head_dim", "4",
+            "--head_dim", "40",
             "--hidden_states", str(hidden_states.tolist()),
             "--position_ids", str(position_ids.tolist()),
             "--layer_idx", "0",

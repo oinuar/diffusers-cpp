@@ -714,21 +714,25 @@ private:
             auto [shape, data] = parser.parse();
             auto inner = to_qkv_mlp_proj.inner_dim();
             auto mlp_out = to_qkv_mlp_proj.mlp_out_dim();
+
+            // The fused weight is (3 * inner + mlp_out) x query_dim, so rows
+            // of the flattened data are query_dim elements long.
+            auto query_dim = q_weight->shape()[1];
             
             q_weight->set(context().create<float>(q_weight->shape(), [=](std::mt19937&) {
-                return slice_rows(data, inner, 0, inner);
+                return slice_rows(data, query_dim, 0, inner);
             }).name(weight_path + "-q-weight"));
 
             k_weight->set(context().create<float>(k_weight->shape(), [=](std::mt19937&) {
-                return slice_rows(data, inner, inner, 2 * inner);
+                return slice_rows(data, query_dim, inner, 2 * inner);
             }).name(weight_path + "-k-weight"));
 
             v_weight->set(context().create<float>(v_weight->shape(), [=](std::mt19937&) {
-                return slice_rows(data, inner, 2 * inner, 3 * inner);
+                return slice_rows(data, query_dim, 2 * inner, 3 * inner);
             }).name(weight_path + "-v-weight"));
 
             mlp_in_weight->set(context().create<float>(mlp_in_weight->shape(), [=](std::mt19937&) {
-                return slice_rows(data, inner, 3 * inner, 3 * inner + mlp_out);
+                return slice_rows(data, query_dim, 3 * inner, 3 * inner + mlp_out);
             }).name(weight_path + "-mlp_in-weight"));
         }
 
@@ -747,12 +751,16 @@ private:
             auto inner = to_out.inner_dim();
             auto mlp_hidden = to_out.mlp_hidden_dim();
 
+            // The fused weight is (out_dim) x (inner + mlp_hidden) in the
+            // PyTorch (out_features, in_features) layout.
+            auto out_dim = attn_weight->shape()[0];
+
             attn_weight->set(context().create<float>(attn_weight->shape(), [=](std::mt19937&) {
-                return slice_cols(weight_data, inner, inner + mlp_hidden, 0, inner);
+                return slice_cols(weight_data, out_dim, inner + mlp_hidden, 0, inner);
             }).name(weight_path + "-attn-weight"));
 
             mlp_weight->set(context().create<float>(mlp_weight->shape(), [=](std::mt19937&) {
-                return slice_cols(weight_data, inner, inner + mlp_hidden, inner, inner + mlp_hidden);
+                return slice_cols(weight_data, out_dim, inner + mlp_hidden, inner, inner + mlp_hidden);
             }).name(weight_path + "-mlp-weight"));
 
             auto attn_bias = to_out.attn()->bias();

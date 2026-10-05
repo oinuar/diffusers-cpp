@@ -26,20 +26,20 @@ JSON object of name patterns; the JSON may also hold one mapping per
 model component (see --type help).
 
 Usage:
-    python convert_diffusers_safetensors_to_gguf.py <huggingface-model-id> [options]
+    python convert_hf_safetensors_to_gguf.py <huggingface-model-id> [options]
 
 Examples:
-    python convert_diffusers_safetensors_to_gguf.py black-forest-labs/FLUX.1-klein-base-9b
+    python convert_hf_safetensors_to_gguf.py black-forest-labs/FLUX.1-klein-base-9b
 
     # every tensor to Q8_0
-    python convert_diffusers_safetensors_to_gguf.py org/model --type Q8_0
+    python convert_hf_safetensors_to_gguf.py org/model --type Q8_0
 
     # per tensor: Q8_0 by default, embeddings in BF16
-    python convert_diffusers_safetensors_to_gguf.py org/model \
+    python convert_hf_safetensors_to_gguf.py org/model \
         --type '{"*": "Q8_0", "model.embed_tokens.weight": "BF16"}'
 
     # per component: different mapping per model component
-    python convert_diffusers_safetensors_to_gguf.py org/model \
+    python convert_hf_safetensors_to_gguf.py org/model \
         --type '{"transformer": {"*": "Q8_0"}, "text_encoder": "BF16"}'
 """
 from __future__ import annotations
@@ -58,7 +58,7 @@ from safetensors import safe_open
 from gguf import GGUFWriter, GGMLQuantizationType, quantize
 
 
-SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPT_DIR = Path(__file__).resolve().parent.parent / "models"
 
 
 def map_tensor_name(name):
@@ -585,7 +585,7 @@ def download_model(model_id, revision=None, download_dir: Path = SCRIPT_DIR) -> 
     """
     Download a Hugging Face model into a directory next to this script.
     """
-    download_dir = Path(download_dir)
+    download_dir = Path(download_dir) / model_id
     download_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Downloading {model_id} to {download_dir}...")
@@ -594,6 +594,7 @@ def download_model(model_id, revision=None, download_dir: Path = SCRIPT_DIR) -> 
         repo_id=model_id,
         revision=revision,
         local_dir=download_dir,
+        allow_patterns=["scheduler/**", "text_encoder/**", "tokenizer/**", "transformer/**", "vae/**"],
     )
 
     return Path(path)

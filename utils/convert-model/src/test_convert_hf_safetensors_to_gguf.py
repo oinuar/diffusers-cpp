@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Synthetic end-to-end test for convert_diffusers_safetensors_to_gguf.py (no network).
+Synthetic end-to-end test for convert_hf_safetensors_to_gguf.py (no network).
 
 Builds a fake HF-style repo:
 
@@ -25,7 +25,7 @@ Runs the converter and verifies the GGUF files (arch, names, order, shapes,
 dtypes incl. real BF16, exact values) and the removal of the safetensors.
 
 Run with:
-    python -m unittest test_convert_diffusers_safetensors_to_gguf -v
+    python -m unittest test_convert_hf_safetensors_to_gguf -v
 """
 import argparse
 import json
@@ -42,7 +42,7 @@ from safetensors.torch import save_file
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-import convert_diffusers_safetensors_to_gguf as conv
+import convert_hf_safetensors_to_gguf as conv
 from gguf import GGUFReader, GGMLQuantizationType, dequantize
 
 ROOT = HERE / "test-synthetic"

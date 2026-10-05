@@ -1,12 +1,29 @@
 #include "ggml/Backend.hpp"
 #include "ggml/Runtime.hpp"
+#include "ggml/MetaDevice.hpp"
 #include "ggml/Allocator.hpp"
 #include "ggml/Computation.hpp"
+#include "ggml/ExecutionRuntime.hpp"
+#include "ggml/ShardingRuntime.hpp"
+#include "ggml/ShardingAllocator.hpp"
 #include "ggml/GGUFLoaderVisitor.hpp"
-#include "nn/RethrowVisitor.hpp"
 #include "diffusers/pipelines/flux2/Flux2KleinPipeline.hpp"
+#include "ProgressBar.hpp"
+#include "Image.hpp"
 #include <iostream>
 #include <filesystem>
+
+static std::vector<Image> run(Backend& backend, Allocator& weights_allocator, Allocator& state_allocator, Computation<Tensor> computation) {
+    ProgressBar progress("Flux2Klein");
+    std::mt19937 rng;
+
+    auto decoded = ExecutionRuntime::Default.run(backend, weights_allocator, state_allocator, rng, computation, &progress);
+    auto data = ExecutionRuntime::Default.read<float>(decoded);
+
+    auto images = Flux2KleinPipeline::to_images(decoded.shape(), std::move(data));
+
+    return std::move(images);
+}
 
 int main() {
     ggml_time_init();
@@ -14,19 +31,27 @@ int main() {
 
     ggml_backend_load_all();
 
-    Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-    Backend cpu_backend(cpu);
-    Context weights_context(65536);
+    auto meta = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
+    Backend backend(meta);
+    ShardingRuntime runtime(ExecutionRuntime::Default, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
+    ShardingAllocator weights_allocator(runtime, meta, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+    ShardingAllocator state_allocator(runtime, meta, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
+    Scope scope(runtime);
+
     Context context(65536);
 
-    auto pipeline = std::move(Flux2KleinPipeline::from_pretrained(weights_context, weights_context, weights_context, "../utils/convert-model"));
+    auto pipeline = std::move(Flux2KleinPipeline::from_pretrained(context, context, context, "../utils/convert-model/models/black-forest-labs/FLUX.2-klein-9B"));
 
     Flux2KleinPipeline::GenerationOptions options;
     options.prompt = "a lovely cat";
     options.width = 256;
     options.height = 256;
 
-    /*auto images = pipeline(allocator, scheduler, context, weights_context, weights_context, weights_context, std::move(options));
+    auto computation = pipeline(context, context, context, std::move(options));
 
-    images[0].save("test.png");*/
+    auto images = run(backend, weights_allocator, state_allocator, computation);
+
+    images[0].save("test.png");
+
+    return EXIT_SUCCESS;
 }

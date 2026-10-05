@@ -3,9 +3,113 @@
 #include "ggml/Allocator.hpp"
 #include "nn/Parameter.hpp"
 #include "nn/ModulePath.hpp"
+#include "diffusers/models/transformers/flux2/Flux2FusedQKVProjection.hpp"
+#include "diffusers/models/transformers/flux2/Flux2FusedAttentionOutput.hpp"
 #include <string>
 #include <fstream>
 #include <iostream>
+
+// A one-shot provider that streams rows [start, end) of a 2-D GGUF tensor
+// from the file. The rows are contiguous in the file, so it is a single
+// seek + read of exactly the requested bytes.
+static Context::Provider<std::byte> read_rows(
+    const std::shared_ptr<std::ifstream>& file,
+    const GGUFLoaderVisitor::TensorInfo& tensor,
+    size_t start,
+    size_t end,
+    const std::string& name)
+{
+    auto row_bytes = ggml_row_size(tensor.type, tensor.cols);
+    auto offset = tensor.offset + static_cast<std::streamoff>(start * row_bytes);
+    auto n_bytes = (end - start) * row_bytes;
+
+    return [file, offset, n_bytes, name](std::mt19937&) {
+        std::vector<std::byte> buf(n_bytes);
+
+        file->seekg(offset, file->beg);
+
+        if (!*file)
+            throw std::runtime_error("Error while loading Tensor '" + name + "': seek failed");
+
+        file->read(reinterpret_cast<char*>(buf.data()), static_cast<std::streamsize>(n_bytes));
+
+        if (file->gcount() != static_cast<std::streamsize>(n_bytes))
+            throw std::runtime_error("Error while loading Tensor '" + name + "': read failed");
+
+        return buf;
+    };
+}
+
+// A one-shot provider that streams columns [start, end) of every row of a
+// 2-D GGUF tensor from the file: one seek + read per row. The slice
+// boundaries must fall on quantization block boundaries, so that
+// quantized types (Q8_0, ...) are sliced without dequantization.
+static Context::Provider<std::byte> read_cols(
+    const std::shared_ptr<std::ifstream>& file,
+    const GGUFLoaderVisitor::TensorInfo& tensor,
+    size_t start,
+    size_t end,
+    const std::string& name)
+{
+    auto blck = static_cast<size_t>(ggml_blck_size(tensor.type));
+    auto block_bytes = static_cast<size_t>(ggml_type_size(tensor.type));
+
+    if (start % blck != 0 || (end - start) % blck != 0)
+        throw std::runtime_error(
+            "Error while loading Tensor '" + name +
+            "': column range [" + std::to_string(start) + ", " + std::to_string(end) +
+            ") is not aligned to the quantization block size (" + std::to_string(blck) + ")");
+
+    auto row_bytes = ggml_row_size(tensor.type, tensor.cols);
+    auto slice_offset = start / blck * block_bytes;
+    auto slice_bytes = (end - start) / blck * block_bytes;
+
+    return [
+        file,
+        offset = tensor.offset,
+        rows = static_cast<size_t>(tensor.rows),
+        row_bytes,
+        slice_offset,
+        slice_bytes,
+        name
+    ](std::mt19937&) {
+        std::vector<std::byte> row(slice_bytes);
+        std::vector<std::byte> buf;
+        buf.reserve(rows * slice_bytes);
+
+        for (size_t r = 0; r < rows; ++r) {
+            file->seekg(offset + static_cast<std::streamoff>(r * row_bytes + slice_offset), file->beg);
+
+            if (!*file)
+                throw std::runtime_error("Error while loading Tensor '" + name + "': seek failed");
+
+            file->read(reinterpret_cast<char*>(row.data()), static_cast<std::streamsize>(slice_bytes));
+
+            if (file->gcount() != static_cast<std::streamsize>(slice_bytes))
+                throw std::runtime_error("Error while loading Tensor '" + name + "': read failed");
+
+            buf.insert(buf.end(), row.begin(), row.end());
+        }
+
+        return buf;
+    };
+}
+
+// Like Context::create, but for a tensor of an arbitrary GGUF type (e.g.
+// a quantized type) that is streamed from the file by a one-shot provider.
+static Tensor create_weight(
+    Context& context,
+    const std::string& name,
+    const Tensor::Shape& shape,
+    ggml_type type,
+    const Context::Provider<std::byte>& provider)
+{
+    Scope scope(context);
+    auto tensor = Tensor::empty(shape, type).input();
+    tensor.name(name);
+    context.bind<std::byte>(tensor, provider, /*once=*/true);
+    return tensor;
+}
 
 static std::optional<std::filesystem::path> find_first_gguf(const std::filesystem::path& path)
 {
@@ -88,6 +192,25 @@ void GGUFLoaderVisitor::validate() const {
         throw std::runtime_error("Error while validating the checkpoint:\n" + message);
 }
 
+GGUFLoaderVisitor::TensorInfo GGUFLoaderVisitor::load_tensor(const std::string& name) {
+    auto it = lookup_.find(name);
+
+    if (it == std::end(lookup_))
+        throw std::runtime_error("Error while loading Tensor '" + name + "': Tensor not found");
+
+    auto tensor_id = it->second;
+    lookup_.erase(it);
+
+    auto type = gguf_get_tensor_type(gguf_ctx_, tensor_id);
+    auto ne = gguf_get_tensor_ne(gguf_ctx_, tensor_id);
+
+    auto offset =
+        gguf_get_data_offset(gguf_ctx_) +
+        gguf_get_tensor_offset(gguf_ctx_, tensor_id);
+
+    return { type, ne[1], ne[0], offset };
+}
+
 void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> path) {
     ModulePath module_path;
     auto model_path = module_path(path);
@@ -154,4 +277,81 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
         }, /*once=*/true);
 
     parameter.set(tensor);
+}
+
+void GGUFLoaderVisitor::visit(Flux2FusedQKVProjection& to_qkv_mlp_proj, std::vector<std::string> path) {
+    ModulePath module_path;
+    auto weight_path = module_path(path, {}, {"weight"});
+
+    auto weight = load_tensor(weight_path);
+
+    auto q_weight = to_qkv_mlp_proj.q()->weight();
+    auto k_weight = to_qkv_mlp_proj.k()->weight();
+    auto v_weight = to_qkv_mlp_proj.v()->weight();
+    auto mlp_in_weight = to_qkv_mlp_proj.mlp_in()->weight();
+
+    auto inner = to_qkv_mlp_proj.inner_dim();
+    auto mlp_out = to_qkv_mlp_proj.mlp_out_dim();
+
+    // The fused weight is (3 * inner + mlp_out) x query_dim, so rows
+    // of the flattened data are query_dim elements long.
+    auto query_dim = q_weight->shape()[1];
+
+    if (weight.rows != 3 * inner + mlp_out || weight.cols != query_dim)
+        throw std::runtime_error(
+            "Error while loading Tensor '" + weight_path +
+            "': Parameter shape mismatch: expected " +
+            Tensor::Shape({3 * inner + mlp_out, query_dim}).to_string() +
+            ", got " + Tensor::Shape({weight.rows, weight.cols}).to_string());
+
+    q_weight->set(create_weight(context_, weight_path + "-q-weight", q_weight->shape(), weight.type,
+        read_rows(file_, weight, 0, inner, weight_path + "-q-weight")));
+
+    k_weight->set(create_weight(context_, weight_path + "-k-weight", k_weight->shape(), weight.type,
+        read_rows(file_, weight, inner, 2 * inner, weight_path + "-k-weight")));
+
+    v_weight->set(create_weight(context_, weight_path + "-v-weight", v_weight->shape(), weight.type,
+        read_rows(file_, weight, 2 * inner, 3 * inner, weight_path + "-v-weight")));
+
+    mlp_in_weight->set(create_weight(context_, weight_path + "-mlp_in-weight", mlp_in_weight->shape(), weight.type,
+        read_rows(file_, weight, 3 * inner, 3 * inner + mlp_out, weight_path + "-mlp_in-weight")));
+}
+
+void GGUFLoaderVisitor::visit(Flux2FusedAttentionOutput& to_out, std::vector<std::string> path) {
+    ModulePath module_path;
+
+    auto weight_path = module_path(path, {}, {"weight"});
+
+    auto weight = load_tensor(weight_path);
+
+    auto attn_weight = to_out.attn()->weight();
+    auto mlp_weight = to_out.mlp()->weight();
+
+    auto inner = to_out.inner_dim();
+    auto mlp_hidden = to_out.mlp_hidden_dim();
+
+    // The fused weight is (out_dim) x (inner + mlp_hidden) in the
+    // PyTorch (out_features, in_features) layout.
+    auto out_dim = attn_weight->shape()[0];
+
+    if (weight.rows != out_dim || weight.cols != inner + mlp_hidden)
+        throw std::runtime_error(
+            "Error while loading Tensor '" + weight_path +
+            "': Parameter shape mismatch: expected " +
+            Tensor::Shape({out_dim, inner + mlp_hidden}).to_string() +
+            ", got " + Tensor::Shape({weight.rows, weight.cols}).to_string());
+
+    attn_weight->set(create_weight(context_, weight_path + "-attn-weight", attn_weight->shape(), weight.type,
+        read_cols(file_, weight, 0, inner, weight_path + "-attn-weight")));
+
+    mlp_weight->set(create_weight(context_, weight_path + "-mlp-weight", mlp_weight->shape(), weight.type,
+        read_cols(file_, weight, inner, inner + mlp_hidden, weight_path + "-mlp-weight")));
+
+    auto attn_bias = to_out.attn()->bias();
+
+    if (attn_bias) {
+        auto bias_path = path;
+        bias_path.push_back("bias");
+        visit(*attn_bias, std::move(bias_path));
+    }
 }

@@ -1,50 +1,57 @@
 #include "ggml/ShardingRuntime.hpp"
+#include <cmath>
+#include <cstdlib>
 
 // ShardingRuntime candidate generation: exactly the states the meta backend
-// accepts (see the per-op rules in the file header), priced with the
-// weights the engine was constructed with.
-double ShardingRuntime::w_comp() const { return w_comp_; }
-double ShardingRuntime::sharded_comp() const { return w_comp_ / (double)n_devices_; }
+// accepts (see the per-op rules in the file header). The DP prices a
+// candidate with the sum of its inputs' preference ranks (Dist::rank()):
+// sharded (any S) beats partial (P), partial beats replicated (R),
+// whenever all of them are feasible.
 
 std::vector<ShardingRuntime::Candidate> ShardingRuntime::param_candidates(int rank) const {
     std::vector<Candidate> cands;
-    cands.push_back({Dist::replicated(), {}, (double)n_devices_ * w_mem_});   // full replica on every device
+    cands.push_back({Dist::replicated(), {}});   // full replica on every device
     for (int a = 0; a < rank; ++a)
-        cands.push_back({Dist::shard(a), {}, w_mem_});            // the weight split across devices
+        cands.push_back({Dist::shard(a), {}});   // the weight split across devices
     return cands;
 }
 
-std::vector<ShardingRuntime::Candidate> ShardingRuntime::carry_over_candidates(int rank, double cost) const {
+std::vector<ShardingRuntime::Candidate> ShardingRuntime::carry_over_candidates(int rank) const {
     std::vector<Candidate> cands;
-    cands.push_back({Dist::replicated(), {Dist::replicated()}, cost});
+    cands.push_back({Dist::replicated(), {Dist::replicated()}});
     for (int a = 0; a < rank; ++a)
-        cands.push_back({Dist::shard(a), {Dist::shard(a)}, cost / (double)n_devices_});
+        cands.push_back({Dist::shard(a), {Dist::shard(a)}});
     return cands;
 }
 
 std::vector<ShardingRuntime::Candidate> ShardingRuntime::binary_candidates(const TraceNode& lhs, const TraceNode& rhs, int out_rank) const {
     std::vector<Candidate> cands;
-    cands.push_back({Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp_});
+    cands.push_back({Dist::replicated(), {Dist::replicated(), Dist::replicated()}});
     for (int a = 0; a < out_rank && a < lhs.rank; ++a) {
-        if (a < rhs.rank)
-            cands.push_back({Dist::shard(a), {Dist::shard(a), Dist::shard(a)}, sharded_comp()});
-        // The 2nd operand's dim a is size 1: it is a broadcast (the
-        // meta's handle_bin_bcast keeps the 1st operand's shard).
-        if (rhs.ne[a] == 1)
-            cands.push_back({Dist::shard(a), {Dist::shard(a), Dist::replicated()}, sharded_comp()});
+        if (rhs.ne[a] == 1) {
+            // The 2nd operand's dim a is size 1: it is a broadcast (the
+            // meta's handle_bin_bcast keeps the 1st operand's shard and
+            // requires the size-1 operand to stay mirrored).
+            cands.push_back({Dist::shard(a), {Dist::shard(a), Dist::replicated()}});
+        } else if (a < rhs.rank) {
+            // The 2nd operand's dim a is real: the meta's handle_bin_bcast
+            // carries the shard only when both operands are sharded along
+            // the same axis.
+            cands.push_back({Dist::shard(a), {Dist::shard(a), Dist::shard(a)}});
+        }
     }
     return cands;
 }
 
 std::vector<ShardingRuntime::Candidate> ShardingRuntime::mul_mat_candidates(const TraceNode& w, const TraceNode& a) const {
     std::vector<Candidate> cands;
-    cands.push_back({Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp_});
+    cands.push_back({Dist::replicated(), {Dist::replicated(), Dist::replicated()}});
     if (w.rank >= 2)
-        cands.push_back({Dist::shard(0), {Dist::shard(1), Dist::replicated()}, sharded_comp()});    // column-parallel
+        cands.push_back({Dist::shard(0), {Dist::shard(1), Dist::replicated()}});    // column-parallel
     if (a.rank >= 2)
-        cands.push_back({Dist::shard(1), {Dist::replicated(), Dist::shard(1)}, sharded_comp()});    // token-parallel
+        cands.push_back({Dist::shard(1), {Dist::replicated(), Dist::shard(1)}});    // token-parallel
     if (w.rank >= 1 && a.rank >= 1 && w.ne[0] == a.ne[0])
-        cands.push_back({Dist::partial(), {Dist::shard(0), Dist::shard(0)}, sharded_comp()}); // row-parallel
+        cands.push_back({Dist::partial(), {Dist::shard(0), Dist::shard(0)}});       // row-parallel
     return cands;
 }
 // ============================================================================
@@ -87,7 +94,7 @@ bool ShardingRuntime::plan(Plan** plan) {
     // roots as planning targets, each producible in any state.
     const std::set<int> sinks = compute_sinks();
 
-    // A re-plan with an unchanged trace and cost model reuses the last
+    // A re-plan with an unchanged trace reuses the last
     // plan (the DP is not re-run): repeated allocations with the same
     // trace do not re-solve it.
     if (last_plan_ && !last_plan_->infeasible && planned_trace_size_ == nodes_.size() &&
@@ -173,9 +180,8 @@ bool ShardingRuntime::plan(Plan** plan) {
     // the previous plan (its raw tensors may have been re-created by a
     // re-trace) and commits the new ones to the meta device's split table
     // -- the shared resource, global across contexts and allocators. The
-    // true cost: every planned tensor is paid exactly once, plus its P ->
-    // R bridge (the DP above pays a shared input once per consumer, so
-    // its total overcounts such subtrees).
+    // plan's score: every planned tensor's production is paid exactly
+    // once, plus its P -> R bridge.
     for (const auto& [t, st] : splits_)
         device_.splits().erase(t);
     splits_.clear();
@@ -183,9 +189,9 @@ bool ShardingRuntime::plan(Plan** plan) {
     decisions_.clear();
     new_plan.callback_states.clear();
 
-    double cost = 0.0;
+    int cost = 0;
     for (const PlanNode& pn : new_plan.nodes) {
-        if (nodes_[pn.id].is_param) {
+        /*if (nodes_[pn.id].is_param)*/ {
             const ggml_tensor* raw = raw_of_[pn.id];
 
             decisions_[raw] = pn.produced;
@@ -197,8 +203,9 @@ bool ShardingRuntime::plan(Plan** plan) {
 
         const ExactState& e = exact(pn.id, pn.produced);
         if (e.cand >= 0)
-            cost += nodes_[pn.id].candidates[e.cand].comp_cost;
-        cost += pn.bridge_cost;
+            cost += candidate_cost(nodes_[pn.id].candidates[e.cand]);
+        if (pn.bridge != "None")
+            cost += 1;
     }
     new_plan.total_cost = cost;
 

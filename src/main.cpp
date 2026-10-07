@@ -25,15 +25,18 @@ static std::vector<Image> run(Backend& backend, Allocator& weights_allocator, Al
     return std::move(images);
 }
 
-int main() {
+int main(int argc, char** argv) {
     ggml_time_init();
     ggml_log_set([](ggml_log_level, const char* text, void*) { std::cerr << text; }, nullptr);
 
     ggml_backend_load_all();
 
     auto meta = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
+
+    meta.tensor_split({2, 1});
+
     Backend backend(meta);
-    ShardingRuntime runtime(ExecutionRuntime::Default, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
+    ShardingRuntime runtime(ExecutionRuntime::Default, meta);
     ShardingAllocator weights_allocator(runtime, meta, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
     ShardingAllocator state_allocator(runtime, meta, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
     Scope scope(runtime);

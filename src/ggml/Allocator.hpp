@@ -4,6 +4,7 @@
 #include "ggml/Buffer.hpp"
 #include <ggml-backend.h>
 #include <optional>
+#include <unordered_map>
 
 class Context;
 class Device;
@@ -17,12 +18,17 @@ public:
 
     virtual void allocate(Context& context);
 
+    virtual void deallocate(Context& context);
+
     const Device& device() const {
         return device_;
     }
 
+protected:
+    static std::string format_bytes(size_t bytes);
+
 private:
     Device& device_;
     std::optional<ggml_backend_buffer_usage> usage_;
-    std::vector<Buffer> buffers_;
+    std::unordered_multimap<ggml_context*, Buffer> buffers_;
 };

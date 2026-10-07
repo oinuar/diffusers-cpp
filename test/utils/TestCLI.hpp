@@ -47,7 +47,7 @@ public:
             // Sharding is only relevant for the Meta device: the other modes
             // of execution run the whole graph on one device and skip the
             // sharding entirely.
-            ShardingRuntime runtime(ExecutionRuntime::Default, meta, /*w_comp=*/1.0, /*w_mem=*/0.1, /*w_comm=*/0.5);
+            ShardingRuntime runtime(ExecutionRuntime::Default, meta);
             ShardingAllocator weights_allocator(runtime, meta, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
             ShardingAllocator state_allocator(runtime, meta, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
 

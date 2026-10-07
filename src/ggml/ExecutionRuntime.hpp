@@ -15,7 +15,16 @@ public:
     template <class T>
     T run(Backend& backend, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, Computation<T> computation, ProgressBar* progress = nullptr) const {
         auto desc = computation.desc();
-        run(backend, pin_allocator, state_allocator, rng, *desc, progress);
+
+        // The tensors the caller still holds after run() returns (the
+        // computation's final value). The scope contexts that contain
+        // them must stay allocated: the caller reads the values back
+        // from them.
+        std::vector<Tensor> outputs;
+        if constexpr (!std::is_void_v<T>)
+            outputs = ComputationValue<T>::unwrap(*computation);
+
+        run(backend, pin_allocator, state_allocator, rng, *desc, outputs, progress);
         return *computation;
     }
 
@@ -320,5 +329,5 @@ public:
 private:
     void bind(std::mt19937& rng, Context& context, bool once_only) const;
     void copy(const Tensor& src, const Tensor& dst) const;
-    void run(Backend& backend, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc, ProgressBar* progress) const;
+    void run(Backend& backend, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc, const std::vector<Tensor>& outputs, ProgressBar* progress) const;
 };

@@ -257,10 +257,10 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
     auto n_bytes = ggml_nbytes(*tensor);
 
     context_.bind<std::byte>(tensor,
-        [n_bytes, expected_shape, offs, file = file_, model_path = std::move(model_path)/*, tensor_name = std::move(tensor_name)*/](std::mt19937&) {
+        [n_bytes, expected_shape, offs, file = file_, model_path = std::move(model_path)](std::mt19937&) {
             std::vector<std::byte> buf(n_bytes);
 
-            //std::cerr << "LOAD " << tensor_name.c_str() << " " << expected_shape.to_string() << std::endl;
+            // std::cerr << "BIND " << tensor_name.c_str() << " " << expected_shape.to_string() << " " << ggml_type_name(type) << std::endl;
 
             file->seekg(offs, file->beg);
             
@@ -276,6 +276,7 @@ void GGUFLoaderVisitor::visit(Parameter& parameter, std::vector<std::string> pat
             return buf;
         }, /*once=*/true);
 
+    // std::cerr << "LOAD " << tensor_name.c_str() << " " << expected_shape.to_string() << " " << ggml_type_name(type) << std::endl;
     parameter.set(tensor);
 }
 

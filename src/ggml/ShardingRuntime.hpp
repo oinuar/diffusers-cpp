@@ -12,19 +12,6 @@
 class ShardingRuntime : public Runtime {
 public:
     static constexpr int kNoAxis = -1;
-    // kInf: the "infinite" sentinel. It is the initial cost of a not-yet-
-    // satisfied DP state and the cost of an infeasible bridge, so it must be
-    // larger than any feasible (capped) cost -- see kCostCap.
-    static constexpr double kInf = 1e300;
-    // kCostCap: feasible DP costs are capped at this value. The per-candidate
-    // cost double-counts every shared input once per consumer (a deliberate
-    // per-output accounting), so on a deep graph the raw cost grows
-    // exponentially with the number of shared subgraphs and can overflow a
-    // double. Feasibility is tracked separately (the `feasible` flags), so
-    // capping the cost only affects plan *selection* for absurdly deep graphs
-    // and never feasibility. It is kept below kInf so a capped feasible cost
-    // is always cheaper than the infeasible sentinel.
-    static constexpr double kCostCap = 1e200;
 
     struct Dist {
         enum Type { R, S, P };
@@ -58,17 +45,33 @@ public:
             return GGML_BACKEND_SPLIT_AXIS_NONE;
        }
 
+        // The preference rank of the state in the planner's objective:
+        // sharded (any axis) beats partial, partial beats replicated. A
+        // candidate is priced with the sum of its inputs' ranks (see
+        // candidate_cost), so a fully sharded path -- every input in some
+        // S(a) -- always wins whenever it is feasible.
+        int rank() const {
+            switch (type) {
+                case Type::S: return 0;
+                case Type::P: return 1;
+                case Type::R: return 2;
+            }
+            return 0;
+        }
+
         static Dist replicated() { return Dist{}; }
         static Dist shard(int axis) { return {Type::S, axis}; }
         static Dist partial(int axis = kNoAxis) { return {Type::P, axis}; }
     };
 
-    // One way an op can compute: the distribution it produces, the distributions
-    // its inputs must be in (one per trace input, in order), and the compute cost.
+    // One way an op can compute: the distribution it produces and the
+    // distributions its inputs must be in (one per trace input, in
+    // order). The score is not stored: the DP prices a candidate with
+    // the sum of its inputs' preference ranks (Dist::rank), so a
+    // sharded path always wins whenever it is feasible.
     struct Candidate {
         Dist output;
         std::vector<Dist> inputs;
-        double comp_cost = 0.0;
     };
 
     struct TraceNode {
@@ -87,12 +90,9 @@ public:
     // engine only borrows the pointers and traces the graph. `device` is
     // the shared resource the plan commits its parameter splits to (the
     // split table the meta backend queries at allocation time) and
-    // supplies the device count that sizes the sharded candidates;
-    // `w_comp`, `w_mem` and `w_comm` are the cost weights the candidates
-    // are generated and the plan solved with (op compute, static
-    // storage, the P -> R bridge).
-    ShardingRuntime(Runtime& parent, MetaDevice& device, double w_comp, double w_mem, double w_comm)
-        : parent_(parent), device_(device), n_devices_(device.count()), w_comp_(w_comp), w_mem_(w_mem), w_comm_(w_comm) {}
+    // supplies the device count that sizes the sharded candidates.
+    ShardingRuntime(Runtime& parent, MetaDevice& device)
+        : parent_(parent), device_(device), n_devices_(device.count()) {}
 
     virtual ~ShardingRuntime() = default;
 
@@ -146,11 +146,10 @@ public:
         Dist produced;
         Dist required;
         std::string bridge;                 // collective between produced and required
-        double bridge_cost = 0.0;
     };
 
     struct Plan {
-        double total_cost = 0.0;
+        int total_cost = 0;
         size_t device_count = 0;   // for printing the per-device split sizes
         bool infeasible = false;
         std::string infeasible_reason;
@@ -169,8 +168,8 @@ public:
                 ss << "=======================================\n";
                 return ss.str();
             }
-            ss << "=== plan (total cost " << std::fixed << std::setprecision(2) << total_cost << ") ===\n";
-
+            ss << "=== plan (total cost " << total_cost << ") ===\n";
+#if 0
             for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
                 const PlanNode& pn = *it;
 
@@ -190,7 +189,7 @@ public:
                 }
                 ss << "\n";
             }
-
+#endif
             if (!callback_states.empty()) {
                 ss << "meta device callback table (ggml_backend_meta_split_state per static tensor):\n";
                 for (const auto& [name, st] : callback_states) {
@@ -231,7 +230,7 @@ public:
     // the P -> R bridges, and the meta device's callback states for the
     // params -- whose splits are committed to the device's split table,
     // the shared resource GLOBAL across contexts and allocators. A
-    // re-plan with an unchanged trace and cost model reuses the last
+    // re-plan with an unchanged trace reuses the last
     // plan (the DP is not re-run); an infeasible trace returns the plan
     // marked infeasible (nothing is committed).
     bool plan(Plan** plan);
@@ -263,7 +262,7 @@ public:
         // pinned to R by the following set_input(), and set_param() (the
         // param's forward) refines this node to the param candidates when
         // the weight enters the graph.
-        trace_op("new_tensor", {}, {{Dist::replicated(), {}, 0.0}}, rank, padded, t);
+        trace_op("new_tensor", {}, {{Dist::replicated(), {}}}, rank, padded, t);
         return t;
     }
 
@@ -282,7 +281,7 @@ public:
         n.is_fixed = true;
         n.op_name = "input";
         n.is_param = false;
-        n.candidates = {{Dist::replicated(), {}, 0.0}};
+        n.candidates = {{Dist::replicated(), {}}};
     }
 
     // Marks a tensor as a model param (the project's Parameter::forward()
@@ -322,9 +321,9 @@ public:
         ggml_tensor* out = parent_.fill(t, value);
         const int id = get_id(t);
         const int rank = rank_of(t);
-        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}, 0.0}};
+        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}}};
         for (int a = 0; a < rank; ++a)
-            cands.push_back({Dist::shard(a), {Dist::shard(a)}, 0.0});
+            cands.push_back({Dist::shard(a), {Dist::shard(a)}});
         return traced("fill", {id}, std::move(cands), rank, nodes_[id].ne, out);
     }
 
@@ -341,7 +340,7 @@ public:
         // ABORTS. Only a replicated copy is planned.
         ggml_tensor* out = parent_.dup(t);
         const int id = get_id(t);
-        return traced("dup", {id}, {{Dist::replicated(), {Dist::replicated()}, w_comp()}}, nodes_[id].rank, nodes_[id].ne, out);
+        return traced("dup", {id}, {{Dist::replicated(), {Dist::replicated()}}}, nodes_[id].rank, nodes_[id].ne, out);
     }
 
     ggml_tensor* cast(ggml_tensor* t, ggml_type type) override {
@@ -362,11 +361,11 @@ public:
         const int si = get_id(src);
         const int di = get_id(dst);
         const int rank = nodes_[di].rank;
-        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp()}};
+        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated(), Dist::replicated()}}};
         if (nodes_[si].rank <= rank) {
             for (int a = 0; a < nodes_[si].rank; ++a) {
                 if (derive_reshape(nodes_[si].ne, nodes_[di].ne, Dist::shard(a)))
-                    cands.push_back({Dist::shard(derive_reshape_axis(nodes_[si].ne, nodes_[di].ne, a)), {Dist::shard(a), Dist::replicated()}, sharded_comp()});
+                    cands.push_back({Dist::shard(derive_reshape_axis(nodes_[si].ne, nodes_[di].ne, a)), {Dist::shard(a), Dist::replicated()}});
             }
         }
         return traced("cpy", {si, di}, std::move(cands), rank, nodes_[di].ne, out);
@@ -375,12 +374,12 @@ public:
     // ---------------------------------------------------------------------
     // Runtime: unary arithmetic
     // ---------------------------------------------------------------------
-    ggml_tensor* sqrt(ggml_tensor* t) override { return carry_over_op("sqrt", parent_.sqrt(t), t, w_comp()); }
-    ggml_tensor* exp(ggml_tensor* t) override { return carry_over_op("exp", parent_.exp(t), t, w_comp()); }
-    ggml_tensor* log(ggml_tensor* t) override { return carry_over_op("log", parent_.log(t), t, w_comp()); }
-    ggml_tensor* sin(ggml_tensor* t) override { return carry_over_op("sin", parent_.sin(t), t, w_comp()); }
-    ggml_tensor* cos(ggml_tensor* t) override { return carry_over_op("cos", parent_.cos(t), t, w_comp()); }
-    ggml_tensor* sigmoid(ggml_tensor* t) override { return carry_over_op("sigmoid", parent_.sigmoid(t), t, w_comp()); }
+    ggml_tensor* sqrt(ggml_tensor* t) override { return carry_over_op("sqrt", parent_.sqrt(t), t); }
+    ggml_tensor* exp(ggml_tensor* t) override { return carry_over_op("exp", parent_.exp(t), t); }
+    ggml_tensor* log(ggml_tensor* t) override { return carry_over_op("log", parent_.log(t), t); }
+    ggml_tensor* sin(ggml_tensor* t) override { return carry_over_op("sin", parent_.sin(t), t); }
+    ggml_tensor* cos(ggml_tensor* t) override { return carry_over_op("cos", parent_.cos(t), t); }
+    ggml_tensor* sigmoid(ggml_tensor* t) override { return carry_over_op("sigmoid", parent_.sigmoid(t), t); }
 
     // ---------------------------------------------------------------------
     // Runtime: binary arithmetic
@@ -393,8 +392,8 @@ public:
     // ---------------------------------------------------------------------
     // Runtime: scalar arithmetic
     // ---------------------------------------------------------------------
-    ggml_tensor* scale(ggml_tensor* t, float value) override { return carry_over_op("scale", parent_.scale(t, value), t, w_comp()); }
-    ggml_tensor* clamp(ggml_tensor* t, float min, float max) override { return carry_over_op("clamp", parent_.clamp(t, min, max), t, w_comp()); }
+    ggml_tensor* scale(ggml_tensor* t, float value) override { return carry_over_op("scale", parent_.scale(t, value), t); }
+    ggml_tensor* clamp(ggml_tensor* t, float min, float max) override { return carry_over_op("clamp", parent_.clamp(t, min, max), t); }
 
     // ---------------------------------------------------------------------
     // Runtime: matrix operations
@@ -443,11 +442,11 @@ public:
                                                             
         // GGML_OP_PERMUTE: a shard of the input along axis b reappears on
         // the output axis i with ax[i] == b (the meta's handle_permute).                                                                                                                                                        
-        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}, 0.0}};                                                                                                                           
-        for (int b = 0; b < src.rank; ++b) {          // b: the source's meaningful axes                                                                                                                            
-            for (int i = 0; i < 4; ++i) {             // i: the output axis (the full 4D space)                                                                                                                     
-                if (ax[i] == b)                                                                                                                                                                                     
-                    cands.push_back({Dist::shard(i), {Dist::shard(b)}, 0.0});                                                                                                                                       
+        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}}};
+        for (int b = 0; b < src.rank; ++b) {          // b: the source's meaningful axes
+            for (int i = 0; i < 4; ++i) {             // i: the output axis (the full 4D space)
+                if (ax[i] == b)
+                    cands.push_back({Dist::shard(i), {Dist::shard(b)}});
             }                                                                                                                                                                                                       
         }                                                                                                                                                                                                           
         return traced("permute", {id}, std::move(cands), out_rank_of(out_ne), out_ne, out);                                                                                                                         
@@ -480,7 +479,7 @@ public:
         ggml_tensor* out = parent_.repeat(t, target);
         const int ti = get_id(t);
         const int ri = get_id(target);
-        return traced("repeat", {ti, ri}, {{Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp()}}, nodes_[ri].rank, nodes_[ri].ne, out);
+        return traced("repeat", {ti, ri}, {{Dist::replicated(), {Dist::replicated(), Dist::replicated()}}}, nodes_[ri].rank, nodes_[ri].ne, out);
     }
 
     ggml_tensor* concat(ggml_tensor* a, ggml_tensor* b, int dim) override {
@@ -495,13 +494,13 @@ public:
         for (int i = 0; i < 4; ++i)
             out_ne[i] = (i == dim) ? nodes_[ai].ne[i] + nodes_[bi].ne[i] : nodes_[ai].ne[i];
 
-        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp()}};
+        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated(), Dist::replicated()}}};
         for (int a = 0; a < rank; ++a) {
             if (a == dim)
                 continue;
-            cands.push_back({Dist::shard(a), {Dist::shard(a), Dist::shard(a)}, sharded_comp()});
-            cands.push_back({Dist::shard(a), {Dist::shard(a), Dist::replicated()}, sharded_comp()});
-            cands.push_back({Dist::shard(a), {Dist::replicated(), Dist::shard(a)}, sharded_comp()});
+            cands.push_back({Dist::shard(a), {Dist::shard(a), Dist::shard(a)}});
+            cands.push_back({Dist::shard(a), {Dist::shard(a), Dist::replicated()}});
+            cands.push_back({Dist::shard(a), {Dist::replicated(), Dist::shard(a)}});
         }
         return traced("concat", {ai, bi}, std::move(cands), rank, out_ne, out);
     }
@@ -517,9 +516,9 @@ public:
         const int id = get_id(t);
         const int in_rank = nodes_[id].rank;
         int64_t out_ne[4] = {1, nodes_[id].ne[1], nodes_[id].ne[2], nodes_[id].ne[3]};
-        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}, w_comp()}};
+        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}}};
         for (int a = 1; a < in_rank; ++a)
-            cands.push_back({Dist::shard(a), {Dist::shard(a)}, sharded_comp()});
+            cands.push_back({Dist::shard(a), {Dist::shard(a)}});
         return traced("sum_rows", {id}, std::move(cands), in_rank > 0 ? in_rank - 1 : 0, out_ne, out);
     }
 
@@ -545,7 +544,7 @@ public:
             inputs.push_back(get_id(mask));
             in_dists.push_back(Dist::replicated());
         }
-        return traced("flash_attn", inputs, {{Dist::shard(1), std::move(in_dists), sharded_comp()}}, qt.rank, out_ne, out);
+        return traced("flash_attn", inputs, {{Dist::shard(1), std::move(in_dists)}}, qt.rank, out_ne, out);
     }
 
     // ---------------------------------------------------------------------
@@ -565,7 +564,7 @@ public:
             nodes_[ai].ne[3],
             nodes_[bi].ne[3],
         };
-        return traced("conv_2d", {ai, bi}, {{Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp()}}, 4, out_ne, out);
+        return traced("conv_2d", {ai, bi}, {{Dist::replicated(), {Dist::replicated(), Dist::replicated()}}}, 4, out_ne, out);
     }
 
     ggml_tensor* pool_2d(ggml_tensor* a, ggml_op_pool op, int k0, int k1, int s0, int s1, float p0, float p1) override {
@@ -580,7 +579,7 @@ public:
             nodes_[ai].ne[2],
             nodes_[ai].ne[3],
         };
-        return traced("pool_2d", {ai}, {{Dist::replicated(), {Dist::replicated()}, w_comp()}}, 4, out_ne, out);
+        return traced("pool_2d", {ai}, {{Dist::replicated(), {Dist::replicated()}}}, 4, out_ne, out);
     }
 
     ggml_tensor* interpolate(ggml_tensor* a, int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3, uint32_t mode) override {
@@ -590,7 +589,7 @@ public:
         ggml_tensor* out = parent_.interpolate(a, ne0, ne1, ne2, ne3, mode);
         const int ai = get_id(a);
         const int64_t out_ne[4] = {ne0, ne1, ne2, ne3};
-        return traced("interpolate", {ai}, {{Dist::replicated(), {Dist::replicated()}, w_comp()}}, out_rank_of(out_ne), out_ne, out);
+        return traced("interpolate", {ai}, {{Dist::replicated(), {Dist::replicated()}}}, out_rank_of(out_ne), out_ne, out);
     }
 
     ggml_tensor* upscale(ggml_tensor* a, int scale_factor, ggml_scale_mode mode) override {
@@ -601,7 +600,7 @@ public:
         ggml_tensor* out = parent_.upscale(a, scale_factor, mode);
         const int ai = get_id(a);
         const int64_t out_ne[4] = {nodes_[ai].ne[0] * scale_factor, nodes_[ai].ne[1] * scale_factor, nodes_[ai].ne[2], nodes_[ai].ne[3]};
-        return traced("upscale", {ai}, {{Dist::replicated(), {Dist::replicated()}, w_comp()}}, out_rank_of(out_ne), out_ne, out);
+        return traced("upscale", {ai}, {{Dist::replicated(), {Dist::replicated()}}}, out_rank_of(out_ne), out_ne, out);
     }
 
     // ---------------------------------------------------------------------
@@ -618,8 +617,8 @@ public:
         const int bi = get_id(b);
         const int64_t out_ne[4] = {nodes_[ai].ne[0], nodes_[bi].ne[0], nodes_[bi].ne[1], nodes_[bi].ne[2]};
         std::vector<Candidate> cands = {
-            {Dist::replicated(), {Dist::replicated(), Dist::replicated()}, w_comp()},
-            {Dist::shard(0), {Dist::shard(0), Dist::replicated()}, sharded_comp()},
+            {Dist::replicated(), {Dist::replicated(), Dist::replicated()}},
+            {Dist::shard(0), {Dist::shard(0), Dist::replicated()}},
         };
         return traced("get_rows", {ai, bi}, std::move(cands), out_rank_of(out_ne), out_ne, out);
     }
@@ -648,12 +647,12 @@ public:
         {
             std::vector<Dist> ins = {Dist::replicated(), Dist::replicated()};
             if (has_c) ins.push_back(Dist::replicated());
-            cands.push_back({Dist::replicated(), std::move(ins), w_comp()});
+            cands.push_back({Dist::replicated(), std::move(ins)});
         }
         for (int ax = 0; ax < at.rank; ++ax) {
             std::vector<Dist> ins = {Dist::shard(ax), Dist::replicated()};
             if (has_c) ins.push_back(Dist::replicated());
-            cands.push_back({Dist::shard(ax), std::move(ins), sharded_comp()});
+            cands.push_back({Dist::shard(ax), std::move(ins)});
         }
         return traced("rope", inputs, std::move(cands), at.rank, at.ne, out);
     }
@@ -661,13 +660,12 @@ public:
 private:
     // ---------------------------------------------------------------------
     // Candidate generation -- exactly the states the meta backend accepts
-    // (see the per-op rules in the file header), priced with the cost
-    // weights the engine was constructed with.
+    // (see the per-op rules in the file header).
     // ---------------------------------------------------------------------
     std::vector<Candidate> param_candidates(int rank) const;
 
     // Elementwise unary: the meta carries the src state over unchanged.
-    std::vector<Candidate> carry_over_candidates(int rank, double cost) const;
+    std::vector<Candidate> carry_over_candidates(int rank) const;
 
     // ggml binary op: lhs broadcasts rhs against itself (the project's
     // Tensor operators keep the broadcast superset on the left).
@@ -723,10 +721,10 @@ private:
     ggml_tensor* reinterpret_op(const char* name, ggml_tensor* out, ggml_tensor* t, const int64_t out_ne[4]) {
         const int id = get_id(t);
         const TraceNode& src = nodes_[id];
-        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}, 0.0}};
+        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}}};
         for (int a = 0; a < src.rank; ++a) {
             if (derive_reshape(src.ne, out_ne, Dist::shard(a)))
-                cands.push_back({Dist::shard(derive_reshape_axis(src.ne, out_ne, a)), {Dist::shard(a)}, 0.0});
+                cands.push_back({Dist::shard(derive_reshape_axis(src.ne, out_ne, a)), {Dist::shard(a)}});
         }
         return traced(name, {id}, std::move(cands), out_rank_of(out_ne), out_ne, out);
     }
@@ -775,7 +773,7 @@ private:
         const size_t off = (out->view_src == t) ? out->view_offs : 0;
 
         if (all_strides_the_same) {
-            std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}, 0.0}};
+            std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}}};
             // A shard-axis carry-over (the meta returns src_ss[0] as-is,
             // nr included) is sound only if the view covers the sharded
             // axis in full from its start: every device must own the same
@@ -787,11 +785,11 @@ private:
             for (int a = 0; a < src.rank; ++a) {
                 const int64_t s_a = (int64_t)((off / out->nb[a]) % src.ne[a]);
                 if (s_a == 0 && out_ne[a] == src.ne[a])
-                    cands.push_back({Dist::shard(a), {Dist::shard(a)}, 0.0});
+                    cands.push_back({Dist::shard(a), {Dist::shard(a)}});
             }
             return traced(name, {id}, std::move(cands), out_rank, out_ne, out);
         }
-        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}, 0.0}};
+        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}}};
         if (!ggml_is_permuted(out) && !ggml_is_permuted(t)) {
             for (int axis = 0; axis < 3 && axis < src.rank; ++axis) {
                 // Same uniformity requirement as the stride branch above:
@@ -803,7 +801,7 @@ private:
                 for (int dim = 0; dim < 3; ++dim) {
                     if (out->nb[dim + 1] == t->nb[axis + 1]) {
                         if (out_ne[dim] == src.ne[axis] && out_ne[dim] > 1)
-                            cands.push_back({Dist::shard(dim), {Dist::shard(axis)}, 0.0});
+                            cands.push_back({Dist::shard(dim), {Dist::shard(axis)}});
                         break;
                     }
                 }
@@ -821,9 +819,9 @@ private:
         return (in + 2 * p - k) / s + 1;
     }
 
-    ggml_tensor* carry_over_op(const char* name, ggml_tensor* out, ggml_tensor* t, double cost) {
+    ggml_tensor* carry_over_op(const char* name, ggml_tensor* out, ggml_tensor* t) {
         const int id = get_id(t);
-        return traced(name, {id}, carry_over_candidates(nodes_[id].rank, cost), nodes_[id].rank, nodes_[id].ne, out);
+        return traced(name, {id}, carry_over_candidates(nodes_[id].rank), nodes_[id].rank, nodes_[id].ne, out);
     }
 
     // GGML_OP_NORM / GGML_OP_RMS_NORM (the meta's handle_per_row): the src
@@ -832,9 +830,9 @@ private:
     ggml_tensor* per_row_op(const char* name, ggml_tensor* out, ggml_tensor* t) {
         const int id = get_id(t);
         const int rank = nodes_[id].rank;
-        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}, w_comp()}};
+        std::vector<Candidate> cands = {{Dist::replicated(), {Dist::replicated()}}};
         for (int a = 1; a < rank; ++a)
-            cands.push_back({Dist::shard(a), {Dist::shard(a)}, sharded_comp()});
+            cands.push_back({Dist::shard(a), {Dist::shard(a)}});
         return traced(name, {id}, std::move(cands), rank, nodes_[id].ne, out);
     }
 
@@ -902,23 +900,20 @@ private:
     }
 
     // ---------------------------------------------------------------------
-    // Cost model (the weights shape the candidates generated above and
-    // price the bridges the DP solves with)
-    // ---------------------------------------------------------------------
-    double w_comp() const;
-    double sharded_comp() const;
-
-    // ---------------------------------------------------------------------
     // Plan -> GGML split mapping
     // ---------------------------------------------------------------------
     // Materialize the split state a callback must return for a static
     // tensor with distribution `d`, GGML shape `ne` and dtype `type`:
     //   R  -> the canonical MIRRORED form (axis = MIRRORED, ne = 0,
-    //         nr[0] = 1, n_segments = 1; see llama.cpp's get_tensor_split)
-    //   S(a) -> one segment, nr = 1, near-uniform per-device sizes with
-    //         llama.cpp's even-split boundaries (boundary(i) = ne * i / n);
-    //         for a == 0 the boundaries are additionally rounded down to
-    //         multiples of ggml_blck_size (the meta GGML_ASSERTs it)
+    //         nr[0] = 1, n_segments = 1)
+    //   S(a) -> one segment, nr = 1, per-device sizes proportional to the
+    //         tensor-split factors:
+    //         boundary(j) = ne * (f_0 + ... + f_j) / (f_0 + ... + f_n-1),
+    //         truncated and (for a == 0) rounded down to a multiple of
+    //         ggml_blck_size (the meta GGML_ASSERTs it); the last device
+    //         gets the remainder. An all-zero factor list is the default
+    //         even split with even-split boundaries
+    //         (boundary(j) = ne * (j + 1) / n).
     // P is never materialized: the callback is only called for static
     // tensors, and a static tensor is never PARTIAL.
     ggml_backend_meta_split_state materialize(const Dist& d, const int64_t ne[4], ggml_type type) const {
@@ -931,10 +926,23 @@ private:
             const int64_t gran = d.axis == 0 ? ggml_blck_size(type) : 1;
             int64_t low = 0;
             const int n = (int)device_.count();
+
+            double sum = 0.0;
+            for (int j = 0; j < n; ++j)
+                sum += device_.tensor_split(j);
+
+            double prefix = 0.0;
             for (int j = 0; j < n; ++j) {
-                int64_t high = ne[d.axis] * (int64_t)(j + 1) / n;
-                if (j + 1 < n)
+                int64_t high;
+                if (j + 1 < n) {
+                    prefix += device_.tensor_split(j);
+                    high = (sum > 0.0)
+                        ? (int64_t)((double)ne[d.axis] * prefix / sum)
+                        : ne[d.axis] * (int64_t)(j + 1) / n;
                     high = (high / gran) * gran;
+                } else {
+                    high = ne[d.axis];
+                }
                 st.ne[j] = high - low;
                 low = high;
             }
@@ -951,61 +959,73 @@ private:
     // Dynamic program
     // ---------------------------------------------------------------------
     // Tree DP over the whole trace, solved once per plan() (one go): a
-    // single memo shared by every goal root and sink, so F(node, d) pays
-    // every shared input once per consumer (a sound bound, used only to
-    // select a plan); the plan recomputes the emitted plan's true per-tensor
-    // cost. A tensor shared by several roots (a param consumed by several
-    // contexts' forwards) is ONE node here, so its storage is paid exactly
-    // once, for all of them, and its split is decided exactly once.
+    // single memo shared by every goal root and sink, so F(node, d) is
+    // computed once, for all consumers. The objective is the state
+    // preference, not a cost: sharded (any S) beats partial (P), partial
+    // beats replicated (R) (Dist::rank). A candidate is priced with the
+    // sum of its inputs' ranks, so a fully sharded path -- score 0 --
+    // always wins whenever it is feasible. The scores are small integers
+    // independent of the graph size, so deep traces neither overflow nor
+    // lose precision. Feasibility is tracked separately (the `feasible`
+    // flags). A tensor shared by several roots (a param consumed by
+    // several contexts' forwards) is ONE node here, so its split is
+    // decided exactly once.
     //
     // F(node, d): node produces exactly d.
     struct ExactState {
         bool done = false;
         bool feasible = false;   // a candidate exists whose inputs are all feasible
-        double cost = kInf;      // min cost over feasible candidates (capped)
+        int cost = 0;            // sum of the chosen candidate's inputs' ranks
         int cand = -1;
-        std::vector<Dist> in_dists;
     };
 
     // G(node, d): node satisfies d (produces some d' and bridges d' -> d).
     struct BestState {
         bool done = false;
         bool feasible = false;   // some producible d' is exact-feasible and bridges to d
-        double cost = kInf;      // min cost over feasible productions (capped)
+        int cost = 0;            // score of the chosen production
         Dist produced;
     };
 
     // H(node): a trace sink (no in-trace consumer) is producible in some
     // state. Nobody reads a sink, so it needs no bridge and no particular
-    // distribution: any exact-feasible production qualifies; the min-cost
-    // one is the production emit() commits to.
+    // distribution: any exact-feasible production qualifies; the
+    // lowest-scored one is the production emit() commits to.
     struct SinkState {
         bool done = false;
         bool feasible = false;
-        double cost = kInf;      // min cost over feasible productions (capped)
+        int cost = 0;            // score of the chosen production
         Dist produced;
     };
 
     // The collective needed to turn a tensor in `from` into the
-    // distribution `to`, and its per-device cost. The meta backend's only
-    // collective is the AllReduce at a PARTIAL subgraph boundary -- there
-    // is no AllGather/ReduceScatter/AllToAll, so everything except P -> R
-    // is infeasible. A sharded tensor is consumed sharded through the
+    // distribution `to`. The meta backend's only collective is the
+    // AllReduce at a PARTIAL subgraph boundary -- there is no
+    // AllGather/ReduceScatter/AllToAll, so everything except P -> R is
+    // infeasible. A sharded tensor is consumed sharded through the
     // per-op rules; a full tensor is (re-)produced by a row-parallel
-    // mul_mat + the implicit AllReduce.
-    struct Bridge {
-        std::string name;
-        double cost;
-    };
-
-    Bridge bridge(const Dist& from, const Dist& to) const {
-        if (from == to) return {"None", 0.0};
-        if (from.type == Dist::Type::P && to.type == Dist::Type::R)
-            return {"AllReduce", 0.5 * w_comm_ * comm_factor()};
-        return {"Infeasible", kInf};
+    // mul_mat + the implicit AllReduce. A bridge is pure feasibility: it
+    // has no score in the preference model.
+    static bool bridges(const Dist& from, const Dist& to) {
+        return from == to || (from.type == Dist::Type::P && to.type == Dist::Type::R);
     }
 
-    double comm_factor() const { return (device_.count() - 1.0) / (double)device_.count(); }
+    static std::string bridge_name(const Dist& from, const Dist& to) {
+        if (from == to) return "None";
+        if (from.type == Dist::Type::P && to.type == Dist::Type::R)
+            return "AllReduce";
+        return "Infeasible";
+    }
+
+    // A candidate's score: the sum of the preference ranks of its input
+    // distributions (Dist::rank). 0 = every input sharded (a sharded
+    // path), larger = more replicated inputs.
+    static int candidate_cost(const Candidate& cand) {
+        int cost = 0;
+        for (const Dist& in : cand.inputs)
+            cost += in.rank();
+        return cost;
+    }
 
     ExactState& exact(int node, const Dist& d) {
         auto& m = exact_memo_[node][d];
@@ -1017,24 +1037,16 @@ private:
             const Candidate& cand = n.candidates[c];
             if (cand.output != d) continue;
 
-            double cost = cand.comp_cost;
             bool ok = true;
-            std::vector<Dist> ins;
-            ins.reserve(cand.inputs.size());
             for (size_t i = 0; i < cand.inputs.size(); ++i) {
-                const BestState& in = best(n.inputs[i], cand.inputs[i]);
-                if (!in.feasible) { ok = false; break; }
-                cost += in.cost;
-                ins.push_back(cand.inputs[i]);
+                if (!best(n.inputs[i], cand.inputs[i]).feasible) { ok = false; break; }
             }
             if (!ok) continue;
-            if (cost > kCostCap)
-                cost = kCostCap;   // cap: feasibility is tracked separately
-            if (cost < m.cost) {
+            const int cost = candidate_cost(cand);
+            if (!m.feasible || cost < m.cost) {
                 m.feasible = true;
                 m.cost = cost;
                 m.cand = c;
-                m.in_dists = std::move(ins);
             }
         }
         return m;
@@ -1064,16 +1076,12 @@ private:
                 producible.insert(cand.output);
 
         for (const Dist& p : producible) {
+            if (!bridges(p, d)) continue;
             const ExactState& e = exact(node, p);
             if (!e.feasible) continue;
-            const Bridge b = bridge(p, d);
-            if (b.cost >= kInf / 2) continue;
-            double total = e.cost + b.cost;
-            if (total > kCostCap)
-                total = kCostCap;   // cap: feasibility is tracked separately
-            if (total < m.cost) {
+            if (!m.feasible || e.cost < m.cost) {
                 m.feasible = true;
-                m.cost = total;
+                m.cost = e.cost;
                 m.produced = p;
             }
         }
@@ -1096,7 +1104,7 @@ private:
         return sinks;
     }
 
-    // H(node): the min-cost production of a trace sink (see SinkState).
+    // H(node): the lowest-scored production of a trace sink (see SinkState).
     SinkState& sink_state(int node) {
         auto& m = sink_memo_[node];
         if (m.done) return m;
@@ -1105,7 +1113,7 @@ private:
         for (const Candidate& cand : nodes_[node].candidates) {
             const ExactState& e = exact(node, cand.output);
             if (!e.feasible) continue;
-            if (e.cost < m.cost) {
+            if (!m.feasible || e.cost < m.cost) {
                 m.feasible = true;
                 m.cost = e.cost;
                 m.produced = cand.output;
@@ -1122,18 +1130,18 @@ private:
         if (!emitted.insert({node, required}).second) return;
 
         Dist produced;
-        Bridge br;
+        std::string bridge;
         if (sink_required_.count(node) != 0 && goal_roots_.count(node) == 0) {
             // A trace sink: produced exactly in the state sink_state()
             // chose (passed as `required`). Nobody reads it, so there is
             // no bridge (a bridge would be collective traffic the sink
             // never pays for).
             produced = required;
-            br = {"None", 0.0};
+            bridge = "None";
         } else {
             const BestState& b = best(node, required);
             produced = b.produced;
-            br = bridge(produced, required);
+            bridge = bridge_name(produced, required);
         }
 
         PlanNode pn;
@@ -1142,8 +1150,7 @@ private:
         pn.tensor_name = nodes_[node].is_param ? param_name(node) : "";
         pn.produced = produced;
         pn.required = required;
-        pn.bridge = std::move(br.name);
-        pn.bridge_cost = br.cost;
+        pn.bridge = std::move(bridge);
         plan.nodes.push_back(std::move(pn));
 
         const ExactState& e = exact(node, produced);
@@ -1196,9 +1203,6 @@ private:
     Runtime& parent_;                     // creates the ggml tensors (context)
     MetaDevice& device_;                  // the shared split-state table + device count
     size_t n_devices_;                    // from the meta device; sizes the sharded candidates
-    double w_comp_;                       // compute of one full (replicated) op
-    double w_mem_;                        // per-device storage of a unit tensor
-    double w_comm_;                       // the P -> R (AllReduce) bridge
 
     std::vector<TraceNode> nodes_;
     std::vector<ggml_tensor*> raw_of_;                 // index = trace node id (owned by the parent)

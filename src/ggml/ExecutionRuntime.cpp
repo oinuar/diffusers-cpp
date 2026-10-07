@@ -5,11 +5,13 @@
 #include "ggml/Backend.hpp"
 #include "ggml/Computation.hpp"
 #include "ProgressBar.hpp"
+#include <chrono>
+#include <thread>
 
 ExecutionRuntime ExecutionRuntime::Default;
 
 
-void ExecutionRuntime::run(Backend& backend, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc, ProgressBar* progress) const {
+void ExecutionRuntime::run(Backend& backend, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc, const std::vector<Tensor>& outputs, ProgressBar* progress) const {
     // The execution point: all the module forwards have been called —
     // all the low-level ggml tensor chains exist in their contexts.
 
@@ -44,18 +46,33 @@ void ExecutionRuntime::run(Backend& backend, Allocator& pin_allocator, Allocator
     if (progress)
         progress->pop();
 
-    // Allocate pinned contexts with the pin allocator.
+    // Allocate the pinned contexts with the pin allocator. The weights
+    // stay resident for the whole run: every scope reads them.
     for (auto& pin : desc.pinned)
         pin_allocator.allocate(*pin);
 
-    // Allocate state context using the state allocator.
+    // Allocate the state context that is shared between all
+    // the scopes using the state allocator. The state stays resident
+    // for the whole run: scopes exchange their values through it.
     if (desc.state)
         state_allocator.allocate(*desc.state);
 
-    // Allocate all scopes using the state allocator.
+    // The scope contexts that hold the computation's final output tensors
+    // must survive the run: the caller reads them after run() returns.
+    // Every other scope context is allocated on demand, right before its
+    // graph executes, and freed right after: only the weights (pinned)
+    // and the state stay resident for the whole run.
+    std::set<Context*> keep;
     for (auto& scope : desc.scopes) {
-        if (scope.context)
-            state_allocator.allocate(*scope.context);
+        if (!scope.context)
+            continue;
+
+        for (const auto& output : outputs)
+            for (auto t = ggml_get_first_tensor(**scope.context); t != nullptr; t = ggml_get_next_tensor(**scope.context, t))
+                if (t == *output) {
+                    keep.insert(&*scope.context);
+                    break;
+                }
     }
 
     if (progress)
@@ -74,6 +91,12 @@ void ExecutionRuntime::run(Backend& backend, Allocator& pin_allocator, Allocator
     for (auto i = 0; i < desc.scopes.size(); ++i) {
         auto& r = desc.scopes[i];
         auto* gf = graphs[i];
+
+        // Allocate this scope's scratch context on demand: at any point
+        // in time only the weights, the state, and at most one scope
+        // context are resident.
+        if (r.context)
+            state_allocator.allocate(*r.context);
 
         // The bound inputs (once): written into the freshly allocated graph
         // tensors (ggml_backend_tensor_set).
@@ -130,6 +153,12 @@ void ExecutionRuntime::run(Backend& backend, Allocator& pin_allocator, Allocator
         // Copy output values into state variables.
         for (auto& [src, dst] : r.saves)
             copy(src, dst);
+
+        // The scope is done: free its compute buffer unless it holds one
+        // of the computation's final output tensors (which the caller
+        // still has to read).
+        if (r.context && keep.count(&*r.context) == 0)
+            state_allocator.deallocate(*r.context);
     }
 
     if (progress)
@@ -151,8 +180,6 @@ void ExecutionRuntime::bind(std::mt19937& rng, Context& context, bool once_only)
 }
 
 void ExecutionRuntime::copy(const Tensor& src, const Tensor& dst) const {
-    std::cerr << "copying: " << src.name() << " -> " << dst.name() << std::endl;
-
     // A tensor in a temporary context is copied into the state context
     // (a save) or back into the loop state of the same graph (a repeat
     // feedback): the value is read from the source tensor and written
@@ -162,7 +189,7 @@ void ExecutionRuntime::copy(const Tensor& src, const Tensor& dst) const {
     ggml_backend_tensor_get(*src, data.data(), 0, nbytes);
     ggml_backend_tensor_set(*dst, data.data(), 0, nbytes);
 
-    std::cerr << "copied: " << src.name() << " -> " << dst.name() << std::endl;
+    std::cerr << "[copy] " << src.name() << " -> " << dst.name() << std::endl;
 }
 
 // -------------------------------------------------------------------------

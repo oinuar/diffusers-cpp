@@ -27,7 +27,7 @@ public:
 
     explicit MetaDevice(std::vector<ggml_backend_dev_t> devices)
         : Device(ggml_backend_meta_device(devices.data(), devices.size(), get_split_state, this)),
-          n_devices_(devices.size())
+          n_devices_(devices.size()), tensor_split_(n_devices_, 0.0f)
     {
     }
 
@@ -46,6 +46,27 @@ public:
 
     size_t count() const {
         return n_devices_;
+    }
+
+    float tensor_split(size_t device) const { return tensor_split_.at(device); }
+
+    // The per-device tensor-split factors (llama.cpp's -ts) materialize()
+    // uses to divide the sharded axis of every S(a) split across the
+    // devices proportionally to the factors. Exactly one factor per
+    // device is required; the default (all zeros) is an even split.
+    void tensor_split(const std::vector<float>& split) {
+        if (split.size() > n_devices_)
+            throw std::invalid_argument("tensor_split(): got "
+                + std::to_string(split.size())
+                + " tensor-split factor(s), but the device only has "
+                + std::to_string(n_devices_)
+                + " device(s)");
+
+        tensor_split_ = split;
+
+        // devices without a factor get a 0.0 factor.
+        while (tensor_split_.size() < n_devices_)
+            tensor_split_.push_back(0.0f);
     }
 
     // The split-state callback table: what the (real)
@@ -82,8 +103,49 @@ public:
 private:
     Splits splits_;
     size_t n_devices_;
+    std::vector<float> tensor_split_;
 
     static ggml_backend_meta_split_state get_split_state(const ggml_tensor* tensor, void* ud) {
         return reinterpret_cast<MetaDevice*>(ud)->split(tensor);
     }
 };
+
+/*
+// One factor of a tensor-split list (llama.cpp's -ts): a finite,
+// non-negative number.
+static float parse_tensor_split_factor(const std::string& token) {
+    char* end = nullptr;
+    const float f = std::strtof(token.c_str(), &end);
+
+    if (end == token.c_str() || *end != '\0')
+        throw std::invalid_argument("invalid tensor-split factor: '" + token + "'");
+
+    if (!std::isfinite(f) || f < 0.0f)
+        throw std::invalid_argument("tensor-split factor must be a finite non-negative number: '" + token + "'");
+
+    return f;
+}
+
+std::vector<float> ShardingRuntime::parse_tensor_split(const std::string& value) {
+    std::vector<float> factors;
+    std::string token;
+
+    // llama.cpp accepts both ',' and '/' as separators ("3,1" or "3/1").
+    for (char c : value) {
+        if (c == ',' || c == '/') {
+            if (!token.empty()) {
+                factors.push_back(parse_tensor_split_factor(token));
+                token.clear();
+            }
+        } else {
+            token += c;
+        }
+    }
+    if (!token.empty())
+        factors.push_back(parse_tensor_split_factor(token));
+
+    if (factors.empty())
+        throw std::invalid_argument("tensor-split value is empty: '" + value + "'");
+
+    return factors;
+}*/

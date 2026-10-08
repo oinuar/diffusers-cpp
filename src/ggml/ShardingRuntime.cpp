@@ -57,7 +57,7 @@ std::vector<ShardingRuntime::Candidate> ShardingRuntime::mul_mat_candidates(cons
 // ============================================================================
 // Planning: one DP over the WHOLE trace
 // ============================================================================
-bool ShardingRuntime::plan(Plan** plan) {
+const ShardingRuntime::Plan& ShardingRuntime::plan() {
     // Solves the WHOLE trace in one go: a single DP over every traced
     // tensor. The goal roots are the outputs the trace marked with
     // set_output() (goal_roots()), each required exactly replicated (R)
@@ -86,8 +86,7 @@ bool ShardingRuntime::plan(Plan** plan) {
         new_plan.infeasible = true;
         new_plan.infeasible_reason = "the trace has no outputs marked with set_output() (nothing to plan for)";
         last_plan_ = new_plan;
-        *plan = &last_plan_.value();
-        return true;
+        return *last_plan_;
     }
 
     // The trace's sinks (see the comment above): they join the goal
@@ -99,8 +98,7 @@ bool ShardingRuntime::plan(Plan** plan) {
     // trace do not re-solve it.
     if (last_plan_ && !last_plan_->infeasible && planned_trace_size_ == nodes_.size() &&
         planned_roots_ == roots && planned_sinks_ == sinks) {
-        *plan = &last_plan_.value();
-        return false;
+            return *last_plan_;
     }
 
     const Dist root_dist = Dist::replicated();
@@ -117,8 +115,7 @@ bool ShardingRuntime::plan(Plan** plan) {
             new_plan.infeasible = true;
             new_plan.infeasible_reason = infeasibility_reason(root_dist);
             last_plan_ = new_plan;
-            *plan = &last_plan_.value();
-            return true;
+            return *last_plan_;
         }
     }
 
@@ -135,8 +132,7 @@ bool ShardingRuntime::plan(Plan** plan) {
                 "the meta backend derives a split state for every tensor of the context, so the dead end must be plannable. " +
                 infeasibility_reason(root_dist);
             last_plan_ = new_plan;
-            *plan = &last_plan_.value();
-            return true;
+            return *last_plan_;
         }
         sink_required_[sink] = s.produced;
     }
@@ -169,8 +165,7 @@ bool ShardingRuntime::plan(Plan** plan) {
                     ") would need two different storage states (" + it->second.to_string() + " and " +
                     pn.produced.to_string() + "), but the meta backend derives a single state per tensor";
                 last_plan_ = new_plan;
-                *plan = &last_plan_.value();
-                return true;
+                return *last_plan_;
             }
         }
     }
@@ -212,10 +207,9 @@ bool ShardingRuntime::plan(Plan** plan) {
     planned_trace_size_ = nodes_.size();
     planned_roots_ = roots;
     planned_sinks_ = sinks;
-
     last_plan_ = new_plan;
-    *plan = &last_plan_.value();
-    return true;
+
+    return *last_plan_;
 }
 
 std::string ShardingRuntime::dump_trace() const {

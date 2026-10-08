@@ -18,7 +18,6 @@
 class Backend;
 class Context;
 class Scheduler;
-class Allocator;
 
 class Flux2KleinPipeline {
 public:

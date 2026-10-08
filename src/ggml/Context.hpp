@@ -2,6 +2,7 @@
 
 #include "ggml/Tensor.hpp"
 #include "ggml/Scope.hpp"
+#include "ggml/Buffer.hpp"
 #include <ggml.h>
 #include <ggml-backend.h>
 #include <vector>
@@ -45,7 +46,7 @@ public:
     }
 
     Context(Context&& other)
-        : ctx_(other.ctx_), metadata_(std::move(other.metadata_)), bindings_(std::move(other.bindings_)), capacity_(other.capacity_)
+        : ctx_(other.ctx_), metadata_(std::move(other.metadata_)), bindings_(std::move(other.bindings_)), capacity_(other.capacity_), buffer_(std::move(other.buffer_))
     {
         other.ctx_ = nullptr;
     }
@@ -62,6 +63,56 @@ public:
     size_t capacity() const {
         return capacity_;
     }
+
+    /** @brief Allocates the context's unallocated tensors into a new
+     *  buffer owned by the context (meta-aware: for a meta buffer type
+     *  the split rules are applied and memory is allocated on each
+     *  underlying device).
+     *
+     *  The buffer persists until release() or the context's destruction,
+     *  so the pinned (weights) and the state contexts -- allocated once
+     *  on the first run -- stay resident and are shared across all the
+     *  computations that use them. Calling allocate() on an already
+     *  allocated context is a no-op.
+     */
+    void allocate(ggml_backend_buffer_type_t buft, ggml_backend_buffer_usage usage) {
+        if (buffer_)
+            return;
+
+        // If size is 0, there might be no tensors to allocate, or only
+        // views that need initialization.
+        if (ggml_backend_alloc_ctx_tensors_from_buft_size(ctx_, buft) == 0) {
+            init_views();
+            return;
+        }
+
+        auto buff = ggml_backend_alloc_ctx_tensors_from_buft(ctx_, buft);
+
+        if (buff != nullptr) {
+            // The Meta backend automatically propagates the usage to all
+            // its underlying simple device buffers.
+            buffer_.emplace(buff, usage);
+        }
+
+        // Initialize the views whose source tensor is already allocated
+        // (in this context or in another one): they use the source's
+        // buffer.
+        init_views();
+    }
+
+    /** @brief Frees the context's buffer and unassigns its tensors: the
+     *  tensors keep their metadata in the context, but their storage is
+     *  gone (and can be (re-)allocated later).
+     */
+    void release() {
+        buffer_.reset();
+        unassign();
+    }
+
+    const Buffer* buffer() const {
+        return buffer_ ? &*buffer_ : nullptr;
+    }
+
 
     const Bindings& bindings() const {
         return bindings_;
@@ -137,7 +188,27 @@ public:
 
 private:
     ggml_context* ctx_;
+    std::optional<Buffer> buffer_;
     std::vector<std::byte> metadata_;
     Bindings bindings_;
     size_t capacity_;
+
+    void init_views() {
+        for (auto t = ggml_get_first_tensor(ctx_); t != nullptr; t = ggml_get_next_tensor(ctx_, t))
+            if (t->data == nullptr && t->view_src != nullptr && t->buffer == nullptr)
+                ggml_backend_view_init(t);
+    }
+
+    /** @brief Resets the tensors' data/buffer pointers: the context's
+     *  tensors keep their metadata, but their storage is detached --
+     *  preventing any use of freed storage and letting the context be
+     *  allocated again later (the ggml allocators skip tensors that
+     *  still carry data).
+     */
+    void unassign() {
+        for (auto t = ggml_get_first_tensor(ctx_); t != nullptr; t = ggml_get_next_tensor(ctx_, t)) {
+            t->data = nullptr;
+            t->buffer = nullptr;
+        }
+    }
 };

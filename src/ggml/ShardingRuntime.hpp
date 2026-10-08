@@ -233,7 +233,7 @@ public:
     // re-plan with an unchanged trace reuses the last
     // plan (the DP is not re-run); an infeasible trace returns the plan
     // marked infeasible (nothing is committed).
-    bool plan(Plan** plan);
+    const Plan& plan();
 
     // Debug dump of the trace: every node with its shape and the
     // output distributions its candidates can produce.

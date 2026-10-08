@@ -79,8 +79,8 @@ public:
     // The EFFECTIVE split state of a statically allocated tensor: its
     // planned state if the table has one, otherwise the canonical
     // MIRRORED (nr[0] = 1, n_segments = 1) -- the same default the real
-    // callback returns. This is what the allocator queries when it sizes
-    // a per-device slice.
+    // callback would return. This is what the meta backend queries when
+    // it sizes the per-device slices of a meta buffer.
     ggml_backend_meta_split_state split(const ggml_tensor* tensor) const {
         const auto it = splits_.find(tensor);
 

@@ -4,7 +4,7 @@
 #include "ggml/Computation.hpp"
 
 class Device;
-class Allocator;
+class ShardingRuntime;
 class Backend;
 class ProgressBar;
 
@@ -12,20 +12,31 @@ class ExecutionRuntime : public Runtime {
 public:
     static ExecutionRuntime Default;
 
+    // Executes the computation in one pass and returns its final value.
+    //
+    // Memory management is part of the execution: the pinned (weights)
+    // contexts and the state context are allocated once, on the first
+    // run, and stay resident for the lifetime of their contexts -- the
+    // weights are shared across all the computations, the state carries
+    // the values across the scopes and the runs. Every scope context is
+    // allocated right before its graph executes and freed right after:
+    // nothing in a scope context leaks outside. The values that survive
+    // are exactly the ones the computation dereferences (operator*):
+    // they are materialized into the state context at the point of the
+    // dereference -- including the value this method returns, which the
+    // caller reads after the scope contexts are freed -- and allocated
+    // here with the rest of the state context.
     template <class T>
-    T run(Backend& backend, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, Computation<T> computation, ProgressBar* progress = nullptr) const {
-        auto desc = computation.desc();
+    T run(Backend& backend, std::mt19937& rng, Computation<T> computation, ShardingRuntime* sharding = nullptr, ProgressBar* progress = nullptr) const {
+        // The caller still holds the returned value after run() returns,
+        // when the scope contexts are already freed: the final value is
+        // an implicit dereference, materialized into the state context
+        // like every other dereferenced value.
+        auto value = *computation;
 
-        // The tensors the caller still holds after run() returns (the
-        // computation's final value). The scope contexts that contain
-        // them must stay allocated: the caller reads the values back
-        // from them.
-        std::vector<Tensor> outputs;
-        if constexpr (!std::is_void_v<T>)
-            outputs = ComputationValue<T>::unwrap(*computation);
+        run(backend, rng, *computation.desc(), sharding, progress);
 
-        run(backend, pin_allocator, state_allocator, rng, *desc, outputs, progress);
-        return *computation;
+        return value;
     }
 
     template<class T>
@@ -329,5 +340,5 @@ public:
 private:
     void bind(std::mt19937& rng, Context& context, bool once_only) const;
     void copy(const Tensor& src, const Tensor& dst) const;
-    void run(Backend& backend, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc, const std::vector<Tensor>& outputs, ProgressBar* progress) const;
+    void run(Backend& backend, std::mt19937& rng, ComputationDescription& desc, ShardingRuntime* sharding, ProgressBar* progress) const;
 };

@@ -4,9 +4,7 @@
 #include "ggml/Computation.hpp"
 #include "ggml/Backend.hpp"
 #include "ggml/MetaDevice.hpp"
-#include "ggml/Allocator.hpp"
 #include "ggml/ShardingRuntime.hpp"
-#include "ggml/ShardingAllocator.hpp"
 #include "ggml/ExecutionRuntime.hpp"
 #include "nn/Visitor.hpp"
 #include "nn/Parameter.hpp"
@@ -48,13 +46,11 @@ public:
             // of execution run the whole graph on one device and skip the
             // sharding entirely.
             ShardingRuntime runtime(ExecutionRuntime::Default, meta);
-            ShardingAllocator weights_allocator(runtime, meta, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-            ShardingAllocator state_allocator(runtime, meta, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
 
             // Activate sharding runtime for all subsequent scopes.
             Scope scope(runtime);
 
-            return run(backend, weights_allocator, state_allocator, compute(weights_context));
+            return run(backend, compute(weights_context), &runtime);
         }
 
         // Use single GPU device.
@@ -62,19 +58,14 @@ public:
             Device gpu(GGML_BACKEND_DEVICE_TYPE_GPU);
             Backend backend(gpu);
 
-            Allocator weights_allocator(gpu, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-            Allocator state_allocator(gpu, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
-
-            return run(backend, weights_allocator, state_allocator, compute(weights_context));
+            return run(backend, compute(weights_context));
         }
 
         Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
         Backend backend(cpu);
 
-        Allocator weights_allocator(cpu, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-        Allocator state_allocator(cpu, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
 
-        return run(backend, weights_allocator, state_allocator, compute(weights_context));
+        return run(backend, compute(weights_context));
     }
 
     virtual Computation<std::vector<Tensor>> compute(Context& weights_context) = 0;
@@ -161,9 +152,9 @@ public:
         std::string prefix_;
     };
 public:
-    virtual int run(Backend& backend, Allocator& weights_allocator, Allocator& state_allocator, Computation<std::vector<Tensor>> computation) {
+    virtual int run(Backend& backend, Computation<std::vector<Tensor>> computation, ShardingRuntime* sharding = nullptr) {
         std::mt19937 rng;
-        auto results = ExecutionRuntime::Default.run(backend, weights_allocator, state_allocator, rng, computation);
+        auto results = ExecutionRuntime::Default.run(backend, rng, computation, sharding);
 
         for (auto& tensor : results) {
             switch (tensor.dtype()) {

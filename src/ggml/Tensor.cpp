@@ -1,5 +1,4 @@
 #include "ggml/Tensor.hpp"
-#include "ggml/Allocator.hpp"
 #include "ggml/Scope.hpp"
 #include "ggml/Context.hpp"
 #include "ggml/Runtime.hpp"

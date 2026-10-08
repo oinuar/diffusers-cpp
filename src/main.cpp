@@ -1,11 +1,9 @@
 #include "ggml/Backend.hpp"
 #include "ggml/Runtime.hpp"
 #include "ggml/MetaDevice.hpp"
-#include "ggml/Allocator.hpp"
 #include "ggml/Computation.hpp"
 #include "ggml/ExecutionRuntime.hpp"
 #include "ggml/ShardingRuntime.hpp"
-#include "ggml/ShardingAllocator.hpp"
 #include "ggml/GGUFLoaderVisitor.hpp"
 #include "diffusers/pipelines/flux2/Flux2KleinPipeline.hpp"
 #include "ProgressBar.hpp"
@@ -13,11 +11,11 @@
 #include <iostream>
 #include <filesystem>
 
-static std::vector<Image> run(Backend& backend, Allocator& weights_allocator, Allocator& state_allocator, Computation<Tensor> computation) {
+static std::vector<Image> run(Backend& backend, ShardingRuntime& runtime, Computation<Tensor> computation) {
     ProgressBar progress("Flux2Klein");
     std::mt19937 rng;
 
-    auto decoded = ExecutionRuntime::Default.run(backend, weights_allocator, state_allocator, rng, computation, &progress);
+    auto decoded = ExecutionRuntime::Default.run(backend, rng, computation, &runtime, &progress);
     auto data = ExecutionRuntime::Default.read<float>(decoded);
 
     auto images = Flux2KleinPipeline::to_images(decoded.shape(), std::move(data));
@@ -37,8 +35,6 @@ int main(int argc, char** argv) {
 
     Backend backend(meta);
     ShardingRuntime runtime(ExecutionRuntime::Default, meta);
-    ShardingAllocator weights_allocator(runtime, meta, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-    ShardingAllocator state_allocator(runtime, meta, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
     Scope scope(runtime);
 
     Context context(65536);
@@ -52,7 +48,7 @@ int main(int argc, char** argv) {
 
     auto computation = pipeline(context, context, context, std::move(options));
 
-    auto images = run(backend, weights_allocator, state_allocator, computation);
+    auto images = run(backend, runtime, computation);
 
     images[0].save("test.png");
 

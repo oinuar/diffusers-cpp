@@ -1,6 +1,5 @@
 #include "ggml/GGUFLoaderVisitor.hpp"
 #include "ggml/Context.hpp"
-#include "ggml/Allocator.hpp"
 #include "nn/Parameter.hpp"
 #include "nn/ModulePath.hpp"
 #include "diffusers/models/transformers/flux2/Flux2FusedQKVProjection.hpp"

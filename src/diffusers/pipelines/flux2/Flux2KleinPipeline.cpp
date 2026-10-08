@@ -325,15 +325,13 @@ Computation<Tensor> Flux2KleinPipeline::operator()(
     auto image_latents = computation
         .scope([&](Scope scope) -> std::optional<Tensor> {
             return encode_images(scope, options.images, batch);
-        })
-        .state();
+        });
 
     // 3. Encode the prompt into text embeddings.
     auto prompt_embeds = computation
         .scope([&](Scope scope) -> Tensor {
             return encode_prompt(scope, batch, options.prompt, options.max_sequence_length);
-        })
-        .state();
+        });
 
     // 4. Generate RoPE embeddings.
     auto img_ids = prepare_img_ids(computation.desc()->context(), batch, packed_h, packed_w);

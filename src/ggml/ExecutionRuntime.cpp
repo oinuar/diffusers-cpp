@@ -1,19 +1,37 @@
 #include "ggml/ExecutionRuntime.hpp"
 #include "ggml/Scope.hpp"
 #include "ggml/Context.hpp"
-#include "ggml/Allocator.hpp"
 #include "ggml/Backend.hpp"
 #include "ggml/Computation.hpp"
+#include "ggml/ShardingRuntime.hpp"
 #include "ProgressBar.hpp"
 #include <chrono>
 #include <thread>
+#include <iostream>
 
 ExecutionRuntime ExecutionRuntime::Default;
 
+static std::string format_bytes(size_t bytes) {
+    if (bytes >= 1024 * 1024 * 1024) {
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%.2f GB", double(bytes) / (1024.0 * 1024.0 * 1024.0));
+        return buf;
+    }
+    if (bytes >= 1024 * 1024) {
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%.2f MB", double(bytes) / (1024.0 * 1024.0));
+        return buf;
+    }
+    if (bytes >= 1024)
+        return std::to_string(bytes / 1024) + " KB";
+    return std::to_string(bytes) + " B";
+}
 
-void ExecutionRuntime::run(Backend& backend, Allocator& pin_allocator, Allocator& state_allocator, std::mt19937& rng, ComputationDescription& desc, const std::vector<Tensor>& outputs, ProgressBar* progress) const {
+void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescription& desc, ShardingRuntime* sharding, ProgressBar* progress) const {
     // The execution point: all the module forwards have been called —
     // all the low-level ggml tensor chains exist in their contexts.
+
+    auto buft = backend.device().buffer_type();
 
     std::vector<ggml_cgraph*> graphs;
     graphs.reserve(desc.scopes.size());
@@ -26,10 +44,11 @@ void ExecutionRuntime::run(Backend& backend, Allocator& pin_allocator, Allocator
     // already recorded there at build time; ggml_build_forward_expand
     // expands it into the graph (the nodes, and the leaves — the
     // bound inputs of this context and the pre-allocated weights /
-    // state tensors).
+    // state tensors). On a non-meta backend the save copies are nodes
+    // of the graph as well.
     //
-    // The graphs must be built BEFORE the long-lived contexts are
-    // allocated: the meta backend is brittle about this order.
+    // The graphs must be built BEFORE the meta buffers are allocated:
+    // the meta backend is brittle about this order.
     for (auto& r : desc.scopes) {
         auto* gf = ggml_new_graph_custom(**r.context, r.context->capacity(), /*grads=*/false);
 
@@ -46,34 +65,53 @@ void ExecutionRuntime::run(Backend& backend, Allocator& pin_allocator, Allocator
     if (progress)
         progress->pop();
 
-    // Allocate the pinned contexts with the pin allocator. The weights
-    // stay resident for the whole run: every scope reads them.
-    for (auto& pin : desc.pinned)
-        pin_allocator.allocate(*pin);
+    // The meta backend plans the whole trace before any meta buffer is
+    // allocated: the plan's callback states are what the meta buffer
+    // allocation reads (the per-device split of every static tensor).
+    if (sharding != nullptr) {
+        auto& plan = sharding->plan();
 
-    // Allocate the state context that is shared between all
-    // the scopes using the state allocator. The state stays resident
-    // for the whole run: scopes exchange their values through it.
-    if (desc.state)
-        state_allocator.allocate(*desc.state);
+        if (plan.infeasible)
+            throw std::runtime_error(
+                "run(): the allocation plan is infeasible: " + plan.infeasible_reason + "\n\n" + sharding->dump_trace());
 
-    // The scope contexts that hold the computation's final output tensors
-    // must survive the run: the caller reads them after run() returns.
-    // Every other scope context is allocated on demand, right before its
-    // graph executes, and freed right after: only the weights (pinned)
-    // and the state stay resident for the whole run.
-    std::set<Context*> keep;
-    for (auto& scope : desc.scopes) {
-        if (!scope.context)
-            continue;
+        std::cerr << plan.to_string();
 
-        for (const auto& output : outputs)
-            for (auto t = ggml_get_first_tensor(**scope.context); t != nullptr; t = ggml_get_next_tensor(**scope.context, t))
-                if (t == *output) {
-                    keep.insert(&*scope.context);
-                    break;
-                }
+        auto total_sharded_bytes = 0.0;
+        auto total_replicated_bytes = 0.0;
+
+        for (auto& node : plan.nodes) {
+            auto bytes = ggml_nbytes(sharding->raw_of()[node.id]);
+
+            if (node.produced.type == ShardingRuntime::Dist::R)
+                total_replicated_bytes += bytes;
+            else
+                total_sharded_bytes += bytes;
+        }
+
+        std::cerr << "Required memory for the plan: "
+                  << format_bytes(total_sharded_bytes)
+                  << " (sharded) + "
+                  << format_bytes(total_replicated_bytes)
+                  << " (replicated) = "
+                  << format_bytes(total_sharded_bytes + total_replicated_bytes)
+                  << std::endl;
     }
+
+    // Allocate the pinned contexts (the weights): they stay resident for
+    // the whole run -- and every later run -- every scope reads them.
+    // The buffer is owned by the context, so a re-run (or another
+    // computation sharing the weights) skips the allocation.
+    for (auto& pin : desc.pinned)
+        pin->allocate(buft, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+
+    // Allocate the state context that is shared between all the scopes:
+    // it stays resident for the whole run -- and every later run -- it
+    // carries every value the computation dereferenced (the state cells
+    // they were materialized into), and the caller reads the
+    // computation's final value from it.
+    if (desc.state)
+        desc.state->allocate(buft, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
 
     if (progress)
         progress->push("Executing", desc.scopes.size());
@@ -92,11 +130,16 @@ void ExecutionRuntime::run(Backend& backend, Allocator& pin_allocator, Allocator
         auto& r = desc.scopes[i];
         auto* gf = graphs[i];
 
+        if (!r.context)
+            continue;
+
         // Allocate this scope's scratch context on demand: at any point
         // in time only the weights, the state, and at most one scope
-        // context are resident.
-        if (r.context)
-            state_allocator.allocate(*r.context);
+        // context are resident. The tensors are unassigned first: a
+        // re-run finds a clean context (the pointers of the previous
+        // run's freed buffers would otherwise leak into the new
+        // allocation).
+        r.context->allocate(buft, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
 
         // The bound inputs (once): written into the freshly allocated graph
         // tensors (ggml_backend_tensor_set).
@@ -108,8 +151,11 @@ void ExecutionRuntime::run(Backend& backend, Allocator& pin_allocator, Allocator
                 progress->push("Computing (" + std::to_string(ggml_graph_n_nodes(gf)) + " graph nodes)", r.repeat->count);
 
             // The graph is a single allocation with multiple computations:
-            // compute the SAME graph repeatedly, feeding every output back
-            // into the loop state of the next execution.
+            // compute the SAME graph repeatedly. The loop state is carried
+            // by the saves: the body's output is written back into the
+            // loop's state cells after every execution (a node of the
+            // graph on a non-meta backend, a host-side copy on the meta
+            // backend).
             for (r.repeat->iter = 0; r.repeat->iter < r.repeat->count; ++r.repeat->iter) {
                 // The re-bindable inputs: rewritten on every (re-)execution.
                 bind(rng, *r.context, /*once_only=*/false);
@@ -117,11 +163,8 @@ void ExecutionRuntime::run(Backend& backend, Allocator& pin_allocator, Allocator
                 if (ggml_backend_graph_compute(*backend, gf) != GGML_STATUS_SUCCESS)
                     throw std::runtime_error("run(): ggml_backend_graph_compute failed");
 
-                // TODO: use saves instead!
-                // Feed the result back as the input for the next execution
-                // of the SAME graph.
-                for (auto& [src, dst] : r.repeat->feedback)
-                    copy(src, dst);
+                for (const auto& save : r.saves)
+                    copy(save.src, save.dst);
 
                 if (progress)
                     progress->next();
@@ -144,21 +187,19 @@ void ExecutionRuntime::run(Backend& backend, Allocator& pin_allocator, Allocator
             if (ggml_backend_graph_compute(*backend, gf) != GGML_STATUS_SUCCESS)
                 throw std::runtime_error("run(): ggml_backend_graph_compute failed");
 
+            for (const auto& save : r.saves)
+                copy(save.src, save.dst);
+
             if (progress) {
                 progress->next();
                 progress->pop();
             }
         }
 
-        // Copy output values into state variables.
-        for (auto& [src, dst] : r.saves)
-            copy(src, dst);
-
-        // The scope is done: free its compute buffer unless it holds one
-        // of the computation's final output tensors (which the caller
-        // still has to read).
-        if (r.context && keep.count(&*r.context) == 0)
-            state_allocator.deallocate(*r.context);
+        // The scope is done: free its buffer. Nothing in the scope
+        // context leaks outside -- the values that survive are in the
+        // state context -- so every scope context is disposable.
+        r.context->release();
     }
 
     if (progress)

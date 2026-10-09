@@ -9,7 +9,8 @@ class TestCase(unittest.TestCase):
         command = [
             *args,
             '--runner-n_devices', str(self.n_devices()),
-            '--runner-use_gpu', str(self.use_gpu()).lower()
+            '--runner-use_gpu', str(self.use_gpu()).lower(),
+            *sum((["--runner-tensor_split", str(x)] for x in self.tensor_splits()), [])
         ]
 
         command_w_args = " ".join([self.cli_bin()] + list(map(lambda x: x if x.startswith("--") else f'"{x}"', command)))
@@ -68,6 +69,12 @@ sys.exit(result.returncode)
 
     def n_devices(self):
         return int(os.environ.get('N_DEVICES', '1'))
+
+    def tensor_splits(self):
+        splits = os.environ.get('TENSOR_SPLITS', '')
+        if splits == '':
+            return []
+        return splits.split(',')
 
     def use_gpu(self):
         return os.environ.get('USE_GPU', 'false') == 'true'

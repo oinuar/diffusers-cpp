@@ -27,6 +27,24 @@ static std::string format_bytes(size_t bytes) {
     return std::to_string(bytes) + " B";
 }
 
+static void print_buffer(const Device& device, const std::optional<Buffer>& buffer) {
+    if (!buffer)
+        return;
+
+    const char* usages[] = {
+        " (any)",
+        " (weights)",
+        " (compute)"
+    };
+
+    std::cerr << "Allocated buffer to "
+              << ggml_backend_dev_name(*device)
+              << " of size "
+              << format_bytes(ggml_backend_buffer_get_size(**buffer))
+              << usages[(size_t)ggml_backend_buffer_get_usage(**buffer)]
+              << std::endl;
+}
+
 void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescription& desc, ShardingRuntime* sharding, ProgressBar* progress) const {
     // The execution point: all the module forwards have been called —
     // all the low-level ggml tensor chains exist in their contexts.
@@ -89,7 +107,7 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
                 total_sharded_bytes += bytes;
         }
 
-        std::cerr << "Required memory for the plan: "
+        std::cerr << "Total planned memory: "
                   << format_bytes(total_sharded_bytes)
                   << " (sharded) + "
                   << format_bytes(total_replicated_bytes)
@@ -102,16 +120,23 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
     // the whole run -- and every later run -- every scope reads them.
     // The buffer is owned by the context, so a re-run (or another
     // computation sharing the weights) skips the allocation.
-    for (auto& pin : desc.pinned)
+    for (auto& pin : desc.pinned) {
+        if (pin == nullptr)
+            continue;
+
         pin->allocate(buft, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+        print_buffer(backend.device(), pin->buffer());
+    }
 
     // Allocate the state context that is shared between all the scopes:
     // it stays resident for the whole run -- and every later run -- it
     // carries every value the computation dereferenced (the state cells
     // they were materialized into), and the caller reads the
     // computation's final value from it.
-    if (desc.state)
+    if (desc.state) {
         desc.state->allocate(buft, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
+        print_buffer(backend.device(), desc.state->buffer());
+    }
 
     if (progress)
         progress->push("Executing", desc.scopes.size());
@@ -140,6 +165,7 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
         // run's freed buffers would otherwise leak into the new
         // allocation).
         r.context->allocate(buft, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
+        print_buffer(backend.device(), r.context->buffer());
 
         // The bound inputs (once): written into the freshly allocated graph
         // tensors (ggml_backend_tensor_set).

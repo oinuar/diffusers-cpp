@@ -26,7 +26,7 @@ public:
             ggml_backend_buffer_free(buffer_);
     }
 
-    ggml_backend_buffer_t operator *() {
+    ggml_backend_buffer_t operator *() const {
         return buffer_;
     }
 

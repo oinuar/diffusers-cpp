@@ -109,8 +109,8 @@ public:
         unassign();
     }
 
-    const Buffer* buffer() const {
-        return buffer_ ? &*buffer_ : nullptr;
+    const std::optional<Buffer>& buffer() const {
+        return buffer_;
     }
 
 

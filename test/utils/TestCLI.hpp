@@ -30,6 +30,8 @@ public:
 
         // If more than one device, use Meta device.
         if (n_devices > 1) {
+            auto tensor_splits = args_.get_many<float>("--runner-tensor_split");
+
             if (use_gpu)
                 throw std::runtime_error("Multi-GPU tests are not supported");
 
@@ -49,6 +51,9 @@ public:
 
             // Activate sharding runtime for all subsequent scopes.
             Scope scope(runtime);
+
+            // Set tensor split coefficients.
+            meta.tensor_split(tensor_splits);
 
             return run(backend, compute(weights_context), &runtime);
         }

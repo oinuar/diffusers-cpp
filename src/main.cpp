@@ -15,7 +15,7 @@ static std::vector<Image> run(Backend& backend, ShardingRuntime& runtime, Comput
     ProgressBar progress("Flux2Klein");
     std::mt19937 rng;
 
-    auto decoded = ExecutionRuntime::Default.run(backend, rng, computation, &runtime, &progress);
+    auto decoded = ExecutionRuntime::Default.run(backend, rng, computation, &runtime);
     auto data = ExecutionRuntime::Default.read<float>(decoded);
 
     auto images = Flux2KleinPipeline::to_images(decoded.shape(), std::move(data));

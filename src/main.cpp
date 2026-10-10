@@ -15,7 +15,7 @@ static std::vector<Image> run(Backend& backend, ShardingRuntime& runtime, Comput
     ProgressBar progress("Flux2Klein");
     std::mt19937 rng;
 
-    auto decoded = ExecutionRuntime::Default.run(backend, rng, computation, &runtime);
+    auto decoded = ExecutionRuntime::Default.run(backend, rng, computation, &runtime, &progress);
     auto data = ExecutionRuntime::Default.read<float>(decoded);
 
     auto images = Flux2KleinPipeline::to_images(decoded.shape(), std::move(data));
@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
 
     auto meta = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
 
-    meta.tensor_split({2, 1});
+    //meta.tensor_split({2, 1});
 
     Backend backend(meta);
     ShardingRuntime runtime(ExecutionRuntime::Default, meta);

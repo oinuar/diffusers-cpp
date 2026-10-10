@@ -27,16 +27,11 @@ import os, sys, subprocess
 
 command = [{repr(self.cli_bin())}] + {repr(command)}
 
-env = {{
-    # Put your debbing env variables here
-}}
-
 result = subprocess.run(
     command,
     stdin=sys.stdin,
     stdout=sys.stdout,
     stderr=sys.stderr,
-    env=env
 )
 
 sys.exit(result.returncode)

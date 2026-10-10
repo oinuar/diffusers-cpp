@@ -37,12 +37,9 @@ public:
 
         // The plan -> GGML mapping for the axis field of the split state.
         enum ggml_backend_meta_split_axis to_split_axis() const {
-            switch (type) {
-                case Type::R: return GGML_BACKEND_SPLIT_AXIS_MIRRORED;
-                case Type::S: return static_cast<enum ggml_backend_meta_split_axis>(axis);
-                case Type::P: return GGML_BACKEND_SPLIT_AXIS_PARTIAL;
-            }
-            return GGML_BACKEND_SPLIT_AXIS_NONE;
+            if (type == Type::S)
+                return static_cast<enum ggml_backend_meta_split_axis>(axis);
+            return GGML_BACKEND_SPLIT_AXIS_MIRRORED;
        }
 
         // The preference rank of the state in the planner's objective:
@@ -169,7 +166,7 @@ public:
                 return ss.str();
             }
             ss << "=== plan (total cost " << total_cost << ") ===\n";
-#if 0
+#if 1
             for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
                 const PlanNode& pn = *it;
 

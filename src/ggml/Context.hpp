@@ -4,12 +4,14 @@
 #include "ggml/Scope.hpp"
 #include "ggml/Buffer.hpp"
 #include <ggml.h>
-#include <ggml-backend.h>
+#include <ggml-alloc.h>
 #include <vector>
 #include <random>
 #include <functional>
 #include <cstring>
-
+#include <cstdio>
+#include <cstdlib>
+#include <iostream>
 class Context {
 public:
     template<typename T>
@@ -46,12 +48,16 @@ public:
     }
 
     Context(Context&& other)
-        : ctx_(other.ctx_), metadata_(std::move(other.metadata_)), bindings_(std::move(other.bindings_)), capacity_(other.capacity_), buffer_(std::move(other.buffer_))
+        : ctx_(other.ctx_), metadata_(std::move(other.metadata_)), bindings_(std::move(other.bindings_)), capacity_(other.capacity_), buffer_(std::move(other.buffer_)), gallocr_(other.gallocr_)
     {
         other.ctx_ = nullptr;
+        other.gallocr_ = nullptr;
     }
 
     ~Context() {
+        if (gallocr_ != nullptr)
+            ggml_gallocr_free(gallocr_);
+
         if (ctx_ != nullptr)
             ggml_free(ctx_);
     }
@@ -79,6 +85,29 @@ public:
         if (buffer_)
             return;
 
+        if (std::getenv("CTX_DEBUG") != nullptr) {
+            size_t total = 0;
+            int n = 0;
+            const size_t alignment = ggml_backend_buft_get_alignment(buft);
+
+            for (auto t = ggml_get_first_tensor(ctx_); t != nullptr; t = ggml_get_next_tensor(ctx_, t)) {
+                if (t->data == nullptr && t->view_src == nullptr) {
+                    total += GGML_PAD(ggml_backend_buft_get_alloc_size(buft, t), alignment);
+                    ++n;
+                }
+
+                char shape[256];
+                int off = std::snprintf(shape, sizeof shape, "%s '%s'", ggml_op_name(t->op), ggml_get_name(t));
+                for (int i = 0; i < ggml_n_dims(t); ++i)
+                    off += std::snprintf(shape + off, sizeof shape - off, " %lld", (long long)t->ne[i]);
+
+                std::cerr << "  [ctx] " << shape
+                          << " type=" << ggml_type_name(t->type)
+                          << " alloc=" << ggml_backend_buft_get_alloc_size(buft, t) << " bytes" << std::endl;
+            }
+
+            std::cerr << "  [ctx] total: " << n << " tensors, " << total << " bytes" << std::endl;
+        }
         // If size is 0, there might be no tensors to allocate, or only
         // views that need initialization.
         if (ggml_backend_alloc_ctx_tensors_from_buft_size(ctx_, buft) == 0) {
@@ -100,11 +129,60 @@ public:
         init_views();
     }
 
+    /** @brief Allocates the context's compute tensors with liveness-aware
+     *  graph allocation (ggml_gallocr): a tensor's storage is freed when
+     *  the graph no longer consumes it, so the buffer holds only the peak
+     *  set of simultaneously-live tensors -- not every tensor of the
+     *  graph. Tensors already allocated elsewhere (the weights, the
+     *  state) are left untouched; the graph's outputs (set_output) are
+     *  never freed and survive until release().
+     *
+     *  The graph must contain every tensor of this context that is
+     *  executed: tensors outside the graph are not allocated (a dead
+     *  tensor needs no storage).
+     */
+    void allocate_graph(ggml_cgraph* graph, ggml_backend_buffer_type_t buft) {
+        if (buffer_ || gallocr_)
+            throw std::runtime_error("Context::allocate_graph: the context is already allocated");
+
+        gallocr_ = ggml_gallocr_new(buft);
+
+        if (gallocr_ == nullptr || !ggml_gallocr_alloc_graph(gallocr_, graph)) {
+            ggml_gallocr_free(gallocr_);
+            gallocr_ = nullptr;
+            throw std::runtime_error("Context::allocate_graph: ggml_gallocr_alloc_graph failed");
+        }
+
+        // Initialize the views whose source tensor is already allocated
+        // (in this context or in another one): they use the source's
+        // buffer. (The graph allocator covers the views it allocates;
+        // this catches the rest -- e.g. a dead view of a weight.)
+        init_views();
+    }
+
+    /** @brief The size of the context's allocated storage (0 if
+     *  unallocated).
+     */
+    size_t allocated_size() const {
+        if (gallocr_ != nullptr)
+            return ggml_gallocr_get_buffer_size(gallocr_, 0);
+
+        if (buffer_)
+            return buffer_->size();
+
+        return 0;
+    }
+
     /** @brief Frees the context's buffer and unassigns its tensors: the
      *  tensors keep their metadata in the context, but their storage is
      *  gone (and can be (re-)allocated later).
      */
     void release() {
+        if (gallocr_ != nullptr) {
+            ggml_gallocr_free(gallocr_);
+            gallocr_ = nullptr;
+        }
+
         buffer_.reset();
         unassign();
     }
@@ -189,13 +267,18 @@ public:
 private:
     ggml_context* ctx_;
     std::optional<Buffer> buffer_;
+    ggml_gallocr_t gallocr_ = nullptr;
     std::vector<std::byte> metadata_;
     Bindings bindings_;
     size_t capacity_;
 
     void init_views() {
         for (auto t = ggml_get_first_tensor(ctx_); t != nullptr; t = ggml_get_next_tensor(ctx_, t))
-            if (t->data == nullptr && t->view_src != nullptr && t->buffer == nullptr)
+            // Only the views whose source tensor is already allocated can
+            // be initialized: a dead tensor (outside the graph of the
+            // liveness-aware allocation) has no storage, and so has no
+            // view.
+            if (t->data == nullptr && t->view_src != nullptr && t->buffer == nullptr && t->view_src->data != nullptr)
                 ggml_backend_view_init(t);
     }
 

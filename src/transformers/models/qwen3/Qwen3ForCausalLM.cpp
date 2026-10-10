@@ -24,7 +24,7 @@ Qwen3ForCausalLM::Qwen3ForCausalLM(const Qwen3Config& config) {
     modules["lm_head"] = std::make_shared<Linear>(config.hidden_size, config.vocab_size, false);
 }
 
-Tensor Qwen3ForCausalLM::forward(
+std::optional<Tensor> Qwen3ForCausalLM::forward(
     Scope scope, 
     std::optional<Tensor> input_ids, 
     std::optional<Tensor> attention_mask,
@@ -48,8 +48,15 @@ Tensor Qwen3ForCausalLM::forward(
         extract_hidden_states
     );
 
+    // The LM head projects every hidden state to the full vocabulary
+    // (a vocab_size x seq_len GEMM): when the caller only needs the
+    // hidden states, the projection is never computed -- it would only
+    // ever be materialized into the buffer to be discarded.
+    if (extract_hidden_states != nullptr)
+        return std::nullopt;
+
     auto lm_head = std::static_pointer_cast<Linear>(modules["lm_head"]);
-    
+
     Tensor slice_hidden_states = hidden_states;
     if (logits_to_keep > 0) {
         int seq_len = hidden_states.shape()[1];

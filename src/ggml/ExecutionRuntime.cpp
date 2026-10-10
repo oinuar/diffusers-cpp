@@ -27,21 +27,15 @@ static std::string format_bytes(size_t bytes) {
     return std::to_string(bytes) + " B";
 }
 
-static void print_buffer(const Device& device, const std::optional<Buffer>& buffer) {
-    if (!buffer)
+static void print_buffer(const Device& device, size_t bytes, const char* usage) {
+    if (bytes == 0)
         return;
-
-    const char* usages[] = {
-        " (any)",
-        " (weights)",
-        " (compute)"
-    };
 
     std::cerr << "Allocated buffer to "
               << ggml_backend_dev_name(*device)
               << " of size "
-              << format_bytes(ggml_backend_buffer_get_size(**buffer))
-              << usages[(size_t)ggml_backend_buffer_get_usage(**buffer)]
+              << format_bytes(bytes)
+              << usage
               << std::endl;
 }
 
@@ -95,6 +89,12 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
 
         std::cerr << plan.to_string();
 
+        // The plan counts EVERY traced tensor (the weights plus every
+        // intermediate value of every scope): it is the sum of the
+        // tensor sizes, NOT the memory that gets allocated -- the
+        // weights buffer holds the static tensors, and every scope
+        // buffer holds only the peak of simultaneously-live tensors
+        // (the liveness-aware graph allocation).
         auto total_sharded_bytes = 0.0;
         auto total_replicated_bytes = 0.0;
 
@@ -107,7 +107,7 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
                 total_sharded_bytes += bytes;
         }
 
-        std::cerr << "Total planned memory: "
+        std::cerr << "Total traced tensor memory (sum, not peak): "
                   << format_bytes(total_sharded_bytes)
                   << " (sharded) + "
                   << format_bytes(total_replicated_bytes)
@@ -125,7 +125,7 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
             continue;
 
         pin->allocate(buft, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
-        print_buffer(backend.device(), pin->buffer());
+        print_buffer(backend.device(), pin->allocated_size(), " (weights)");
     }
 
     // Allocate the state context that is shared between all the scopes:
@@ -135,7 +135,7 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
     // computation's final value from it.
     if (desc.state) {
         desc.state->allocate(buft, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
-        print_buffer(backend.device(), desc.state->buffer());
+        print_buffer(backend.device(), desc.state->allocated_size(), " (compute)");
     }
 
     if (progress)
@@ -163,9 +163,15 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
         // context are resident. The tensors are unassigned first: a
         // re-run finds a clean context (the pointers of the previous
         // run's freed buffers would otherwise leak into the new
-        // allocation).
-        r.context->allocate(buft, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
-        print_buffer(backend.device(), r.context->buffer());
+        // allocation). 
+        //
+        // Liveness-aware allocation (the graph allocator): a tensor's
+        // storage is freed as soon as the graph stops consuming it, so
+        // the buffer holds the peak of simultaneously-live tensors
+        // instead of every tensor of the graph.
+        r.context->allocate_graph(gf, buft);
+
+        print_buffer(backend.device(), r.context->allocated_size(), " (compute)");
 
         // The bound inputs (once): written into the freshly allocated graph
         // tensors (ggml_backend_tensor_set).

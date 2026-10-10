@@ -221,6 +221,7 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
+                // No hidden-state extraction: the logits are the output.
                 return model.forward(
                     scope,
                     input_ids,
@@ -231,7 +232,7 @@ public:
                     labels,
                     use_cache,
                     logits_to_keep
-                );
+                ).value();
             });
 
             return Computation<Tensor>::all(result);

@@ -14,7 +14,13 @@ public:
 
     static Qwen3ForCausalLM from_pretrained(Context& context, Qwen3Config&& config, const std::filesystem::path& path);
 
-    Tensor forward(Scope scope, 
+    /** @brief Runs the model.
+     *  @return The logits -- unless `extract_hidden_states` is provided:
+     *  in that case the caller needs only the hidden states, and the
+     *  LM head projection (a vocab_size x seq_len GEMM) is never
+     *  computed, and std::nullopt is returned.
+     */
+    std::optional<Tensor> forward(Scope scope, 
                    std::optional<Tensor> input_ids = std::nullopt, 
                    std::optional<Tensor> attention_mask = std::nullopt,
                    std::optional<Tensor> position_ids = std::nullopt,

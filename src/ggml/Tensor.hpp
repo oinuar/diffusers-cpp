@@ -8,6 +8,7 @@
 #include <cmath>
 #include <optional>
 #include <limits>
+#include <cstring>
 #include <ggml.h>
 
 class Context;
@@ -219,7 +220,7 @@ public:
     Tensor clone() const;
 
     /** @brief Return an input Tensor. */
-    const Tensor& input();
+    Tensor& input();
 
     /** @brief Scales a tensor with a constant. */
     Tensor scale(float value) const;
@@ -234,12 +235,6 @@ public:
         return full({}, (float)value);
     }
 
-    /** @brief Creates an uninitialized tensor with the given shape and type. */
-    static Tensor empty(const Shape& shape, ggml_type type);
-
-    /** @brief Creates a filled tensor with the given value, shape and type. */
-    static Tensor full(const Shape& shape, float value);
-
     /** @brief Creates a zero-filled tensor with the given shape and type. */
     static Tensor zeros(const Shape& shape) {
         return full(shape, 0.0f);
@@ -250,12 +245,44 @@ public:
         return full(shape, 1.0f);
     }
 
+    /** @brief Creates an uninitialized tensor with the given shape and type. */
+    static Tensor empty(const Shape& shape, ggml_type type);
+
+    /** @brief Creates a filled tensor with the given value, shape and type. */
+    template <typename T> static Tensor full(const Shape& shape, const T& value) {
+        int64_t total = 1;
+
+        for (auto i = 0; i < shape.rank(); ++i) {
+            if (shape[i] != 0)
+                total *= shape[i];
+        }
+
+        auto tensor = empty<T>(shape);
+
+        tensor.name("full=" + std::to_string(value));
+
+        return tensor.bind(std::vector<T>(total, value));
+    }
+
+    /** @brief Creates a tensor of the sequence start, start+step, ..., < stop.
+     */
+    static Tensor arange(float start, float stop, float step = 1.0f);
 
     /** @brief Concatenates a list of tensors along the given dimension `dim`. */
     static Tensor cat(const std::vector<Tensor>& tensors, int dim);
 
     /** @brief Stacks a list of tensors along the given dimension `dim`. */
     static Tensor stack(const std::vector<Tensor>& tensors, int64_t dim);
+
+    template <typename T> Tensor& bind(const std::vector<T>& values) {
+        std::vector<std::byte> bytes(values.size() * sizeof(T));
+        std::memcpy(bytes.data(), values.data(), bytes.size());
+        return bind(std::move(bytes));
+    }
+
+    /** @brief Binds a value to tensor.
+     */
+    Tensor& bind(std::vector<std::byte>&& bytes);
 
     /** @brief Reshapes the tensor to a new shape.
      *

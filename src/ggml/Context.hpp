@@ -9,9 +9,7 @@
 #include <random>
 #include <functional>
 #include <cstring>
-#include <cstdio>
-#include <cstdlib>
-#include <iostream>
+
 class Context {
 public:
     template<typename T>
@@ -85,29 +83,6 @@ public:
         if (buffer_)
             return;
 
-        if (std::getenv("CTX_DEBUG") != nullptr) {
-            size_t total = 0;
-            int n = 0;
-            const size_t alignment = ggml_backend_buft_get_alignment(buft);
-
-            for (auto t = ggml_get_first_tensor(ctx_); t != nullptr; t = ggml_get_next_tensor(ctx_, t)) {
-                if (t->data == nullptr && t->view_src == nullptr) {
-                    total += GGML_PAD(ggml_backend_buft_get_alloc_size(buft, t), alignment);
-                    ++n;
-                }
-
-                char shape[256];
-                int off = std::snprintf(shape, sizeof shape, "%s '%s'", ggml_op_name(t->op), ggml_get_name(t));
-                for (int i = 0; i < ggml_n_dims(t); ++i)
-                    off += std::snprintf(shape + off, sizeof shape - off, " %lld", (long long)t->ne[i]);
-
-                std::cerr << "  [ctx] " << shape
-                          << " type=" << ggml_type_name(t->type)
-                          << " alloc=" << ggml_backend_buft_get_alloc_size(buft, t) << " bytes" << std::endl;
-            }
-
-            std::cerr << "  [ctx] total: " << n << " tensors, " << total << " bytes" << std::endl;
-        }
         // If size is 0, there might be no tensors to allocate, or only
         // views that need initialization.
         if (ggml_backend_alloc_ctx_tensors_from_buft_size(ctx_, buft) == 0) {
@@ -238,21 +213,6 @@ public:
         // the bindings to support context reallocation.
         if (it != std::end(bindings_))
             it->second.unbound = true;
-    }
-
-    /** @brief Creates a tensor of the sequence start, start+step, ..., < stop.
-     */
-    Tensor arange(float start, float stop, float step = 1.0f) {
-        const int64_t size = static_cast<int64_t>(std::ceil((stop - start) / step));
-
-        return create<float>({size}, [start, step, size](std::mt19937&) {
-            std::vector<float> values(static_cast<size_t>(size));
-
-            for (size_t i = 0; i < values.size(); ++i)
-                values[i] = start + static_cast<float>(i) * step;
-
-            return values;
-        });
     }
 
     void reset() {

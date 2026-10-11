@@ -73,7 +73,7 @@ Tensor Tensor::clone() const {
     return Tensor(Scope::runtime().dup(t_), shape_);
 }
 
-const Tensor& Tensor::input() {
+Tensor& Tensor::input() {
     Scope::runtime().set_input(t_);
     return *this;
 }
@@ -82,12 +82,12 @@ Tensor Tensor::scale(float value) const {
     return Tensor(Scope::runtime().scale(t_, value), shape_);
 }
 
-Tensor Tensor::full(const Shape& shape, float value) {
-    // GGML supports filling only float tensors.
-    auto tensor = empty<float>(shape);
-    tensor.t_ = Scope::runtime().fill(tensor.t_, value);
-    
-    return tensor;
+Tensor& Tensor::bind(std::vector<std::byte>&& bytes) {
+    Scope::context().bind<std::byte>(*this, [data = std::move(bytes)](std::mt19937&) {
+        return data;
+    }, true);
+
+    return *this;
 }
 
 Tensor Tensor::copy_to(Tensor dest) const {
@@ -234,6 +234,19 @@ Tensor Tensor::empty(const Tensor::Shape& shape, ggml_type type) {
     return shape.rank() == 0
         ? Tensor(Scope::runtime().new_tensor_1d(type, 1), shape)
         : Tensor(Scope::runtime().new_tensor(type, shape.rank(), shape.data()), shape);
+}
+
+Tensor Tensor::arange(float start, float stop, float step) {
+    const int64_t size = static_cast<int64_t>(std::ceil((stop - start) / step));
+
+    return Scope::context().create<float>({size}, [=](std::mt19937&) {
+        std::vector<float> values(static_cast<size_t>(size));
+
+        for (size_t i = 0; i < values.size(); ++i)
+            values[i] = start + static_cast<float>(i) * step;
+
+        return values;
+    }).name("arange");
 }
 
 Tensor Tensor::cat(const std::vector<Tensor>& tensors, int dim) {

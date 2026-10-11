@@ -58,7 +58,7 @@ public:
             Computation<void> computation({&context});
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return scope.context().arange(start, stop, step);
+                return Tensor::arange(start, stop, step);
             });
 
             return Computation<Tensor>::all(result);

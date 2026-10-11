@@ -243,6 +243,12 @@ void ExecutionRuntime::bind(std::mt19937& rng, Context& context, bool once_only)
         if (binding.unbound || binding.once != once_only)
             continue;
 
+        // Dead tensors (outside the graph) are not allocated by the
+        // liveness-aware graph allocator: nothing reads their value,
+        // so skip the write.
+        if ((*tensor)->buffer == nullptr)
+            continue;
+
         auto bytes = binding.provider(rng);
 
         if (bytes.size() != ggml_nbytes(*tensor))

@@ -240,7 +240,7 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
 
 void ExecutionRuntime::bind(std::mt19937& rng, Context& context, bool once_only) const {
     for (auto& [tensor, binding] : context.bindings()) {
-        if (binding.unbound || binding.once != once_only)
+        if (binding.once != once_only)
             continue;
 
         // Dead tensors (outside the graph) are not allocated by the

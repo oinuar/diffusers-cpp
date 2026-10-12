@@ -30,7 +30,6 @@ public:
     struct Binding {
         Provider<std::byte> provider;
         bool once;
-        bool unbound;
     };
 
     typedef std::unordered_map<Tensor, Binding, TensorInputHash, TensorInputEqual> Bindings;
@@ -201,23 +200,12 @@ public:
                 std::memcpy(bytes.data(), values.data(), bytes.size());
                 return bytes;
             },
-            once,
-            /*unbound = */false
+            once
         };
     }
 
     void unbind(Tensor tensor) {
-        auto it = bindings_.find(tensor);
-
-        // Mark binding as unbound. We need to keep track of all
-        // the bindings to support context reallocation.
-        if (it != std::end(bindings_))
-            it->second.unbound = true;
-    }
-
-    void reset() {
-        for (auto& [tensor, binding] : bindings_)
-            binding.unbound = false;
+        bindings_.erase(tensor);
     }
 
     Context(const Context&) = delete;

@@ -11,11 +11,11 @@
 #include <iostream>
 #include <filesystem>
 
-static std::vector<Image> run(Backend& backend, ShardingRuntime& runtime, Computation<Tensor> computation) {
+static std::vector<Image> run(Backend& backend, Computation<Tensor> computation, ShardingRuntime* runtime = nullptr) {
     ProgressBar progress("Flux2Klein");
     std::mt19937 rng;
 
-    auto decoded = ExecutionRuntime::Default.run(backend, rng, computation, &runtime, &progress);
+    auto decoded = ExecutionRuntime::Default.run(backend, rng, computation, runtime, &progress);
     auto data = ExecutionRuntime::Default.read<float>(decoded);
 
     auto images = Flux2KleinPipeline::to_images(decoded.shape(), std::move(data));
@@ -29,13 +29,16 @@ int main(int argc, char** argv) {
 
     ggml_backend_load_all();
 
-    auto meta = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
+    /*auto meta = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
 
     //meta.tensor_split({2, 1});
 
     Backend backend(meta);
     ShardingRuntime runtime(ExecutionRuntime::Default, meta);
-    Scope scope(runtime);
+    Scope scope(runtime);*/
+
+    Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+    Backend backend(cpu);
 
     Context context(65536);
 
@@ -48,7 +51,7 @@ int main(int argc, char** argv) {
 
     auto computation = pipeline(context, context, context, std::move(options));
 
-    auto images = run(backend, runtime, computation);
+    auto images = run(backend, computation);
 
     images[0].save("test.png");
 

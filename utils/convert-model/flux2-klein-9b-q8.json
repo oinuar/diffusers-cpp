@@ -24,5 +24,8 @@
     "model.layers.*.post_attention_layernorm.weight": "F32",
     "model.layers.*.self_attn.q_norm.weight": "F32",
     "model.layers.*.self_attn.k_norm.weight": "F32"
+  },
+  "vae": {
+    "*": "F32"
   }
 }

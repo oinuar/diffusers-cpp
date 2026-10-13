@@ -37,6 +37,7 @@ struct ComputationScope {
     struct Save {
         Tensor src;
         Tensor dst;
+        bool is_feedback;
     };
 
     std::optional<Context> context;     // the graph's scratch (disposable)
@@ -375,7 +376,11 @@ public:
         r.outputs = next_values;
 
         for (auto i = 0; i < next_values.size(); ++i)
-            r.saves.push_back({next_values[i], curr_values[i]});
+            r.saves.push_back({
+                next_values[i], // src
+                curr_values[i], // dst
+                true // is_feedback
+            });
 
         return *this;
     }
@@ -419,7 +424,11 @@ private:
         Scope state_scope(desc_->context());
         auto cell = ComputationValue<Tensor>::state(value).name(value.name() + std::string(" (state)"));
 
-        scope->saves.push_back({value, cell});
+        scope->saves.push_back({
+            value, // src
+            cell, // dst
+            false // is_feedback
+        });
 
         return cell;
     }

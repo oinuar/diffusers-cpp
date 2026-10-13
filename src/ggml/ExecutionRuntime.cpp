@@ -170,12 +170,23 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
         // the buffer holds the peak of simultaneously-live tensors
         // instead of every tensor of the graph.
         r.context->allocate_graph(gf, buft);
+        print_buffer(backend.device(), r.context->allocated_size(), " (graph)");
 
-        print_buffer(backend.device(), r.context->allocated_size(), " (compute)");
+        // The graph allocator (gallocr) treats a scope's bound inputs as
+        // ordinary tensors: it may reuse their storage in place (an
+        // in-place op writes its output over a leaf's buffer) and it frees
+        // a leaf once its last consumer is allocated. For a single
+        // execution that is harmless (each input is read once), but a
+        // repeat scope re-executes the same graph, and the once-only
+        // inputs are NOT re-written on every iteration -- so from the
+        // second execution on they would be read back corrupted.
+        // Snapshot the once-only inputs now, and restore them before every
+        // execution below.
+        std::vector<std::pair<ggml_tensor*, std::vector<std::byte>>> snapshots;
 
         // The bound inputs (once): written into the freshly allocated graph
         // tensors (ggml_backend_tensor_set).
-        bind(rng, *r.context, /*once_only=*/true);
+        bind(rng, *r.context, /*once_only=*/true, r.repeat ? &snapshots : nullptr);
 
         // Handle repeating computation with re-binding and state carrying.
         if (r.repeat) {
@@ -188,15 +199,24 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
             // loop's state cells after every execution (a node of the
             // graph on a non-meta backend, a host-side copy on the meta
             // backend).
+
             for (r.repeat->iter = 0; r.repeat->iter < r.repeat->count; ++r.repeat->iter) {
                 // The re-bindable inputs: rewritten on every (re-)execution.
                 bind(rng, *r.context, /*once_only=*/false);
 
+                // Restore the once-only inputs the graph allocator may have
+                // reused in place during the previous execution.
+                for (auto& [t, data] : snapshots)
+                    ggml_backend_tensor_set(t, data.data(), 0, data.size());
+
                 if (ggml_backend_graph_compute(*backend, gf) != GGML_STATUS_SUCCESS)
                     throw std::runtime_error("run(): ggml_backend_graph_compute failed");
 
-                for (const auto& save : r.saves)
-                    copy(save.src, save.dst);
+                // Copy feedback tensors
+                for (const auto& save : r.saves) {
+                    if (save.is_feedback)
+                        copy(save.src, save.dst);
+                }
 
                 if (progress)
                     progress->next();
@@ -219,14 +239,15 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
             if (ggml_backend_graph_compute(*backend, gf) != GGML_STATUS_SUCCESS)
                 throw std::runtime_error("run(): ggml_backend_graph_compute failed");
 
-            for (const auto& save : r.saves)
-                copy(save.src, save.dst);
-
             if (progress) {
                 progress->next();
                 progress->pop();
             }
         }
+
+        // Copy state tensors.
+        for (const auto& save : r.saves)
+            copy(save.src, save.dst);
 
         // The scope is done: free its buffer. Nothing in the scope
         // context leaks outside -- the values that survive are in the
@@ -238,7 +259,7 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
         progress->pop();
 }
 
-void ExecutionRuntime::bind(std::mt19937& rng, Context& context, bool once_only) const {
+void ExecutionRuntime::bind(std::mt19937& rng, Context& context, bool once_only, std::vector<std::pair<ggml_tensor*, std::vector<std::byte>>>* snapshots) const {
     for (auto& [tensor, binding] : context.bindings()) {
         if (binding.once != once_only)
             continue;
@@ -255,6 +276,10 @@ void ExecutionRuntime::bind(std::mt19937& rng, Context& context, bool once_only)
             throw std::runtime_error(std::string("bind(): size mismatch for '") + ggml_get_name(*tensor) + "'");
 
         ggml_backend_tensor_set(*tensor, bytes.data(), 0, bytes.size());
+
+        // Store bound bytes to snapshot for later restoring.
+        if (snapshots)
+            snapshots->emplace_back(*tensor, std::move(bytes));
     }
 }
 

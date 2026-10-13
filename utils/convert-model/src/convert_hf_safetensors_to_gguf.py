@@ -281,6 +281,17 @@ def resolve_tensor_qtype(name, dtype, spec: TypeSpec) -> GGMLQuantizationType:
       3. the global --type name
       4. the tensor's original dtype
     """
+    qtype = DTYPE_TO_QTYPE.get(dtype)
+
+    # Plain integer types are stored without as-is.
+    if qtype in (
+        GGMLQuantizationType.I8,
+        GGMLQuantizationType.I16,
+        GGMLQuantizationType.I32,
+        GGMLQuantizationType.I64,
+    ):
+        return qtype
+
     qtype = spec.patterns.get(name)
 
     if qtype is None:
@@ -296,10 +307,7 @@ def resolve_tensor_qtype(name, dtype, spec: TypeSpec) -> GGMLQuantizationType:
     if spec.default is not None:
         return spec.default
 
-    try:
-        return DTYPE_TO_QTYPE[dtype]
-    except KeyError:
-        raise ValueError(f"Unsupported dtype {dtype} for tensor '{name}'") from None
+    raise ValueError(f"Unsupported dtype {dtype} for tensor '{name}'") from None
 
 
 def normalize_tensor(tensor):
@@ -320,9 +328,11 @@ def quantize_tensor(name, tensor, qtype):
     """
     Convert a numpy tensor to the raw bytes a GGUF file stores for `qtype`.
     """
-    # Plain dtypes are written as-is.
+    # Use tensor as-is
     if qtype in (
+        GGMLQuantizationType.BF16,
         GGMLQuantizationType.F64,
+        GGMLQuantizationType.F32,
         GGMLQuantizationType.I8,
         GGMLQuantizationType.I16,
         GGMLQuantizationType.I32,
@@ -330,10 +340,12 @@ def quantize_tensor(name, tensor, qtype):
     ):
         return tensor
 
-    # gguf handles F32/F16 casts, real BF16 packing (returns a uint8 byte
-    # blob of shape (*shape, 2)) and all block-quantized types.
-    return quantize(tensor, qtype)
+    # Downcast to float16
+    if qtype == GGMLQuantizationType.F16:
+        return tensor.astype(np.float16)
 
+    # Everything below MUST be quantized manually
+    return quantize(tensor, qtype)
 
 @dataclass
 class Component:

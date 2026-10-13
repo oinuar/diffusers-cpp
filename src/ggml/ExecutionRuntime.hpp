@@ -338,7 +338,7 @@ public:
         ggml_scale_mode mode) override;
 
 private:
-    void bind(std::mt19937& rng, Context& context, bool once_only) const;
+    void bind(std::mt19937& rng, Context& context, bool once_only, std::vector<std::pair<ggml_tensor*, std::vector<std::byte>>>* snapshots = nullptr) const;
     void copy(const Tensor& src, const Tensor& dst) const;
     void run(Backend& backend, std::mt19937& rng, ComputationDescription& desc, ShardingRuntime* sharding, ProgressBar* progress) const;
 };

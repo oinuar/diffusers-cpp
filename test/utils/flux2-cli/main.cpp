@@ -703,22 +703,52 @@ private:
             ModulePath module_path("-", "--param");
             auto weight_path = module_path(path, prefix(), {"weight"});
 
-            auto weight_value = get_param(weight_path);
-            ArgumentParser::parser<Tensor>::TensorParser parser(weight_path, weight_value);
-
             auto q_weight = to_qkv_mlp_proj.q()->weight();
             auto k_weight = to_qkv_mlp_proj.k()->weight();
             auto v_weight = to_qkv_mlp_proj.v()->weight();
             auto mlp_in_weight = to_qkv_mlp_proj.mlp_in()->weight();
 
-            auto [shape, data] = parser.parse();
             auto inner = to_qkv_mlp_proj.inner_dim();
             auto mlp_out = to_qkv_mlp_proj.mlp_out_dim();
 
             // The fused weight is (3 * inner + mlp_out) x query_dim, so rows
             // of the flattened data are query_dim elements long.
             auto query_dim = q_weight->shape()[1];
-            
+
+            if (auto type = quantization().resolve(dot_name(path) + ".weight", prefix()); type && *type != GGML_TYPE_F32) {
+                // Quantized weight: the file holds the raw bytes of the
+                // fused tensor. The rows are contiguous in memory, so the
+                // split into q/k/v/mlp_in is a plain byte-range slice.
+                auto data = get_param_bytes(weight_path);
+
+                auto row_bytes = static_cast<size_t>(ggml_row_size(*type, query_dim));
+
+                if (data.size() != row_bytes * (3 * inner + mlp_out))
+                    throw std::runtime_error(
+                        "Flux2FusedQKVProjection: quantized weight '" + weight_path +
+                        "' has " + std::to_string(data.size()) + " bytes, expected " +
+                        std::to_string(row_bytes * (3 * inner + mlp_out)));
+
+                q_weight->set(create_quantized(weight_path + "-q-weight", q_weight->shape(), *type,
+                    slice_rows_bytes(data, *type, query_dim, 0, inner)));
+
+                k_weight->set(create_quantized(weight_path + "-k-weight", k_weight->shape(), *type,
+                    slice_rows_bytes(data, *type, query_dim, inner, 2 * inner)));
+
+                v_weight->set(create_quantized(weight_path + "-v-weight", v_weight->shape(), *type,
+                    slice_rows_bytes(data, *type, query_dim, 2 * inner, 3 * inner)));
+
+                mlp_in_weight->set(create_quantized(weight_path + "-mlp_in-weight", mlp_in_weight->shape(), *type,
+                    slice_rows_bytes(data, *type, query_dim, 3 * inner, 3 * inner + mlp_out)));
+
+                return;
+            }
+
+            auto weight_value = get_param(weight_path);
+            ArgumentParser::parser<Tensor>::TensorParser parser(weight_path, weight_value);
+
+            auto [shape, data] = parser.parse();
+
             q_weight->set(context().create<float>(q_weight->shape(), [=](std::mt19937&) {
                 return slice_rows(data, query_dim, 0, inner);
             }).name(weight_path + "-q-weight"));
@@ -740,10 +770,6 @@ private:
             ModulePath module_path("-", "--param");
 
             auto weight_path = module_path(path, prefix(), {"weight"});
-            auto weight_value = get_param(weight_path);
-            ArgumentParser::parser<Tensor>::TensorParser weight_parser(weight_path, weight_value);
-
-            auto [weight_shape, weight_data] = weight_parser.parse();
 
             auto attn_weight = to_out.attn()->weight();
             auto mlp_weight = to_out.mlp()->weight();
@@ -754,6 +780,34 @@ private:
             // The fused weight is (out_dim) x (inner + mlp_hidden) in the
             // PyTorch (out_features, in_features) layout.
             auto out_dim = attn_weight->shape()[0];
+
+            if (auto type = quantization().resolve(dot_name(path) + ".weight", prefix()); type && *type != GGML_TYPE_F32) {
+                // Quantized weight: the file holds the raw bytes of the
+                // fused tensor. Splitting the columns (attn | mlp) must
+                // fall on quantization block boundaries.
+                auto data = get_param_bytes(weight_path);
+
+                auto row_bytes = static_cast<size_t>(ggml_row_size(*type, inner + mlp_hidden));
+
+                if (data.size() != row_bytes * out_dim)
+                    throw std::runtime_error(
+                        "Flux2FusedAttentionOutput: quantized weight '" + weight_path +
+                        "' has " + std::to_string(data.size()) + " bytes, expected " +
+                        std::to_string(row_bytes * out_dim));
+
+                attn_weight->set(create_quantized(weight_path + "-attn-weight", attn_weight->shape(), *type,
+                    slice_cols_bytes(data, *type, out_dim, inner + mlp_hidden, 0, inner)));
+
+                mlp_weight->set(create_quantized(weight_path + "-mlp-weight", mlp_weight->shape(), *type,
+                    slice_cols_bytes(data, *type, out_dim, inner + mlp_hidden, inner, inner + mlp_hidden)));
+
+                return;
+            }
+
+            auto weight_value = get_param(weight_path);
+            ArgumentParser::parser<Tensor>::TensorParser weight_parser(weight_path, weight_value);
+
+            auto [weight_shape, weight_data] = weight_parser.parse();
 
             attn_weight->set(context().create<float>(attn_weight->shape(), [=](std::mt19937&) {
                 return slice_cols(weight_data, out_dim, inner + mlp_hidden, 0, inner);
@@ -811,6 +865,58 @@ private:
                     x.begin() + r * cols + start,
                     x.begin() + r * cols + end);
             }
+
+            return out;
+        }
+        // The raw-bytes counterpart of slice_rows: rows of a 2-D quantized
+        // tensor are contiguous, each row is ggml_row_size bytes long.
+        static std::vector<std::byte> slice_rows_bytes(
+            const std::vector<std::byte>& x,
+            ggml_type type,
+            size_t cols,
+            size_t start,
+            size_t end)
+        {
+            auto row_bytes = static_cast<size_t>(ggml_row_size(type, cols));
+
+            return {
+                x.begin() + start * row_bytes,
+                x.begin() + end * row_bytes
+            };
+        }
+
+        // The raw-bytes counterpart of slice_cols: the column range must
+        // fall on quantization block boundaries, so the slice is a
+        // per-row byte range.
+        static std::vector<std::byte> slice_cols_bytes(
+            const std::vector<std::byte>& x,
+            ggml_type type,
+            size_t rows,
+            size_t cols,
+            size_t start,
+            size_t end)
+        {
+            auto blck = static_cast<size_t>(ggml_blck_size(type));
+
+            if (start % blck != 0 || (end - start) % blck != 0)
+                throw std::runtime_error(
+                    "The quantized fused weight column range [" + std::to_string(start) + ", " +
+                    std::to_string(end) + ") is not aligned to the quantization block size " +
+                    std::to_string(blck));
+
+            auto row_bytes = static_cast<size_t>(ggml_row_size(type, cols));
+            auto block_bytes = static_cast<size_t>(ggml_type_size(type));
+            auto slice_offset = start / blck * block_bytes;
+            auto slice_bytes = (end - start) / blck * block_bytes;
+
+            std::vector<std::byte> out;
+            out.reserve(rows * slice_bytes);
+
+            for (size_t r = 0; r < rows; ++r)
+                out.insert(
+                    out.end(),
+                    x.begin() + r * row_bytes + slice_offset,
+                    x.begin() + r * row_bytes + slice_offset + slice_bytes);
 
             return out;
         }

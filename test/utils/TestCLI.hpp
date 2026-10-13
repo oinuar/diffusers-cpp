@@ -10,10 +10,14 @@
 #include "nn/Parameter.hpp"
 #include "nn/ModulePath.hpp"
 #include "ProgressBar.hpp"
+#include "./QuantSpec.hpp"
 #include "./ArgumentParser.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <cstddef>
+#include <cstring>
+#include <iterator>
 
 class TestCLI {
 public:
@@ -110,13 +114,24 @@ public:
         CreateParametersVisitor(Context& context, const ArgumentParser& args, const std::string& prefix = "")
             : context_(context), args_(args), prefix_(prefix)
         {}
-
         virtual void visit(Parameter& parameter, std::vector<std::string> path) {
             ModulePath module_path("-", "--param");
             auto joined_path = module_path(path, prefix_);
 
+            // Quantized parameter (see --quant): the value is a file with
+            // the raw bytes of the type resolved by the quantization spec,
+            // like a tensor in a GGUF file from utils/convert-model.
+            if (auto type = quantization().resolve(dot_name(path), prefix_); type && *type != parameter.dtype()) {
+                auto bytes = get_param_bytes(joined_path);
+
+                auto tensor = create_quantized(joined_path, parameter.shape(), *type, std::move(bytes));
+
+                parameter.set(tensor.name(joined_path));
+                return;
+            }
+
             ArgumentParser::parser<Tensor> parser(context_, parameter.dtype());
-            
+
             auto tensor = parser(joined_path, get_param(joined_path));
 
             parameter.set(tensor.name(joined_path));
@@ -132,7 +147,7 @@ public:
                 if (!file)
                     throw std::runtime_error(
                         "Failed to open parameter file: " + value);
-                
+
                 std::stringstream buffer;
                 buffer << file.rdbuf();
 
@@ -141,6 +156,77 @@ public:
 
             // Otherwise, read inline tensor
             return value;
+        }
+
+        /** @brief The quantization spec parsed from the --quant argument
+         *  (same grammar as the --type option of utils/convert-model).
+         *  Parsed lazily, once per visitor.
+         */
+        const QuantSpec& quantization() {
+            if (!quant_spec_)
+                quant_spec_ = QuantSpec::parse(args_.get_optional<std::string>("--quant").value_or(""));
+
+            return *quant_spec_;
+        }
+
+        /** @brief Reads the raw bytes of a quantized parameter from the
+         *  file the --param option points to.
+         */
+        std::vector<std::byte> get_param_bytes(const std::string& path) const {
+            auto value = args_.get_one<std::string>(path);
+
+            std::error_code ec;
+
+            if (!std::filesystem::is_regular_file(value, ec) || ec)
+                throw std::runtime_error(
+                    "Quantized parameter '" + path + "' must be a file with raw bytes, got: " + value);
+
+            std::ifstream file(value, std::ios::binary);
+
+            if (!file)
+                throw std::runtime_error(
+                    "Failed to open quantized parameter file: " + value);
+
+            std::string raw{
+                std::istreambuf_iterator<char>(file),
+                std::istreambuf_iterator<char>()};
+
+            std::vector<std::byte> bytes(raw.size());
+            std::memcpy(bytes.data(), raw.data(), raw.size());
+
+            return bytes;
+        }
+
+        /** @brief Creates a tensor of the given (quantized) type and binds
+         *  the raw bytes to it. Mirrors the way GGUFLoaderVisitor streams
+         *  quantized tensors from a GGUF file.
+         */
+        Tensor create_quantized(const std::string& name, const Tensor::Shape& shape, ggml_type type, std::vector<std::byte>&& bytes) const {
+            Scope scope(context_);
+            auto tensor = Tensor::empty(shape, type).input();
+            tensor.name(name);
+
+            auto expected = ggml_nbytes(*tensor);
+
+            if (bytes.size() != expected)
+                throw std::runtime_error(
+                    "Quantized parameter '" + name + "': expected " +
+                    std::to_string(expected) + " bytes of " + ggml_type_name(type) +
+                    " with shape " + shape.to_string() + ", got " +
+                    std::to_string(bytes.size()));
+
+            context_.bind<std::byte>(tensor, [bytes = std::move(bytes)](std::mt19937&) {
+                return std::move(bytes);
+            }, /*once=*/true);
+
+            return tensor;
+        }
+
+        // The tensor name inside its component (dotted, without the
+        // component prefix), the name quantization patterns match against.
+        static std::string dot_name(const std::vector<std::string>& path) {
+            ModulePath module_path;
+            return module_path(path);
         }
 
         Context& context() {
@@ -155,6 +241,7 @@ public:
         Context& context_;
         const ArgumentParser& args_;
         std::string prefix_;
+        mutable std::optional<QuantSpec> quant_spec_;
     };
 public:
     virtual int run(Backend& backend, Computation<std::vector<Tensor>> computation, ShardingRuntime* sharding = nullptr) {

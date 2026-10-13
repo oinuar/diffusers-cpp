@@ -900,39 +900,66 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
 
         self.assertTensors(actual, [expected.float()])
 
-    def test_call(self):
+    def test_call_quantized(self):
+        # A complete __call__ run with exactly the same configuration as
+        # test_call (same model shapes), but with the weights quantized the
+        # way utils/convert-model does. Beyond checking that the C++ output
+        # matches the Python reference computed with the dequantized
+        # weights, it measures the quantization quality: the degeneration
+        # of the quantized model against the float32 model, asserted to
+        # stay within tight limits on
+        #
+        #   * the text encoder prompt embeddings, identical tokens
+        #     (relative L2 error),
+        #   * the transformer first denoising-step noise prediction,
+        #     identical inputs (relative L2 error),
+        #   * the final image (max and mean absolute pixel difference,
+        #     0-255 scale).
+        #
+        # The limits are calibrated so that the checked-in quantization
+        # spec (flux2-klein-9b-q8.json) passes with a wide margin while a
+        # naive "everything Q8_0" spec fails.
+        quant_spec = "@{0}".format(os.path.abspath(os.path.join(
+            os.path.dirname(__file__), "..", "..", "..", "..", "..",
+            "utils", "convert-model", "flux2-klein-9b-q8.json",
+        )))
+
         transformer = Flux2Transformer2DModel(
             patch_size=1,
-            in_channels=16,
-            out_channels=16,
-            num_layers=1,
-            num_single_layers=1,
-            attention_head_dim=40,
-            num_attention_heads=2,
-            joint_attention_dim=24,
-            timestep_guidance_channels=8,
-            axes_dims_rope=(20, 20),
+            in_channels=32,
+            out_channels=32,
+            num_layers=2,            # real: 8
+            num_single_layers=2,    # real: 24
+            attention_head_dim=32,  # real: 128 (multiple of 32 for Q8_0)
+            num_attention_heads=2,  # real: 32
+            joint_attention_dim=96,  # 3 * text encoder hidden; real: 3 * 4096
+            timestep_guidance_channels=32,
+            axes_dims_rope=(8, 8, 8, 8),  # real: (32, 32, 32, 32); 4 axes
             guidance_embeds=False,
         )
 
         vae = AutoencoderKLFlux2(
             in_channels=3,
             out_channels=3,
-            latent_channels=4,
-            down_block_types=("DownEncoderBlock2D",),
-            up_block_types=("UpDecoderBlock2D",),
-            block_out_channels=(8,),
-            layers_per_block=1,
+            # latent_channels * 4 = 32 packed channels, the transformer's
+            # in/out channels; a multiple of the Q8_0 block size (32)
+            latent_channels=8,
+            down_block_types=("DownEncoderBlock2D",) * 3,  # real: 4
+            up_block_types=("UpDecoderBlock2D",) * 3,
+            block_out_channels=(8, 16, 32),  # real: (128, 256, 512, 512)
+            layers_per_block=2,
             norm_num_groups=8,
         )
 
         text_config = Qwen3Config(
-            hidden_size=8,
-            intermediate_size=16,
+            hidden_size=32,
+            intermediate_size=64,
             num_hidden_layers=28,
             num_attention_heads=2,
-            num_key_value_heads=2,
-            max_position_embeddings=32,
+            num_key_value_heads=1,  # GQA, like the real model (32/8)
+            max_position_embeddings=256,
+            # Default vocab size (151936), like the real model: the
+            # tokenizer pads with pad token id 151643.
         )
 
         tokenizer = Qwen2TokenizerFast.from_pretrained(self.tokenizer_dir)
@@ -949,23 +976,15 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
 
         batch = 1
         prompt = "hello world"
-        max_sequence_length = 16
+        max_sequence_length = 128
         num_inference_steps = 4
         generator = torch.Generator()
 
-        packed_h = 2
-        packed_w = 3
+        packed_h = 4
+        packed_w = 4
 
         height = packed_h * 2 * pipe.vae_scale_factor
         width = packed_w * 2 * pipe.vae_scale_factor
-
-        # ------------------------------------------------------------
-        # 1. Initial latents
-        #
-        # Generated in Python and passed to the C++ CLI so that both
-        # sides run the complete denoising loop on exactly the same
-        # input.
-        # ------------------------------------------------------------
 
         init_latents = torch.randn(
             batch,
@@ -977,11 +996,272 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
         )
 
         # ------------------------------------------------------------
-        # 2. Python reference: complete __call__ with 2 denoising steps.
-        #
-        # guidance_scale=1.0 disables classifier-free guidance, matching
-        # the (guidance-distilled) C++ pipeline.
+        # 1. Float32 reference: run the pipeline with the original
+        #    weights and capture the signals the quantization degrades:
+        #    the final image, the prompt embeddings, and the first
+        #    denoising-step noise prediction (spied on the transformer so
+        #    it can be replayed with identical inputs later).
         # ------------------------------------------------------------
+
+        first_call = {}
+        original_forward = pipe.transformer.forward
+
+        def transformer_forward_spy(*args, **kwargs):
+            out = original_forward(*args, **kwargs)
+            if "out" not in first_call:
+                first = out[0] if isinstance(out, (tuple, list)) else out
+                first_call["out"] = first
+                first_call["args"] = args
+                first_call["kwargs"] = kwargs
+            return out
+
+        pipe.transformer.forward = transformer_forward_spy
+        try:
+            ref_output = pipe(
+                prompt=prompt,
+                height=height,
+                width=width,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=1.0,
+                max_sequence_length=max_sequence_length,
+                latents=init_latents,
+            )
+        finally:
+            pipe.transformer.forward = original_forward
+
+        ref_images = [
+            torch.from_numpy(np.array(image)).float()
+            for image in ref_output.images
+        ]
+        ref_pred = first_call["out"]
+
+        ref_prompt_embeds, _ = pipe.encode_prompt(
+            prompt=prompt,
+            num_images_per_prompt=batch,
+            max_sequence_length=max_sequence_length,
+        )
+        ref_prompt_embeds = ref_prompt_embeds.float()
+
+        # ------------------------------------------------------------
+        # 2. Quantized weights: quantize the parameters the same way
+        #    utils/convert-model does and run the Python reference with
+        #    the dequantized weights, so that both sides compute with
+        #    exactly the same values.
+        # ------------------------------------------------------------
+        transformer_args, transformer_state = self.quant_params(pipe.transformer, self.tmpdir.name, "transformer", quant_spec)
+        vae_args, vae_state = self.quant_params(pipe.vae, self.tmpdir.name, "vae", quant_spec)
+        text_encoder_args, text_encoder_state = self.quant_params(pipe.text_encoder, self.tmpdir.name, "text_encoder", quant_spec)
+
+        self.apply_quantized_state(pipe.transformer, transformer_state)
+        self.apply_quantized_state(pipe.text_encoder, text_encoder_state)
+
+        # Quantized signals: the prompt embeddings on identical tokens,
+        # and the first-step noise prediction replayed with identical
+        # float32 inputs, so the transformer error is measured without
+        # the encoder error.
+        quant_prompt_embeds, _ = pipe.encode_prompt(
+            prompt=prompt,
+            num_images_per_prompt=batch,
+            max_sequence_length=max_sequence_length,
+        )
+        quant_prompt_embeds = quant_prompt_embeds.float()
+
+        quant_pred = original_forward(*first_call["args"], **first_call["kwargs"])
+        quant_pred = quant_pred[0] if isinstance(quant_pred, (tuple, list)) else quant_pred
+
+        output = pipe(
+            prompt=prompt,
+            height=height,
+            width=width,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=1.0,
+            max_sequence_length=max_sequence_length,
+            latents=init_latents,
+        )
+
+        expected = [
+            torch.from_numpy(np.array(image)).float()
+            for image in output.images
+        ]
+
+        actual = self.cli(
+            "Flux2KleinPipeline_call",
+
+            "--prompt", prompt,
+            "--height", str(height),
+            "--width", str(width),
+            "--num_inference_steps", str(num_inference_steps),
+            "--max_sequence_length", str(max_sequence_length),
+            "--init_latents", str(pipe._pack_latents(init_latents).tolist()),
+            "--quant", quant_spec,
+
+            "--transformer-patch_size", "1",
+            "--transformer-in_channels", "32",
+            "--transformer-out_channels", "32",
+            "--transformer-num_layers", "2",
+            "--transformer-num_single_layers", "2",
+            "--transformer-attention_head_dim", "32",
+            "--transformer-num_attention_heads", "2",
+            "--transformer-joint_attention_dim", "96",
+            "--transformer-timestep_guidance_channels", "32",
+            "--transformer-axes_dims_rope", "8",
+            "--transformer-axes_dims_rope", "8",
+            "--transformer-axes_dims_rope", "8",
+            "--transformer-axes_dims_rope", "8",
+            "--transformer-guidance_embeds", "false",
+
+            "--vae-in_channels", "3",
+            "--vae-out_channels", "3",
+            "--vae-latent_channels", "8",
+            "--vae-block_out_channels", "8",
+            "--vae-block_out_channels", "16",
+            "--vae-block_out_channels", "32",
+            "--vae-layers_per_block", "2",
+            "--vae-norm_num_groups", "8",
+            "--vae-mid_block_add_attention", "true",
+
+            "--text_encoder-hidden_size", "32",
+            "--text_encoder-intermediate_size", "64",
+            "--text_encoder-num_hidden_layers", "28",
+            "--text_encoder-num_attention_heads", "2",
+            "--text_encoder-num_key_value_heads", "1",
+            "--text_encoder-max_position_embeddings", "256",
+
+            "--tokenizer_dir", self.tokenizer_dir,
+
+            *transformer_args,
+            *vae_args,
+            *text_encoder_args,
+        )
+
+        # The C++ implementation matches the Python reference computed
+        # with the dequantized weights.
+        self.assertTensorsLess(actual, expected, 2.5)
+
+        # ------------------------------------------------------------
+        # 3. Quantization quality: the degeneration of the quantized
+        #    model against the float32 reference must stay within the
+        #    limits below.
+        # ------------------------------------------------------------
+
+        embed_diff = quant_prompt_embeds - ref_prompt_embeds
+        embed_rel = (embed_diff.norm() / ref_prompt_embeds.norm()).item()
+        self.assertLess(
+            embed_rel, 2e-3,
+            f"Quantized text encoder degenerates: relative L2 error of the "
+            f"prompt embeddings {embed_rel:.3e} (limit 2e-3), "
+            f"max abs {embed_diff.abs().max().item():.3e}"
+        )
+
+        pred_diff = quant_pred - ref_pred
+        pred_rel = (pred_diff.norm() / ref_pred.norm()).item()
+        self.assertLess(
+            pred_rel, 1e-3,
+            f"Quantized transformer degenerates: relative L2 error of the "
+            f"first-step noise prediction {pred_rel:.3e} (limit 1e-3), "
+            f"max abs {pred_diff.abs().max().item():.3e}"
+        )
+
+        image_diff = (torch.stack(expected) - torch.stack(ref_images)).abs()
+        self.assertLess(
+            image_diff.mean().item(), 0.05,
+            f"Quantized image degenerates: mean absolute pixel difference "
+            f"{image_diff.mean().item():.4f} (limit 0.05, 0-255 scale), "
+            f"max {image_diff.max().item():.1f}"
+        )
+        self.assertLess(
+            image_diff.max().item(), 3.0,
+            f"Quantized image degenerates: max absolute pixel difference "
+            f"{image_diff.max().item():.1f} (limit 3.0, 0-255 scale)"
+        )
+
+    def test_call(self):
+        # A complete __call__ run (like test_call) with a configuration in
+        # the same shape class as the real FLUX.2-klein-9B model:
+        #
+        # - 4D RoPE (4 axes, real model: (32, 32, 32, 32))
+        # - GQA text encoder (kv heads < q heads, real model: 8/32)
+        # - multiple double-stream and single-stream transformer blocks
+        #   (real model: 8 and 24)
+        # - multi-block VAE with mid-block attention (real model: 4 blocks)
+
+        transformer = Flux2Transformer2DModel(
+            patch_size=1,
+            in_channels=32,
+            out_channels=32,
+            num_layers=2,            # real: 8
+            num_single_layers=2,    # real: 24
+            attention_head_dim=32,  # real: 128 (multiple of 32 for Q8_0)
+            num_attention_heads=2,  # real: 32
+            joint_attention_dim=96,  # 3 * text encoder hidden; real: 3 * 4096
+            timestep_guidance_channels=32,
+            axes_dims_rope=(8, 8, 8, 8),  # real: (32, 32, 32, 32); 4 axes
+            guidance_embeds=False,
+        )
+
+        vae = AutoencoderKLFlux2(
+            in_channels=3,
+            out_channels=3,
+            # latent_channels * 4 = 32 packed channels, the transformer's
+            # in/out channels; a multiple of the Q8_0 block size (32)
+            latent_channels=8,
+            down_block_types=("DownEncoderBlock2D",) * 3,  # real: 4
+            up_block_types=("UpDecoderBlock2D",) * 3,
+            block_out_channels=(8, 16, 32),  # real: (128, 256, 512, 512)
+            layers_per_block=2,
+            norm_num_groups=8,
+        )
+
+        text_config = Qwen3Config(
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=28,
+            num_attention_heads=2,
+            num_key_value_heads=1,  # GQA, like the real model (32/8)
+            max_position_embeddings=256,
+            # Default vocab size (151936), like the real model: the
+            # tokenizer pads with pad token id 151643.
+        )
+
+        tokenizer = Qwen2TokenizerFast.from_pretrained(self.tokenizer_dir)
+        text_encoder = Qwen3ForCausalLM(text_config)
+        scheduler = FlowMatchEulerDiscreteScheduler()
+
+        pipe = Flux2KleinPipeline(
+            transformer=transformer,
+            vae=vae,
+            text_encoder=text_encoder,
+            tokenizer=tokenizer,
+            scheduler=scheduler,
+        )
+
+        batch = 1
+        prompt = "hello world"
+        max_sequence_length = 128
+        num_inference_steps = 4
+        generator = torch.Generator()
+
+        packed_h = 4
+        packed_w = 4
+
+        height = packed_h * 2 * pipe.vae_scale_factor
+        width = packed_w * 2 * pipe.vae_scale_factor
+
+        init_latents = torch.randn(
+            batch,
+            pipe.vae.config.latent_channels * 4,
+            packed_h,
+            packed_w,
+            generator=generator,
+            dtype=torch.float32,
+        )
+
+        # Quantize the parameters the same way utils/convert-model does and
+        # run the Python reference with the dequantized weights, so that
+        # both sides compute with exactly the same values.
+        transformer_args = self.params(transformer, self.tmpdir.name, "transformer")
+        vae_args = self.params(vae, self.tmpdir.name, "vae")
+        text_encoder_args = self.params(text_encoder, self.tmpdir.name, "text_encoder")
 
         output = pipe(
             prompt=prompt,
@@ -1009,40 +1289,45 @@ class TestPipelinesFlux2KleinPipeline(TestCase):
             "--init_latents", str(pipe._pack_latents(init_latents).tolist()),
 
             "--transformer-patch_size", "1",
-            "--transformer-in_channels", "16",
-            "--transformer-out_channels", "16",
-            "--transformer-num_layers", "1",
-            "--transformer-num_single_layers", "1",
-            "--transformer-attention_head_dim", "40",
+            "--transformer-in_channels", "32",
+            "--transformer-out_channels", "32",
+            "--transformer-num_layers", "2",
+            "--transformer-num_single_layers", "2",
+            "--transformer-attention_head_dim", "32",
             "--transformer-num_attention_heads", "2",
-            "--transformer-joint_attention_dim", "24",
-            "--transformer-timestep_guidance_channels", "8",
-            "--transformer-axes_dims_rope", "20",
-            "--transformer-axes_dims_rope", "20",
+            "--transformer-joint_attention_dim", "96",
+            "--transformer-timestep_guidance_channels", "32",
+            "--transformer-axes_dims_rope", "8",
+            "--transformer-axes_dims_rope", "8",
+            "--transformer-axes_dims_rope", "8",
+            "--transformer-axes_dims_rope", "8",
             "--transformer-guidance_embeds", "false",
 
             "--vae-in_channels", "3",
             "--vae-out_channels", "3",
-            "--vae-latent_channels", "4",
+            "--vae-latent_channels", "8",
             "--vae-block_out_channels", "8",
-            "--vae-layers_per_block", "1",
+            "--vae-block_out_channels", "16",
+            "--vae-block_out_channels", "32",
+            "--vae-layers_per_block", "2",
             "--vae-norm_num_groups", "8",
+            "--vae-mid_block_add_attention", "true",
 
-            "--text_encoder-hidden_size", "8",
-            "--text_encoder-intermediate_size", "16",
+            "--text_encoder-hidden_size", "32",
+            "--text_encoder-intermediate_size", "64",
             "--text_encoder-num_hidden_layers", "28",
             "--text_encoder-num_attention_heads", "2",
-            "--text_encoder-num_key_value_heads", "2",
-            "--text_encoder-max_position_embeddings", "32",
+            "--text_encoder-num_key_value_heads", "1",
+            "--text_encoder-max_position_embeddings", "256",
 
             "--tokenizer_dir", self.tokenizer_dir,
 
-            *self.params(pipe.transformer, self.tmpdir.name, "transformer"),
-            *self.params(pipe.vae, self.tmpdir.name, "vae"),
-            *self.params(pipe.text_encoder, self.tmpdir.name, "text_encoder"),
+            *transformer_args,
+            *vae_args,
+            *text_encoder_args,
         )
 
-        self.assertTensors(actual, expected)
+        self.assertTensorsLess(actual, expected, 2.5)
 
     def test_pack_latents(self):
         generator = torch.Generator()

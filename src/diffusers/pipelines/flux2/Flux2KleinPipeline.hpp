@@ -35,6 +35,14 @@ public:
         // If nullopt, random noise is generated instead.
         std::optional<std::vector<float>> init_latents;
         size_t max_sequence_length = 512;
+        //
+        // Tiled VAE decode/encode: bounds the full-resolution VAE
+        // activation memory to the tile size (diffusers' enable_tiling).
+        // The tile sizes are in pixels; 0 disables tiling. Images within
+        // a single tile are decoded/encoded exactly like the untiled path.
+        //
+        int decode_tile_size = 512;
+        int encode_tile_size = 512;
     };
 
     static Flux2KleinPipeline from_pretrained(Context& vae_context, Context& text_encoder_context, Context& transformer_context, const std::filesystem::path& path);
@@ -52,8 +60,9 @@ public:
 
     // Encodes reference images into packed latents (B, N, 4 * C), where N
     // is the sum of the packed token counts of all images. Returns
-    // std::nullopt when there are no images.
-    std::optional<Tensor> encode_images(Scope scope, const std::vector<Image>& images, int batch);
+    // std::nullopt when there are no images. tile_size is the VAE encode
+    // tile size in pixels; 0 disables tiled encoding.
+    std::optional<Tensor> encode_images(Scope scope, const std::vector<Image>& images, int batch, int tile_size = 0);
 
     // Encodes the prompt into text embeddings (B, L, 3 * hidden_dim).
     Tensor encode_prompt(Scope scope, int batch, const std::string& prompt, size_t max_sequence_length);
@@ -73,8 +82,9 @@ public:
         const Tensor& timestep,
         const Tensor& dt);
 
-    // Decodes packed latents into pixels (B, 3, H, W).
-    Tensor decode(Scope scope, const Tensor& latents, int packed_h, int packed_w);
+    // Decodes packed latents into pixels (B, 3, H, W). tile_size is the
+    // VAE decode tile size in pixels; 0 disables tiled decoding.
+    Tensor decode(Scope scope, const Tensor& latents, int packed_h, int packed_w, int tile_size = 0);
 
     int64_t vae_scale_factor() const {
         return vae_.scale_factor();

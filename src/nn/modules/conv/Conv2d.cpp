@@ -38,6 +38,9 @@ Tensor Conv2d::forward(Scope scope, Tensor x) {
             modules["weight"])
         ->forward(scope);
 
+    // Conv2D requires that x is contiguous
+    if (!x.is_contiguous())
+        x = x.contiguous();
 
     auto conv = scope.runtime().conv_2d_direct(
         *weight,

@@ -8,6 +8,7 @@ class Parameter;
 class Module;
 class Flux2FusedQKVProjection;
 class Flux2FusedAttentionOutput;
+class Flux2FeedForward;
 
 class Visitor {
 public:
@@ -17,4 +18,5 @@ public:
     virtual void visit(Module&, std::vector<std::string>) {}
     virtual void visit(Flux2FusedQKVProjection&, std::vector<std::string>) {}
     virtual void visit(Flux2FusedAttentionOutput&, std::vector<std::string>) {}
+    virtual void visit(Flux2FeedForward&, std::vector<std::string>) {}
 };

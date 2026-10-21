@@ -324,7 +324,7 @@ Computation<Tensor> Flux2KleinPipeline::operator()(
     // 2. Encode images to latents.
     auto image_latents = computation
         .scope([&](Scope scope) -> std::optional<Tensor> {
-            return encode_images(scope, options.images, batch);
+            return encode_images(scope, options.images, batch, options.encode_tile_size);
         });
 
     // 3. Encode the prompt into text embeddings.
@@ -381,13 +381,13 @@ Computation<Tensor> Flux2KleinPipeline::operator()(
 
     // 7. Decode latents to pixels.
     auto decoded = latents.scope([&](Scope scope, Tensor latents) -> Tensor {
-        return decode(scope, latents, packed_h, packed_w);
+        return decode(scope, latents, packed_h, packed_w, options.decode_tile_size);
     });
 
     return decoded;
 }
 
-std::optional<Tensor> Flux2KleinPipeline::encode_images(Scope scope, const std::vector<Image>& images, int batch) {
+std::optional<Tensor> Flux2KleinPipeline::encode_images(Scope scope, const std::vector<Image>& images, int batch, int tile_size) {
     if (images.empty())
         return std::nullopt;
 
@@ -399,8 +399,10 @@ std::optional<Tensor> Flux2KleinPipeline::encode_images(Scope scope, const std::
     // TODO: maybe encode only one image in this graph? it would better match decode then
     for (auto& img : images) {
         auto img_tensor = image_to_tensor(scope, img);
-        auto dist = vae_.encode(scope, img_tensor);
-        auto mode = dist.mode(); // Shape: (B, C, H, W)
+        // (B, C, H / scale, W / scale)
+        auto mode = (tile_size > 0)
+            ? vae_.encode_tiled(scope, img_tensor, tile_size, tile_size)
+            : vae_.encode(scope, img_tensor).mode();
 
         auto packed_h = img.height() / vae_multiple;
         auto packed_w = img.width() / vae_multiple;
@@ -534,7 +536,7 @@ Tensor Flux2KleinPipeline::denoise(
     return scheduler_.integrate(scope, noise_pred, latents, dt);
 }
 
-Tensor Flux2KleinPipeline::decode(Scope scope, const Tensor& latents, int packed_h, int packed_w) {
+Tensor Flux2KleinPipeline::decode(Scope scope, const Tensor& latents, int packed_h, int packed_w, int tile_size) {
     // 1. Unpack to patch grid (B, 4C, ph, pw)
     auto z_packed = unpack_latents(latents, packed_h, packed_w);
 
@@ -547,7 +549,9 @@ Tensor Flux2KleinPipeline::decode(Scope scope, const Tensor& latents, int packed
     auto z = unpatchify_latents(z_packed, vae_.latent_channels(), packed_h, packed_w);
 
     // 4. VAE decode
-    auto decoded = vae_.decode(scope, z);    // (B, 3, H, W)
+    auto decoded = (tile_size > 0)
+        ? vae_.decode_tiled(scope, z, tile_size, tile_size)    // (B, 3, H, W)
+        : vae_.decode(scope, z);                               // (B, 3, H, W)
 
     return decoded;
 }

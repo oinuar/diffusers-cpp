@@ -38,6 +38,23 @@ public:
 
     Tensor decode(Scope& scope, Tensor z);
 
+    //
+    // Tiled variants of decode()/encode(), mirroring diffusers'
+    // tiled_decode()/_tiled_encode(): the input is split into overlapping
+    // tiles (3/4 stride), each tile is run through the full VAE, and the
+    // overlaps are blended with linear ramps (a quarter of the tile size).
+    //
+    // This bounds the live memory of the full-resolution VAE activations
+    // to the tile size regardless of the image size.
+    //
+    // tile_h/tile_w are the tile sizes in pixels (they must be divisible
+    // by the VAE's scale factor).
+    //
+    Tensor decode_tiled(Scope& scope, Tensor z, int64_t tile_h, int64_t tile_w);
+
+    // Returns the blended latent mode (B, latent_channels, H / scale, W / scale).
+    Tensor encode_tiled(Scope& scope, Tensor sample, int64_t tile_h, int64_t tile_w);
+
     Tensor forward(Scope scope, Tensor sample, bool sample_posterior = false);
     
     std::shared_ptr<BatchNorm2d> bn() const;
@@ -57,6 +74,7 @@ public:
 private:
     bool use_quant_conv_;
     bool use_post_quant_conv_;
+    int64_t out_channels_;
     int64_t latent_channels_;
     float batch_norm_eps_;
     std::vector<int64_t> block_out_channels_;

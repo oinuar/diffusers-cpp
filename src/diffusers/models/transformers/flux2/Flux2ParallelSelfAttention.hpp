@@ -58,7 +58,7 @@ public:
         // Parallel in (QKV + MLP in) projection
         auto to_qkv_mlp_proj = std::static_pointer_cast<Flux2FusedQKVProjection>(modules["to_qkv_mlp_proj"]);
 
-        auto [query, key, value, mlp_hidden_states] = to_qkv_mlp_proj->forward(scope, hidden_states);
+        auto [query, key, value, mlp_gate, mlp_up] = to_qkv_mlp_proj->forward(scope, hidden_states);
 
         query = query.unflatten(-1, {heads_, -1});
         key = key.unflatten(-1, {heads_, -1});
@@ -90,7 +90,7 @@ public:
         auto mlp_act_fn = std::static_pointer_cast<Flux2SwiGLU>(modules["mlp_act_fn"]);
 
         // Handle the feedforward (FF) logic
-        mlp_hidden_states = mlp_act_fn->forward(scope, mlp_hidden_states);
+        auto mlp_hidden_states = mlp_act_fn->forward(scope, mlp_gate, mlp_up);
 
         auto to_out = std::static_pointer_cast<Flux2FusedAttentionOutput>(modules["to_out"]);
 

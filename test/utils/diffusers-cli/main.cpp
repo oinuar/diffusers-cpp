@@ -241,7 +241,9 @@ public:
             return Computation<Tensor>::all(result);
         }
 
-        if (args_.get(0) == "AutoencoderKLFlux2") {
+        if (args_.get(0) == "AutoencoderKLFlux2" ||
+            args_.get(0) == "AutoencoderKLFlux2_encode_tiled" ||
+            args_.get(0) == "AutoencoderKLFlux2_decode_tiled") {
             Computation<void> computation({&context});
 
             AutoencoderKLFlux2::Config config;
@@ -265,6 +267,7 @@ public:
             );
             auto sample = args_.get_one<Tensor>("--sample", {computation.desc()->context()});
             auto sample_posterior = args_.get_optional<bool>("--sample_posterior").value_or(false);
+            auto tile_size = args_.get_optional<int64_t>("--tile_size");
 
             if (!block_out_channels.empty())
                 config.block_out_channels = block_out_channels;
@@ -277,6 +280,12 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
+                if (args_.get(0) == "AutoencoderKLFlux2_encode_tiled")
+                    return model.encode_tiled(scope, sample, *tile_size, *tile_size);
+
+                if (args_.get(0) == "AutoencoderKLFlux2_decode_tiled")
+                    return model.decode_tiled(scope, sample, *tile_size, *tile_size);
+
                 return model.forward(scope, sample, sample_posterior);
             });
 
@@ -531,6 +540,15 @@ public:
         }
 
         throw std::runtime_error("Uknown command: " + args_.get(0));
+    }
+
+    virtual size_t get_graph_size() const {
+        // The tiled VAE commands run the full VAE once per tile.
+        if (args_.get(0) == "AutoencoderKLFlux2_encode_tiled" ||
+            args_.get(0) == "AutoencoderKLFlux2_decode_tiled")
+            return 16384;
+
+        return TestCLI::get_graph_size();
     }
 };
 

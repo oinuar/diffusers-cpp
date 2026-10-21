@@ -28,12 +28,13 @@ public:
         if (args_.get(0) == "Flux2SwiGLU") {
             Computation<void> computation({&context});
 
-            auto x = args_.get_one<Tensor>("--x", {computation.desc()->context()});
+            auto gate = args_.get_one<Tensor>("--gate", {computation.desc()->context()});
+            auto up = args_.get_one<Tensor>("--up", {computation.desc()->context()});
 
             Flux2SwiGLU model;
 
             auto result = computation.scope([&](Scope scope) -> Tensor {
-                return model.forward(scope, x);
+                return model.forward(scope, gate, up);
             });
 
             return Computation<Tensor>::all(result);
@@ -546,6 +547,7 @@ public:
             if (args_.get(0) == "Flux2KleinPipeline_vae_encode") {
                 auto batch = args_.get_one<int>("--batch");
                 auto images = args_.get_many<Image>("--images");
+                auto tile_size = args_.get_optional<int>("--encode_tile_size").value_or(0);
 
                 // Mirrors the condition-image preprocessing in the Python
                 // pipeline's __call__: resize to the target area and crop
@@ -554,7 +556,7 @@ public:
                     image = Flux2KleinPipeline::preprocess_reference_image(image, pipeline.vae_scale_factor() * 2);
 
                 auto result = computation.scope([&](Scope scope) -> Tensor {
-                    auto image_latents = pipeline.encode_images(scope, images, batch);
+                    auto image_latents = pipeline.encode_images(scope, images, batch, tile_size);
 
                     if (!image_latents)
                         throw std::runtime_error("Flux2KleinPipeline_vae_encode: expected at least one image");
@@ -617,9 +619,10 @@ public:
                 auto packed_h = args_.get_one<int>("--packed_h");
                 auto packed_w = args_.get_one<int>("--packed_w");
                 auto latents = args_.get_one<Tensor>("--latents", {computation.desc()->context()});
+                auto tile_size = args_.get_optional<int>("--decode_tile_size").value_or(0);
 
                 auto result = computation.scope([&](Scope scope) -> Tensor {
-                    return pipeline.decode(scope, latents, packed_h, packed_w);
+                    return pipeline.decode(scope, latents, packed_h, packed_w, tile_size);
                 });
 
                 return Computation<Tensor>::all(result);
@@ -633,7 +636,8 @@ public:
                 options.width = args_.get_one<int>("--width");
                 options.num_inference_steps = args_.get_one<int>("--num_inference_steps");
                 options.max_sequence_length = args_.get_one<int>("--max_sequence_length");
-
+                options.decode_tile_size = args_.get_optional<int>("--decode_tile_size").value_or(options.decode_tile_size);
+                options.encode_tile_size = args_.get_optional<int>("--encode_tile_size").value_or(options.encode_tile_size);
                 if (auto init_latents = args_.get_optional<std::string>("--init_latents"))
                     options.init_latents = std::move(
                         ArgumentParser::parser<Tensor>::TensorParser("--init_latents", *init_latents).parse().second);
@@ -706,10 +710,16 @@ private:
             auto q_weight = to_qkv_mlp_proj.q()->weight();
             auto k_weight = to_qkv_mlp_proj.k()->weight();
             auto v_weight = to_qkv_mlp_proj.v()->weight();
-            auto mlp_in_weight = to_qkv_mlp_proj.mlp_in()->weight();
+            auto mlp_in_gate_weight = to_qkv_mlp_proj.mlp_in_gate()->weight();
+            auto mlp_in_up_weight = to_qkv_mlp_proj.mlp_in_up()->weight();
 
             auto inner = to_qkv_mlp_proj.inner_dim();
             auto mlp_out = to_qkv_mlp_proj.mlp_out_dim();
+
+            // The MLP input projection is split into gate and up, each
+            // with mlp_out / 2 output features: the first half of the
+            // fused MLP rows is the gate, the second half the up.
+            auto mlp_hidden = mlp_in_gate_weight->shape()[0];
 
             // The fused weight is (3 * inner + mlp_out) x query_dim, so rows
             // of the flattened data are query_dim elements long.
@@ -738,8 +748,11 @@ private:
                 v_weight->set(create_quantized(weight_path + "-v-weight", v_weight->shape(), *type,
                     slice_rows_bytes(data, *type, query_dim, 2 * inner, 3 * inner)));
 
-                mlp_in_weight->set(create_quantized(weight_path + "-mlp_in-weight", mlp_in_weight->shape(), *type,
-                    slice_rows_bytes(data, *type, query_dim, 3 * inner, 3 * inner + mlp_out)));
+                mlp_in_gate_weight->set(create_quantized(weight_path + "-mlp_in_gate-weight", mlp_in_gate_weight->shape(), *type,
+                    slice_rows_bytes(data, *type, query_dim, 3 * inner, 3 * inner + mlp_hidden)));
+
+                mlp_in_up_weight->set(create_quantized(weight_path + "-mlp_in_up-weight", mlp_in_up_weight->shape(), *type,
+                    slice_rows_bytes(data, *type, query_dim, 3 * inner + mlp_hidden, 3 * inner + mlp_out)));
 
                 return;
             }
@@ -761,9 +774,13 @@ private:
                 return slice_rows(data, query_dim, 2 * inner, 3 * inner);
             }).name(weight_path + "-v-weight"));
 
-            mlp_in_weight->set(context().create<float>(mlp_in_weight->shape(), [=](std::mt19937&) {
-                return slice_rows(data, query_dim, 3 * inner, 3 * inner + mlp_out);
-            }).name(weight_path + "-mlp_in-weight"));
+            mlp_in_gate_weight->set(context().create<float>(mlp_in_gate_weight->shape(), [=](std::mt19937&) {
+                return slice_rows(data, query_dim, 3 * inner, 3 * inner + mlp_hidden);
+            }).name(weight_path + "-mlp_in_gate-weight"));
+
+            mlp_in_up_weight->set(context().create<float>(mlp_in_up_weight->shape(), [=](std::mt19937&) {
+                return slice_rows(data, query_dim, 3 * inner + mlp_hidden, 3 * inner + mlp_out);
+            }).name(weight_path + "-mlp_in_up-weight"));
         }
 
         void visit(Flux2FusedAttentionOutput& to_out, std::vector<std::string> path) override {
@@ -829,6 +846,106 @@ private:
                 attn_bias->set(context().create<float>(attn_bias->shape(), [=](std::mt19937&) {
                     return bias_data;
                 }).name(bias_path));
+            }
+        }
+
+        void visit(Flux2FeedForward& feed_forward, std::vector<std::string> path) override {
+            ModulePath module_path("-", "--param");
+            auto weight_path = module_path(path, prefix(), {"linear_in", "weight"});
+
+            auto gate_weight = feed_forward.linear_in_gate()->weight();
+            auto up_weight = feed_forward.linear_in_up()->weight();
+
+            // The fused linear_in weight is (inner * 2) x dim (PyTorch
+            // layout): the first inner rows are the gate, the last inner
+            // rows the up projection.
+            auto inner = gate_weight->shape()[0];
+            auto dim = gate_weight->shape()[1];
+
+            if (auto type = quantization().resolve(dot_name(path) + ".linear_in.weight", prefix()); type && *type != GGML_TYPE_F32) {
+                // Quantized weight: the file holds the raw bytes of the
+                // fused tensor. The rows are contiguous in memory, so the
+                // split into gate/up is a plain byte-range slice.
+                auto data = get_param_bytes(weight_path);
+
+                auto row_bytes = static_cast<size_t>(ggml_row_size(*type, dim));
+
+                if (data.size() != row_bytes * (inner * 2))
+                    throw std::runtime_error(
+                        "Flux2FeedForward: quantized weight '" + weight_path +
+                        "' has " + std::to_string(data.size()) + " bytes, expected " +
+                        std::to_string(row_bytes * (inner * 2)));
+
+                gate_weight->set(create_quantized(weight_path + "-gate-weight", gate_weight->shape(), *type,
+                    slice_rows_bytes(data, *type, dim, 0, inner)));
+
+                up_weight->set(create_quantized(weight_path + "-up-weight", up_weight->shape(), *type,
+                    slice_rows_bytes(data, *type, dim, inner, inner * 2)));
+            }
+            else {
+                auto weight_value = get_param(weight_path);
+                ArgumentParser::parser<Tensor>::TensorParser parser(weight_path, weight_value);
+
+                auto [shape, data] = parser.parse();
+
+                gate_weight->set(context().create<float>(gate_weight->shape(), [=](std::mt19937&) {
+                    return slice_rows(data, dim, 0, inner);
+                }).name(weight_path + "-gate-weight"));
+
+                up_weight->set(context().create<float>(up_weight->shape(), [=](std::mt19937&) {
+                    return slice_rows(data, dim, inner, inner * 2);
+                }).name(weight_path + "-up-weight"));
+            }
+
+            auto gate_bias = feed_forward.linear_in_gate()->bias();
+
+            if (gate_bias) {
+                auto bias_path = module_path(path, prefix(), {"linear_in", "bias"});
+
+                // The fused bias is 1-D of length inner * 2: the first
+                // inner elements belong to the gate, the last inner to
+                // the up projection.
+                if (auto type = quantization().resolve(dot_name(path) + ".linear_in.bias", prefix()); type && *type != GGML_TYPE_F32) {
+                    auto data = get_param_bytes(bias_path);
+
+                    auto up_bias = feed_forward.linear_in_up()->bias();
+
+                    gate_bias->set(create_quantized(bias_path + "-gate-bias", gate_bias->shape(), *type,
+                        slice_cols_bytes(data, *type, 1, inner * 2, 0, inner)));
+
+                    up_bias->set(create_quantized(bias_path + "-up-bias", up_bias->shape(), *type,
+                        slice_cols_bytes(data, *type, 1, inner * 2, inner, inner * 2)));
+                }
+                else {
+                    auto bias_value = get_param(bias_path);
+                    ArgumentParser::parser<Tensor>::TensorParser bias_parser(bias_path, bias_value);
+
+                    auto [bias_shape, bias_data] = bias_parser.parse();
+
+                    auto up_bias = feed_forward.linear_in_up()->bias();
+
+                    gate_bias->set(context().create<float>(gate_bias->shape(), [=](std::mt19937&) {
+                        return slice_cols(bias_data, 1, inner * 2, 0, inner);
+                    }).name(bias_path + "-gate-bias"));
+
+                    up_bias->set(context().create<float>(up_bias->shape(), [=](std::mt19937&) {
+                        return slice_cols(bias_data, 1, inner * 2, inner, inner * 2);
+                    }).name(bias_path + "-up-bias"));
+                }
+            }
+
+            auto linear_out = feed_forward.linear_out();
+
+            auto out_weight_path = path;
+            out_weight_path.push_back("linear_out");
+            out_weight_path.push_back("weight");
+            TestCLI::CreateParametersVisitor::visit(*linear_out->weight(), std::move(out_weight_path));
+
+            if (auto out_bias = linear_out->bias()) {
+                auto out_bias_path = path;
+                out_bias_path.push_back("linear_out");
+                out_bias_path.push_back("bias");
+                TestCLI::CreateParametersVisitor::visit(*out_bias, std::move(out_bias_path));
             }
         }
 

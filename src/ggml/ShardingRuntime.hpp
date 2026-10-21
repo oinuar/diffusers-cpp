@@ -166,7 +166,7 @@ public:
                 return ss.str();
             }
             ss << "=== plan (total cost " << total_cost << ") ===\n";
-#if 1
+#if 0
             for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
                 const PlanNode& pn = *it;
 

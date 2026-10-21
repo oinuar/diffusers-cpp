@@ -29,16 +29,16 @@ int main(int argc, char** argv) {
 
     ggml_backend_load_all();
 
-    /*auto meta = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
+    auto meta = MetaDevice::all(GGML_BACKEND_DEVICE_TYPE_GPU);
 
     //meta.tensor_split({2, 1});
 
     Backend backend(meta);
     ShardingRuntime runtime(ExecutionRuntime::Default, meta);
-    Scope scope(runtime);*/
+    Scope scope(runtime);
 
-    Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
-    Backend backend(cpu);
+    /*Device cpu(GGML_BACKEND_DEVICE_TYPE_CPU);
+    Backend backend(cpu);*/
 
     Context context(65536);
 
@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
 
     auto computation = pipeline(context, context, context, std::move(options));
 
-    auto images = run(backend, computation);
+    auto images = run(backend, computation, &runtime);
 
     images[0].save("test.png");
 

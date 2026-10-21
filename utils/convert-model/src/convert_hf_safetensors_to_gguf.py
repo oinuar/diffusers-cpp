@@ -80,6 +80,15 @@ DTYPE_TO_QTYPE = {
     torch.int32: GGMLQuantizationType.I32,
     torch.int64: GGMLQuantizationType.I64,
 }
+# The gguf library's quantize() cannot produce these plain types; store
+# them with their native numpy dtype so the byte size matches the type.
+PLAIN_QTYPE_TO_NP_DTYPE = {
+    GGMLQuantizationType.F64: np.float64,
+    GGMLQuantizationType.I8: np.int8,
+    GGMLQuantizationType.I16: np.int16,
+    GGMLQuantizationType.I32: np.int32,
+    GGMLQuantizationType.I64: np.int64,
+}
 
 
 @dataclass
@@ -281,16 +290,17 @@ def resolve_tensor_qtype(name, dtype, spec: TypeSpec) -> GGMLQuantizationType:
       3. the global --type name
       4. the tensor's original dtype
     """
-    qtype = DTYPE_TO_QTYPE.get(dtype)
+    # The tensor's original dtype is the last-resort choice.
+    default = DTYPE_TO_QTYPE.get(dtype)
 
-    # Plain integer types are stored without as-is.
-    if qtype in (
+    # Plain integer types are stored as-is.
+    if default in (
         GGMLQuantizationType.I8,
         GGMLQuantizationType.I16,
         GGMLQuantizationType.I32,
         GGMLQuantizationType.I64,
     ):
-        return qtype
+        return default
 
     qtype = spec.patterns.get(name)
 
@@ -306,6 +316,9 @@ def resolve_tensor_qtype(name, dtype, spec: TypeSpec) -> GGMLQuantizationType:
 
     if spec.default is not None:
         return spec.default
+
+    if default is not None:
+        return default
 
     raise ValueError(f"Unsupported dtype {dtype} for tensor '{name}'") from None
 
@@ -327,25 +340,21 @@ def normalize_tensor(tensor):
 def quantize_tensor(name, tensor, qtype):
     """
     Convert a numpy tensor to the raw bytes a GGUF file stores for `qtype`.
+
+    The byte payload must match `qtype` exactly: the GGUF header declares
+    the quantization type and readers compute the tensor offsets from it,
+    so a mismatch (e.g. writing float32 bytes for a tensor declared as
+    BF16) corrupts the offsets of every following tensor.
     """
-    # Use tensor as-is
-    if qtype in (
-        GGMLQuantizationType.BF16,
-        GGMLQuantizationType.F64,
-        GGMLQuantizationType.F32,
-        GGMLQuantizationType.I8,
-        GGMLQuantizationType.I16,
-        GGMLQuantizationType.I32,
-        GGMLQuantizationType.I64,
-    ):
-        return tensor
+    # Plain (unpacked) types are stored as their native bytes.
+    if (np_dtype := PLAIN_QTYPE_TO_NP_DTYPE.get(qtype)) is not None:
+        return tensor.astype(np_dtype)
 
-    # Downcast to float16
-    if qtype == GGMLQuantizationType.F16:
-        return tensor.astype(np.float16)
-
-    # Everything below MUST be quantized manually
-    return quantize(tensor, qtype)
+    # Everything else (F32, F16, BF16, Q*...) is packed with the gguf
+    # library. For BF16 and the quantized types it returns a uint8 array
+    # whose last dimension is in bytes; add_tensor() maps the shape back
+    # to elements when given raw_dtype.
+    return quantize(tensor.astype(np.float32), qtype)
 
 @dataclass
 class Component:
@@ -511,6 +520,10 @@ def file_type_name(used_types) -> Optional[str]:
 
 def convert_component(component: Component, type_spec, architecture: Optional[str], model_id: Optional[str], revision: Optional[str], keep_safetensors: bool) -> Path:
     arch = architecture or architecture_from_config(component.config) or component.name
+
+    # Accept raw values (a type name, a JSON object, @file.json) as well as
+    # already-parsed specs, which pass through parse_type_spec unchanged.
+    type_spec = parse_type_spec(type_spec)
     spec = resolve_component_spec(type_spec, component)
 
     if isinstance(type_spec, ComponentSpec) and not (

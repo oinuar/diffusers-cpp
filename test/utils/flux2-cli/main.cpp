@@ -526,7 +526,7 @@ public:
                 visitor.rethrow();
             }
 
-            Qwen3ForCausalLM text_encoder(qwen_config);
+            Qwen3ForCausalLM text_encoder(qwen_config, std::vector<size_t>{9, 18, 27});
             {
                 CreateParametersVisitor create_parameters(context, args_, "text_encoder");
                 RethrowVisitor visitor(create_parameters);

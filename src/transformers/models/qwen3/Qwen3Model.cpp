@@ -104,7 +104,7 @@ Tensor Qwen3Model::forward(
     std::optional<Tensor> position_ids,
     std::optional<Tensor> past_key_values,
     std::optional<bool> use_cache,
-    std::vector<Tensor>* extract_hidden_states
+    std::map<size_t, Tensor>* extract_layer_hidden_states
 ) {
     if (!input_ids.has_value() && !inputs_embeds.has_value())
         throw std::invalid_argument(
@@ -174,8 +174,12 @@ Tensor Qwen3Model::forward(
 
         auto layer_mask = causal_mask_mapping.at(layer_types.at(i));
 
-        if (extract_hidden_states)
-            extract_hidden_states->push_back(hidden_states.clone());
+        if (extract_layer_hidden_states) {
+            auto it = extract_layer_hidden_states->find(i);
+         
+            if (it != extract_layer_hidden_states->end())
+                it->second = hidden_states.clone();
+        }
 
         hidden_states = layer->forward(
             scope,
@@ -193,8 +197,12 @@ Tensor Qwen3Model::forward(
 
     hidden_states = norm->forward(scope, hidden_states);
 
-    if (extract_hidden_states)
-        extract_hidden_states->push_back(hidden_states);
+    if (extract_layer_hidden_states) {
+        auto it = extract_layer_hidden_states->find(layers->size());
+        
+        if (it != extract_layer_hidden_states->end())
+            it->second = hidden_states.clone();   
+    }
 
     return hidden_states;
 }

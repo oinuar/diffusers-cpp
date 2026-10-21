@@ -459,8 +459,6 @@ Tensor Flux2KleinPipeline::encode_prompt(Scope scope, int batch, const std::stri
             return std::move(m);
         });
 
-    std::vector<Tensor> hidden_states;
-
     text_encoder_.forward(
         scope,
         input_ids,
@@ -470,13 +468,12 @@ Tensor Flux2KleinPipeline::encode_prompt(Scope scope, int batch, const std::stri
         std::nullopt, // inputs_embeds
         std::nullopt, // labels
         false, // use_cache
-        0, // logits_to_keep
-        &hidden_states
+        0 // logits_to_keep
     );
 
-    auto l9 = hidden_states[9];
-    auto l18 = hidden_states[18];
-    auto l27 = hidden_states[27];
+    auto l9 = text_encoder_.hidden_states()->at(9);
+    auto l18 = text_encoder_.hidden_states()->at(18);
+    auto l27 = text_encoder_.hidden_states()->at(27);
 
     if (!l9 || !l18 || !l27)
         throw std::runtime_error("Hidden state extraction failed");
@@ -557,7 +554,7 @@ Tensor Flux2KleinPipeline::decode(Scope scope, const Tensor& latents, int packed
 
 Flux2KleinPipeline Flux2KleinPipeline::from_pretrained(Context& vae_context, Context& text_encoder_context, Context& transformer_context, const std::filesystem::path& path) {
     // 1. Initialize models from config
-    Qwen3ForCausalLM text_encoder(Qwen3Config::from_file(path / "text_encoder" / "config.json"));
+    Qwen3ForCausalLM text_encoder(Qwen3Config::from_file(path / "text_encoder" / "config.json"), std::vector<size_t>{9, 18, 27});
     Flux2Transformer2DModel transformer(Flux2Transformer2DModel::Config::from_file(path / "transformer" / "config.json"));
     AutoencoderKLFlux2 vae(AutoencoderKLFlux2::Config::from_file(path / "vae" / "config.json"));
 

@@ -112,6 +112,8 @@ const ShardingRuntime::Plan& ShardingRuntime::plan() {
     for (const int root : roots) {
         const BestState& root_state = best(root, root_dist);   // roots are exact-only (no bridge)
         if (!root_state.feasible) {
+            fprintf(stderr, "DEBUG infeasible root id=%d op=%s ne={%ld,%ld,%ld,%ld} rank=%d\n",
+                root, nodes_[root].op_name.c_str(), (long)nodes_[root].ne[0], (long)nodes_[root].ne[1], (long)nodes_[root].ne[2], (long)nodes_[root].ne[3], nodes_[root].rank);
             new_plan.infeasible = true;
             new_plan.infeasible_reason = infeasibility_reason(root_dist);
             last_plan_ = new_plan;

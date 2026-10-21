@@ -3,25 +3,22 @@
 #include "transformers/models/qwen3/Qwen3Model.hpp"
 #include "nn/Module.hpp"
 #include "nn/Linear.hpp"
-#include "nn/RethrowVisitor.hpp"
-#include "ggml/GGUFLoaderVisitor.hpp"
 
-Qwen3ForCausalLM Qwen3ForCausalLM::from_pretrained(Context& context, Qwen3Config&& config, const std::filesystem::path& path) {
-    Qwen3ForCausalLM model(config);
+Qwen3ForCausalLM::Qwen3ForCausalLM(const Qwen3Config& config, std::optional<std::vector<size_t>> extract_layer_hidden_states)
+    : extract_layer_hidden_states()
+{
+    if (extract_layer_hidden_states) {
+        this->extract_layer_hidden_states.emplace();
 
-    GGUFLoaderVisitor loader(context, path);
-    RethrowVisitor visitor(loader);
+        for (auto& idx : *extract_layer_hidden_states)
+            (*this->extract_layer_hidden_states)[idx] = Tensor();
+    }
 
-    model.accept(visitor);
-    visitor.rethrow();
-
-    return std::move(model);
-}
-
-Qwen3ForCausalLM::Qwen3ForCausalLM(const Qwen3Config& config) {
     this->vocab_size = config.vocab_size;
     modules["model"] = std::make_shared<Qwen3Model>(config);
-    modules["lm_head"] = std::make_shared<Linear>(config.hidden_size, config.vocab_size, false);
+
+    if (!this->extract_layer_hidden_states)
+        modules["lm_head"] = std::make_shared<Linear>(config.hidden_size, config.vocab_size, false);
 }
 
 std::optional<Tensor> Qwen3ForCausalLM::forward(
@@ -33,8 +30,7 @@ std::optional<Tensor> Qwen3ForCausalLM::forward(
     std::optional<Tensor> inputs_embeds,
     std::optional<Tensor> labels,
     std::optional<bool> use_cache,
-    int logits_to_keep,
-    std::vector<Tensor>* extract_hidden_states
+    int logits_to_keep
 ) {
     auto model = std::static_pointer_cast<Qwen3Model>(modules["model"]);
     auto hidden_states = model->forward(
@@ -45,14 +41,14 @@ std::optional<Tensor> Qwen3ForCausalLM::forward(
         position_ids,
         past_key_values,
         use_cache,
-        extract_hidden_states
+        extract_layer_hidden_states ? &extract_layer_hidden_states.value() : nullptr
     );
 
     // The LM head projects every hidden state to the full vocabulary
     // (a vocab_size x seq_len GEMM): when the caller only needs the
     // hidden states, the projection is never computed -- it would only
     // ever be materialized into the buffer to be discarded.
-    if (extract_hidden_states != nullptr)
+    if (extract_layer_hidden_states)
         return std::nullopt;
 
     auto lm_head = std::static_pointer_cast<Linear>(modules["lm_head"]);

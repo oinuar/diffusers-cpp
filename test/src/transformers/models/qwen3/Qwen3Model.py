@@ -1,8 +1,13 @@
 from utils import TestCase
 import torch
+import tempfile
 from transformers.models.qwen3.modeling_qwen3 import Qwen3Config, Qwen3Model
 
 class TestTransformersQwen3Model(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmpdir = tempfile.TemporaryDirectory(delete=False)
+
     def test(self):
         config = Qwen3Config(
             vocab_size=16,
@@ -106,8 +111,10 @@ class TestTransformersQwen3Model(TestCase):
             "--num_key_value_heads", "2",
             "--max_position_embeddings", "16",
             "--input_ids", str(input_ids.tolist()),
-            "--output_hidden_states", "true",
-            *self.params(model),
+            "--extract_layer_hidden_state", "0",
+            "--extract_layer_hidden_state", "1",
+            "--extract_layer_hidden_state", "2",
+            *self.params(model, self.tmpdir.name),
         )
 
         self.assertTensors(actual, list(expected))

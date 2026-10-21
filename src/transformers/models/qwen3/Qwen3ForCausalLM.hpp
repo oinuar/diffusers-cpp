@@ -2,7 +2,9 @@
 
 #include "nn/Module.hpp"
 #include <filesystem>
-#include <unordered_map>
+#include <map>
+#include <vector>
+#include <optional>
 
 class Backend;
 class Context;
@@ -10,9 +12,7 @@ struct Qwen3Config;
 
 class Qwen3ForCausalLM : public Module {
 public:
-    Qwen3ForCausalLM(const Qwen3Config& config);
-
-    static Qwen3ForCausalLM from_pretrained(Context& context, Qwen3Config&& config, const std::filesystem::path& path);
+    Qwen3ForCausalLM(const Qwen3Config& config, std::optional<std::vector<size_t>> extract_layer_hidden_states = std::nullopt);
 
     /** @brief Runs the model.
      *  @return The logits -- unless `extract_hidden_states` is provided:
@@ -28,9 +28,13 @@ public:
                    std::optional<Tensor> inputs_embeds = std::nullopt,
                    std::optional<Tensor> labels = std::nullopt,
                    std::optional<bool> use_cache = std::nullopt,
-                   int logits_to_keep = 0,
-                   std::vector<Tensor>* extract_hidden_states = nullptr);
+                   int logits_to_keep = 0);
+
+    const std::optional<std::map<size_t, Tensor>>& hidden_states() const {
+        return extract_layer_hidden_states;
+    }
 
 private:
     int vocab_size;
+    std::optional<std::map<size_t, Tensor>> extract_layer_hidden_states;
 };

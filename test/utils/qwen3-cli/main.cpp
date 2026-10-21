@@ -161,7 +161,7 @@ public:
             auto position_ids = args_.get_optional<Tensor>("--position_ids", {computation.desc()->context(), Tensor::DType<int32_t>::value});
             auto past_key_values = args_.get_optional<Tensor>("--past_key_values", {computation.desc()->context()});
             auto use_cache = args_.get_optional<bool>("--past_key_values");
-            auto output_hidden_states = args_.get_optional<bool>("--output_hidden_states").value_or(false);
+            auto extract_layer_hidden_states = args_.get_many<size_t>("--extract_layer_hidden_state");
 
             Qwen3Model model(config);
 
@@ -171,7 +171,10 @@ public:
             visitor.rethrow();
 
             auto result = computation.scope([&](Scope scope) -> std::vector<Tensor> {
-                std::vector<Tensor> hidden_states;
+                std::map<size_t, Tensor> extract_hidden_states;
+
+                for (auto& idx : extract_layer_hidden_states)
+                    extract_hidden_states[idx] = Tensor();
 
                 auto output = model.forward(
                     scope,
@@ -181,10 +184,16 @@ public:
                     position_ids,
                     past_key_values,
                     use_cache,
-                    output_hidden_states ? &hidden_states : nullptr);
+                    extract_layer_hidden_states.empty() ? nullptr : &extract_hidden_states);
 
-                if (output_hidden_states)
+                if (!extract_layer_hidden_states.empty()) {
+                    std::vector<Tensor> hidden_states;
+
+                    for (auto& [_, tensor] : extract_hidden_states)
+                        hidden_states.push_back(tensor);
+
                     return hidden_states;
+                }
 
                 return {output};
             });

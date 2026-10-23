@@ -138,6 +138,10 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
         print_buffer(backend.device(), desc.state->allocated_size(), " (compute)");
     }
 
+    //for (auto& r : desc.scopes)
+        //if (r.context)
+            //r.context->allocate(buft, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
+
     if (progress)
         progress->push("Executing", desc.scopes.size());
 
@@ -171,6 +175,17 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
         // instead of every tensor of the graph.
         r.context->allocate_graph(gf, buft);
         print_buffer(backend.device(), r.context->allocated_size(), " (graph)");
+
+        // A PARTIAL (row-parallel) tensor on a device with a zero-sized
+        // slice is never computed (the meta backend disables the compute
+        // of every zero-slice tensor), so its storage keeps the stale
+        // bytes the allocator left there; the AllReduce's in-place
+        // 0.0f-scale zeroing of such a device cannot clear a stale NaN
+        // (0.0f * NaN == NaN), and the butterfly sum would add the stale
+        // values into the real result. Seed the storage with zero now,
+        // while the graph allocation is fresh.
+        if (sharding != nullptr)
+            sharding->zero_partials();
 
         // The graph allocator (gallocr) treats a scope's bound inputs as
         // ordinary tensors: it may reuse their storage in place (an
@@ -212,7 +227,7 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
                 if (ggml_backend_graph_compute(*backend, gf) != GGML_STATUS_SUCCESS)
                     throw std::runtime_error("run(): ggml_backend_graph_compute failed");
 
-                // Copy feedback tensors
+                // Copy feedback tensors.
                 for (const auto& save : r.saves) {
                     if (save.is_feedback)
                         copy(save.src, save.dst);
@@ -247,7 +262,8 @@ void ExecutionRuntime::run(Backend& backend, std::mt19937& rng, ComputationDescr
 
         // Copy state tensors.
         for (const auto& save : r.saves)
-            copy(save.src, save.dst);
+            if (!save.is_feedback)
+                copy(save.src, save.dst);
 
         // The scope is done: free its buffer. Nothing in the scope
         // context leaks outside -- the values that survive are in the

@@ -249,7 +249,11 @@ class TestCase(unittest.TestCase):
                 f.write(f"""
 import os, sys, subprocess
 
+# Never edit this line! We must keep test parameters as-is.
 command = [{repr(self.cli_bin())}] + {repr(command)}
+
+# Add gdb by editing this line while keeping test parameters exactly same. For example:
+#   command = ['gdb', '--args'] + command
 
 result = subprocess.run(
     command,

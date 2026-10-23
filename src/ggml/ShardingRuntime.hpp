@@ -231,6 +231,46 @@ public:
     // plan (the DP is not re-run); an infeasible trace returns the plan
     // marked infeasible (nothing is committed).
     const Plan& plan();
+    // Zeros the storage of every PARTIAL (row-parallel) tensor that is
+    // currently allocated (i.e. belongs to the scope context allocated
+    // most recently; other scopes' tensors are either unallocated or
+    // already released and are skipped).
+    //
+    // A PARTIAL tensor's per-device contribution is computed only on
+    // the devices that have a non-empty slice of its sources: the meta
+    // backend clears the compute of every zero-slice tensor, so on a
+    // zero-factor device the partial is never written and its storage
+    // keeps whatever stale bytes the allocator left there (possibly
+    // NaN). The AllReduce's zeroing of such a disabled device is an
+    // in-place scale by 0.0f, which cannot clear a stale NaN (0.0f *
+    // NaN == NaN, the FIXME ggml carries at that spot), and the
+    // butterfly sum would add the stale values into the real result.
+    // Seeding the storage with zero right after the allocation makes
+    // every disabled device contribute exactly zero -- the correct
+    // partial sum for an empty slice -- on every (re-)execution: the
+    // storage stays finite from then on (the zeroing scales it by 0
+    // and the butterfly only adds finite values).
+    void zero_partials() {
+        std::vector<std::byte> zeros;
+
+        for (const auto& node : plan().nodes) {
+            if (node.produced.type != Dist::Type::P)
+                continue;
+
+            ggml_tensor* t = raw_of_[node.id];
+
+            // Only the tensors of the just-allocated scope context are
+            // assigned to a buffer: the plan spans the whole trace.
+            if (t->buffer == nullptr || t->data == nullptr)
+                continue;
+
+            if (t->type != GGML_TYPE_F32)
+                throw std::runtime_error("zero_partials(): a PARTIAL tensor is not F32");
+
+            zeros.assign(ggml_nbytes(t), std::byte{0});
+            ggml_backend_tensor_set(t, zeros.data(), 0, zeros.size());
+        }
+    }
 
     // Debug dump of the trace: every node with its shape and the
     // output distributions its candidates can produce.
@@ -903,8 +943,12 @@ private:
     // tensor with distribution `d`, GGML shape `ne` and dtype `type`:
     //   R  -> the canonical MIRRORED form (axis = MIRRORED, ne = 0,
     //         nr[0] = 1, n_segments = 1)
-    //   S(a) -> one segment, nr = 1, per-device sizes proportional to the
-    //         tensor-split factors:
+    //   S(a) -> one segment, nr = 1, with the per-device sizes either
+    //         taken from `split` (a group-consistent split computed by
+    //         compute_split_groups(); its invariants -- sum to ne[a],
+    //         block-aligned for a == 0 -- are the solver's to uphold)
+    //         or, when `split` is null, proportional to the tensor-split
+    //         factors:
     //         boundary(j) = ne * (f_0 + ... + f_j) / (f_0 + ... + f_n-1),
     //         truncated and (for a == 0) rounded down to a multiple of
     //         ggml_blck_size (the meta GGML_ASSERTs it); the last device
@@ -913,39 +957,71 @@ private:
     //         (boundary(j) = ne * (j + 1) / n).
     // P is never materialized: the callback is only called for static
     // tensors, and a static tensor is never PARTIAL.
-    ggml_backend_meta_split_state materialize(const Dist& d, const int64_t ne[4], ggml_type type) const {
+    ggml_backend_meta_split_state materialize(
+        const Dist& d, const int64_t ne[4], ggml_type type,
+        const std::vector<int64_t>* split = nullptr) const {
         ggml_backend_meta_split_state st;
         std::memset(&st, 0, sizeof(st));
         st.axis = d.to_split_axis();
         st.nr[0] = 1;
         st.n_segments = 1;
         if (d.type == Dist::Type::S) {
-            const int64_t gran = d.axis == 0 ? ggml_blck_size(type) : 1;
-            int64_t low = 0;
             const int n = (int)device_.count();
 
-            double sum = 0.0;
-            for (int j = 0; j < n; ++j)
-                sum += device_.tensor_split(j);
+            if (split != nullptr) {
+                for (int j = 0; j < n; ++j)
+                    st.ne[j] = (*split)[j];
+            } else {
+                const int64_t gran = d.axis == 0 ? ggml_blck_size(type) : 1;
+                int64_t low = 0;
 
-            double prefix = 0.0;
-            for (int j = 0; j < n; ++j) {
-                int64_t high;
-                if (j + 1 < n) {
-                    prefix += device_.tensor_split(j);
-                    high = (sum > 0.0)
-                        ? (int64_t)((double)ne[d.axis] * prefix / sum)
-                        : ne[d.axis] * (int64_t)(j + 1) / n;
-                    high = (high / gran) * gran;
-                } else {
-                    high = ne[d.axis];
+                double sum = 0.0;
+                for (int j = 0; j < n; ++j)
+                    sum += device_.tensor_split(j);
+
+                double prefix = 0.0;
+                for (int j = 0; j < n; ++j) {
+                    int64_t high;
+                    if (j + 1 < n) {
+                        prefix += device_.tensor_split(j);
+                        high = (sum > 0.0)
+                            ? (int64_t)((double)ne[d.axis] * prefix / sum)
+                            : ne[d.axis] * (int64_t)(j + 1) / n;
+                        high = (high / gran) * gran;
+                    } else {
+                        high = ne[d.axis];
+                    }
+                    st.ne[j] = high - low;
+                    low = high;
                 }
-                st.ne[j] = high - low;
-                low = high;
             }
         }
         return st;
     }
+
+    // ---------------------------------------------------------------------
+    // Ratio-coupled split groups (the solver lives in ShardingRuntime.cpp)
+    // ---------------------------------------------------------------------
+    // The per-device shard sizes the meta backend derives for a sharded
+    // COMPUTE tensor come from the committed sizes of its sharded sources
+    // (an exact ratio, GGML_ASSERTed integral -- the "take over ratio"
+    // block of ggml-backend-meta.cpp), and every two sharded sources of
+    // one op must agree on that ratio (a row-parallel mul_mat requires
+    // the two states equal). So every set of tensors that derive one
+    // another's splits -- a "ratio group" -- must share ONE proportional
+    // split: member T owns N_T * s_j / N elements on device j (s sums to
+    // N, the anchor member's size). For a non-uniform tensor-split
+    // request the plain per-tensor proportional truncation breaks the
+    // ratio integrality (a [in, 512] weight split [227, 285] reshaped
+    // into 4 heads: 4 * 227 / 512 is not an integer), so each group is
+    // solved for the split closest to the requested factors that the
+    // ratio rules admit.
+    struct SplitGroupResult {
+        bool ok = true;
+        std::string reason;                        // when !ok: why no split works
+        std::map<int, std::vector<int64_t>> splits; // node id -> per-device sizes
+    };
+    SplitGroupResult compute_split_groups(const std::map<int, Dist>& produced_of);
 
     std::string param_name(int id) const {
         const char* n = raw_of_[id]->name;
